@@ -1,0 +1,6 @@
+! Restore r4's baseline advertisements (instructor recovery; applied through Netmiko).
+router bgp 65004
+   address-family ipv4
+      network 10.20.20.0/24
+      network 10.20.30.0/24
+      network 10.20.40.0/24

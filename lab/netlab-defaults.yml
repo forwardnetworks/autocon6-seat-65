@@ -1,0 +1,28 @@
+# Project-scoped netlab defaults. Referenced from topology.yml via defaults.sources.user so
+# the machine-wide ~/.netlab.yml (Skyforge / kne) is never consulted for this lab.
+provider: clab
+device: eos
+devices:
+  eos:
+    clab:
+      image: ceos:4.36.0.1F
+      # netlab's default puts Management0 in a "management" VRF (CLAB_MGMT_VRF). On this host
+      # (cEOS 4.36 + containerlab dev build) that fails with ETH-4-VRF_ASSIGNMENT_FAILED and the
+      # management address is unreachable. Keep Management0 in the default VRF, like the
+      # enterprise-prepost lab that collects fine.
+      node:
+        env:
+          INTFTYPE: et
+          CLAB_MGMT_VRF: ""
+  linux:
+    clab:
+      image: python:3.13-alpine
+
+# The host runs a containerlab development build that reports "version 0.0.0", which fails
+# netlab's ">= 0.74.2" string comparison. Keep only the "is installed" probe. Remove this
+# override once a tagged containerlab release is pinned in the devcontainer.
+providers:
+  clab:
+    probe:
+      - cmd: "containerlab version"
+        err: "Containerlab is not installed"

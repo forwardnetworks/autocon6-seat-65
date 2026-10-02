@@ -1,0 +1,30 @@
+/**
+ * @intent No inert BGP network statements
+ * @description A BGP network statement with no matching route advertises nothing.
+ *
+ * In BGP a `network` statement only originates the prefix when an exact-match route
+ * exists in the RIB. One with no matching route is inert: it looks like an advertisement
+ * in the configuration and is not one in the network. On the workshop baseline r4 has two
+ * (10.20.30.0/24, 10.20.40.0/24) -- the finding the change is meant to clear.
+ *
+ * EOS keeps network statements under `address-family ipv4` when the default IPv4 unicast
+ * activation is off, which is how this lab renders BGP.
+ *
+ * Rows returned are violations; an empty result is a pass.
+ * Adapted from forward-change-demo's hygiene_stale_bgp_advertisements.nqe.
+ */
+@primaryKey(DeviceName, Prefix)
+foreach device in network.devices
+where device.platform.os == OS.ARISTA_EOS
+let routed = (foreach ni in device.networkInstances
+              foreach entry in ni.afts.ipv4Unicast.ipEntries
+              select toString(entry.prefix))
+foreach bgp in patternMatches(device.files.config, `router bgp {asn:number}`)
+foreach af in patternMatches(bgp.line.children, `address-family ipv4`)
+foreach advert in patternMatches(af.line.children, `network {prefix:string}`)
+where !(advert.data.prefix in routed)
+select {
+  DeviceName: device.name,
+  Prefix: advert.data.prefix,
+  Finding: "BGP network statement has no matching route -- it advertises nothing"
+}

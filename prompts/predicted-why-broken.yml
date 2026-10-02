@@ -1,0 +1,9 @@
+id: predicted-why-broken
+role: troubleshooter
+snapshot: predicted
+prompt: In this snapshot, why can 10.10.10.10 no longer reach 10.20.20.20 on TCP 8080?
+look_for: >-
+  The symptom is r1 has no route to 10.20.20.0/24. The cause is the change on r4, which withdrew
+  'network 10.20.20.0/24'. Asked like this, with no context, Forward AI may blame r1. Compare with
+  'workshop explain', which gives it the failed requirements and the change.
+why: Question framing matters. The answer is advice, and Predict plus the requirements decide.

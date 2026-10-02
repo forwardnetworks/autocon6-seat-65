@@ -1,0 +1,65 @@
+# AutoCon6 four-router eBGP diamond. netlab is used ONLY to define and launch this topology
+# (netlab up --no-config); router configuration is applied through Netmiko from lab/baseline/.
+name: autocon6
+# Use only this project's defaults and netlab's packaged ones. The host carries a machine-wide
+# ~/.netlab.yml and /etc/netlab/defaults.yml for other labs (Skyforge); neither may leak in.
+defaults.sources.user: [ ./netlab-defaults.yml ]
+defaults.sources.system: [ package:topology-defaults.yml ]
+provider: clab
+
+module: [ bgp ]
+plugin: [ bgp.policy, multilab ]
+
+# multilab gives this lab its own netlab instance id, management network (192.168.<id>.0/24)
+# and docker network so it can coexist with other labs on the same host. Keep the lab name
+# stable ("autocon6") instead of the plugin's default "ml-<id>".
+defaults.multilab:
+  id: 121
+  change:
+    name: autocon6
+    defaults.name: autocon6
+
+addressing:
+  p2p:
+    ipv4: 10.255.0.0/24
+    prefix: 30
+  mgmt:
+    start: 100
+
+bgp:
+  advertise_loopback: false
+
+nodes:
+  r1: { bgp.as: 65001 }
+  r2: { bgp.as: 65002 }
+  r3: { bgp.as: 65003 }
+  r4: { bgp.as: 65004 }
+  client:
+    device: linux
+    role: host
+    clab.exec:
+      - ip addr add 10.10.10.10/24 dev eth1
+      - ip route replace default via 10.10.10.1
+  service:
+    device: linux
+    role: host
+    clab.exec:
+      - ip addr add 10.20.20.20/24 dev eth1
+      - ip route replace default via 10.20.20.1
+      - sh -c 'nohup python3 -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 &'
+      - sh -c 'nohup python3 -m http.server 8443 --bind 0.0.0.0 >/dev/null 2>&1 &'
+      - sh -c 'nohup python3 -m http.server 2222 --bind 0.0.0.0 >/dev/null 2>&1 &'
+
+links:
+# Primary path R1-R2-R4: local preference 200 on routes learned from R2 at both edges.
+- r1: { bgp.locpref: 200 }
+  r2:
+- r1-r3
+- r2:
+  r4: { bgp.locpref: 200 }
+- r3-r4
+# Endpoints
+- client: { ipv4: 10.10.10.10/24 }
+  r1:     { ipv4: 10.10.10.1/24 }
+- service: { ipv4: 10.20.20.20/24 }
+  r4:      { ipv4: 10.20.20.1/24 }

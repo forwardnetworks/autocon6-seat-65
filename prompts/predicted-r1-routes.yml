@@ -1,0 +1,6 @@
+id: predicted-r1-routes
+role: troubleshooter
+snapshot: predicted
+prompt: What routes does r1 have for 10.20.20.0/24 in this snapshot, and which BGP peer would normally provide one?
+look_for: None in the bad prediction; normally one learned from r2 (preferred by local-pref) and one from r3.
+why: Narrow questions about one device get sharper answers than "why is it broken".

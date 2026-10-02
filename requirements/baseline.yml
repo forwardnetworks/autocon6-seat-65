@@ -1,0 +1,37 @@
+# What the network does BEFORE any change. A baseline that does not match this is not a valid
+# starting point for a prediction.
+schema: 1
+set: baseline
+defaults:
+  src: 10.10.10.10
+  dst: 10.20.20.20
+  proto: tcp
+requirements:
+  - id: APP-EXISTING
+    kind: flow
+    port: 8080
+    expect: permit
+    title: The existing application works
+  - id: MGMT-DENY
+    kind: flow
+    port: 2222
+    expect: deny
+    deny_at: r1
+    title: The management-like service is blocked
+  - id: ROUTE-SERVICE
+    kind: route
+    device: r1
+    prefix: 10.20.20.0/24
+    next_hop: 10.255.0.2
+    title: R1 has the service route via R2
+  - id: PATH-SERVICE
+    kind: path
+    port: 8080
+    path: [r1, r2, r4]
+    title: Service traffic takes the primary path
+  - id: STALE-KNOWN
+    kind: nqe
+    query_file: nqe/stale_bgp_advertisements.nqe
+    expect_rows: 2
+    title: The two stale advertisements are present
+    why: The change request targets exactly these; a different count means the lab is not at baseline.

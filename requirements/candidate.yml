@@ -1,0 +1,41 @@
+# What the network must do AFTER the change. Frozen for the core exercise: a pull request may
+# not edit this file (the PR check reads it from the base branch).
+schema: 1
+set: candidate
+defaults:
+  src: 10.10.10.10     # client
+  dst: 10.20.20.20     # service
+  proto: tcp
+requirements:
+  - id: APP-EXISTING
+    kind: flow
+    port: 8080
+    expect: permit
+    title: The existing application still works
+    why: The service behind 10.20.20.0/24 is in production; retiring stale config must not cut it off.
+  - id: MGMT-DENY
+    kind: flow
+    port: 2222
+    expect: deny
+    deny_at: r1
+    title: The management-like service stays blocked
+    why: TCP 2222 must be refused by R1's CLIENT-IN ACL, not merely unreachable.
+  - id: ROUTE-SERVICE
+    kind: route
+    device: r1
+    prefix: 10.20.20.0/24
+    next_hop: 10.255.0.2
+    title: R1 still has the service route via R2
+    why: The service prefix must still be advertised and preferred through R2.
+  - id: PATH-SERVICE
+    kind: path
+    port: 8080
+    path: [r1, r2, r4]
+    title: Service traffic takes the primary path
+    why: The preferred path is R1 -> R2 -> R4; the change must not move traffic.
+  - id: STALE-CLEARED
+    kind: nqe
+    query_file: nqe/stale_bgp_advertisements.nqe
+    expect_rows: 0
+    title: No stale BGP advertisements remain
+    why: This is the finding the change request exists to fix.

@@ -1,0 +1,6 @@
+id: baseline-mgmt-deny
+role: analyst
+snapshot: baseline
+prompt: Why is TCP 2222 from 10.10.10.10 to 10.20.20.20 blocked, and where?
+look_for: The CLIENT-IN ACL on r1 denies it, inbound on Ethernet3.
+why: A requirement can be a thing that must stay blocked. MGMT-DENY checks that the change keeps it that way.

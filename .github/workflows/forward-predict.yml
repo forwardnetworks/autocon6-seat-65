@@ -1,0 +1,117 @@
+# The change gate: Forward predicts the proposed candidate against this lab's baseline and judges it
+# against requirements/candidate.yml. The check "forward/predict" must pass before a PR can merge.
+#
+# Trust boundary: code and requirements come from the BASE branch; only candidate/r4-bgp.eos comes
+# from the pull request, and a PR that changes anything else fails. Pull requests from forks never
+# run here (they would not have this seat's Forward token anyway).
+name: forward-predict
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forward-predict-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  predict:
+    name: forward/predict
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out the base branch (code and requirements come from here)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+
+      - name: Take only the candidate from the pull request
+        run: |
+          git fetch --no-tags origin "$HEAD_SHA"
+          outside=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -v '^candidate/' || true)
+          if [ -n "$outside" ]; then
+            echo "::error::This pull request changes files outside candidate/: $(echo $outside)"
+            { echo "## Forward Predict: ⚠️ ERROR"; echo; echo "Only files under \`candidate/\` may change in a pull request. Also changed:"; echo; echo "$outside" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 2
+          fi
+          git show "$HEAD_SHA:candidate/r4-bgp.eos" > candidate/r4-bgp.eos
+
+      - name: Set up Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - name: Install the workshop tools
+        run: uv sync --frozen --no-dev
+
+      - name: Predict with Forward
+        env:
+          FORWARD_URL: ${{ secrets.FORWARD_URL }}
+          FORWARD_USERNAME: ${{ secrets.FORWARD_USERNAME }}
+          FORWARD_PASSWORD: ${{ secrets.FORWARD_PASSWORD }}
+          FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
+          WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
+          WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
+        run: uv run --frozen workshop predict --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
+
+      - name: Keep the evidence (workshop deploy reads it)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forward-predict-evidence
+          path: evidence/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Forward AI's review of the prediction: advisory, in its own job so it can never change or delay the
+  # forward/predict result above. It only reads the evidence and asks Forward to summarise and explain.
+  advice:
+    name: forward/advice
+    needs: predict
+    if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    continue-on-error: true
+    steps:
+      - name: Check out the base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Fetch the prediction's evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: forward-predict-evidence
+          path: evidence/
+
+      - name: Set up Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - name: Install the workshop tools
+        run: uv sync --frozen --no-dev
+
+      - name: Ask Forward AI to review the prediction
+        env:
+          FORWARD_URL: ${{ secrets.FORWARD_URL }}
+          FORWARD_USERNAME: ${{ secrets.FORWARD_USERNAME }}
+          FORWARD_PASSWORD: ${{ secrets.FORWARD_PASSWORD }}
+          FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
+          WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
+          WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
+        run: uv run --frozen workshop explain --evidence evidence/evidence.json --chat-timeout 240
+
+      - name: Keep the advice
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: forward-ai-advice
+          path: evidence/ai.json
+          if-no-files-found: ignore
+          retention-days: 14

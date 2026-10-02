@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+evidence/
+lab/clab.yml
+lab/clab-*/
+lab/hosts.yml
+lab/ansible.cfg
+lab/group_vars/
+lab/host_vars/
+lab/node_files/
+lab/netlab.snapshot.*
+lab/netlab.lock
+lab/*.log
+**/data_sources.json
+*.zip

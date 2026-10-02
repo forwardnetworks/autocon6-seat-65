@@ -1,0 +1,8 @@
+id: baseline-stale
+role: analyst
+snapshot: baseline
+prompt: >-
+  Which BGP network statements on r4 advertise prefixes that r4 has no route for, and what would retiring
+  them affect?
+look_for: 10.20.30.0/24 and 10.20.40.0/24 have no route; 10.20.20.0/24 is live and must stay.
+why: Start from what the network actually is. Forward answers from the snapshot, not from memory.

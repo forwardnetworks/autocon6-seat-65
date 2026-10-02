@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Know Before You Deploy — your lab</title>
+<style>
+/* Forward design tokens (gui/styles/color-palette.css, semantic-colors.css), light first. */
+:root {
+  --canvas: #f9f9f9; --raised: #fff; --group: #f2f2f2; --bar: #0a2538; --bar-txt: #fff;
+  --txt: #363636; --txt-2: #767676; --txt-3: #9f9f9f; --divider: #d9d9d9;
+  --accent: #0064a0; --accent-hover: #0073b8; --accent-bg: #def0f9; --mark: #ff3506;
+  --ok: #3f6d1b; --ok-bg: #dce9d1; --bad: #b5372a; --bad-bg: #f3cdc9; --warn: #b95900; --warn-bg: #fce4bf;
+  --stale: #9f9f9f; --live-edge: #579526;
+  --elev: 0 0 1px rgb(0 0 0 / 20%), 0 1px 2px rgb(0 0 0 / 10%);
+  --radius: 0.375rem;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #13181b; --raised: #1b2227; --group: #232c32; --bar: #0a2538; --bar-txt: #fff;
+    --txt: #d6d6d6; --txt-2: #bdbdbd; --txt-3: #a3a3a3; --divider: #3b464d;
+    --accent: #8dd6ee; --accent-hover: #b8e5f4; --accent-bg: #355263; --mark: #ff3506;
+    --ok: #92c968; --ok-bg: #3f4f32; --bad: #f27b82; --bad-bg: #5c383a; --warn: #f7b654; --warn-bg: #5d4a2c;
+    --stale: #576066; --live-edge: #92c968;
+    --elev: inset 0 0 0 1px rgb(255 255 255 / 10%), 0 4px 4px rgb(0 0 0 / 25%);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--canvas); color: var(--txt); font: 14px/1.45 Roboto, "Segoe UI", system-ui, sans-serif; }
+header { background: var(--bar); color: var(--bar-txt); display: flex; align-items: center; gap: 16px; padding: 12px 20px; flex-wrap: wrap; }
+header img { height: 18px; color: #fff; }
+header h1 { font-size: 16px; font-weight: 500; margin: 0; }
+header .seat { margin-left: auto; font-size: 13px; opacity: .85; }
+header .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--live-edge); margin-right: 6px; }
+main { padding: 16px 20px 40px; max-width: 1400px; margin: 0 auto; }
+.card { background: var(--raised); border-radius: var(--radius); box-shadow: var(--elev); padding: 16px; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--txt-2); margin: 0 0 10px; }
+code, pre { font-family: "Roboto Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+code { background: var(--group); padding: 1px 5px; border-radius: 4px; }
+.muted { color: var(--txt-2); }
+
+/* The loop strip */
+.loop { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.stage { background: var(--raised); box-shadow: var(--elev); border-radius: var(--radius); padding: 10px 12px; border-top: 4px solid var(--divider); min-width: 0; }
+.stage .n { font-size: 11px; color: var(--txt-3); }
+.stage .label { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.stage .detail { font-size: 12px; color: var(--txt-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage.done { border-top-color: var(--ok); } .stage.done .icon::before { content: "✓"; color: var(--ok); }
+.stage.failed { border-top-color: var(--bad); } .stage.failed .icon::before { content: "✕"; color: var(--bad); }
+.stage.active { border-top-color: var(--warn); } .stage.active .icon::before { content: "●"; color: var(--warn); }
+.stage.todo .icon::before { content: "○"; color: var(--txt-3); }
+.stage.next { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+@media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } .loop { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Next step */
+.next-card { border-left: 4px solid var(--accent); }
+.next-card .title { font-size: 18px; font-weight: 500; margin: 2px 0 6px; }
+.cmd { display: flex; align-items: center; gap: 8px; background: var(--group); border-radius: var(--radius); padding: 8px 10px; margin: 8px 0; }
+.cmd code { background: none; padding: 0; flex: 1; overflow-x: auto; white-space: nowrap; }
+button { font: inherit; border: 0; border-radius: var(--radius); padding: 6px 12px; cursor: pointer; background: var(--accent); color: #fff; }
+@media (prefers-color-scheme: dark) { button { color: #0a2538; } }
+button:hover { background: var(--accent-hover); }
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--divider); }
+button:disabled { opacity: .5; cursor: default; }
+
+/* Topology */
+svg.topo { width: 100%; height: auto; display: block; }
+.topo .edge { stroke: var(--divider); stroke-width: 3; fill: none; }
+.topo .edge.path { stroke: var(--live-edge); stroke-width: 5; }
+.topo .edge.broken { stroke: var(--bad); stroke-width: 4; stroke-dasharray: 8 6; }
+.topo .node rect { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
+.topo .node.host rect { stroke: var(--txt-3); }
+.topo .node.bad rect { stroke: var(--bad); fill: var(--bad-bg); }
+.topo text { fill: var(--txt); font-size: 13px; font-weight: 600; text-anchor: middle; }
+.topo text.sub { font-size: 11px; font-weight: 400; fill: var(--txt-2); }
+.topo .adv { font-size: 11px; font-weight: 500; text-anchor: start; }
+.topo .adv.live { fill: var(--ok); } .topo .adv.stale { fill: var(--warn); } .topo .adv.retired { fill: var(--txt-3); text-decoration: line-through; }
+.topo .adv.danger { fill: var(--bad); text-decoration: line-through; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--txt-2); margin-top: 6px; }
+.legend i { display: inline-block; width: 18px; height: 4px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+
+/* Tables and chips */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--divider); vertical-align: top; }
+th { font-size: 12px; color: var(--txt-2); font-weight: 500; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.pill.PASS, .pill.MATCH, .pill.SUCCESS { background: var(--ok-bg); color: var(--ok); }
+.pill.FAIL, .pill.MISMATCH, .pill.FAILURE, .pill.ERROR { background: var(--bad-bg); color: var(--bad); }
+.pill.INCONCLUSIVE, .pill.STALE, .pill.PENDING, .pill.IN_PROGRESS { background: var(--warn-bg); color: var(--warn); }
+.banner { padding: 8px 12px; border-radius: var(--radius); margin-bottom: 10px; font-size: 13px; }
+.banner.warn { background: var(--warn-bg); color: var(--warn); }
+.banner.bad { background: var(--bad-bg); color: var(--bad); }
+.banner.ok { background: var(--ok-bg); color: var(--ok); }
+
+/* Advisers and AI */
+.role { border-left: 3px solid var(--divider); padding: 2px 0 2px 10px; margin: 10px 0; }
+.role b.name { display: block; font-size: 12px; color: var(--txt-2); text-transform: uppercase; letter-spacing: .04em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { background: var(--accent-bg); color: var(--accent); border-radius: 14px; padding: 4px 10px; font-size: 12px; cursor: pointer; border: 0; }
+.chip:hover { outline: 1px solid var(--accent); background: var(--accent-bg); }
+textarea { width: 100%; min-height: 56px; font: inherit; padding: 8px; border-radius: var(--radius); border: 1px solid var(--divider); background: var(--raised); color: var(--txt); resize: vertical; }
+select { font: inherit; padding: 5px; border-radius: var(--radius); border: 1px solid var(--divider); background: var(--raised); color: var(--txt); }
+.answer { background: var(--group); border-radius: var(--radius); padding: 10px 12px; margin-top: 10px; font-size: 13px; }
+.answer .q { font-weight: 600; margin-bottom: 4px; }
+.answer .meta { font-size: 11px; color: var(--txt-3); margin-top: 6px; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--divider); border-top-color: var(--accent); border-radius: 50%; animation: spin 1s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.tip { font-size: 13px; min-height: 3.2em; transition: opacity .4s; }
+.tip b { color: var(--accent); }
+/* Chat */
+.chat { display: flex; flex-direction: column; min-height: 520px; max-height: 78vh; padding: 0; overflow: hidden; }
+.chat-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--divider); flex-wrap: wrap; }
+.chat-head h2 { margin: 0; flex: 1; }
+.threads { display: flex; gap: 6px; overflow-x: auto; padding: 8px 16px; border-bottom: 1px solid var(--divider); }
+.thread-tab { background: var(--group); color: var(--txt-2); border-radius: 14px; padding: 3px 10px; font-size: 12px; white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.thread-tab.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.thread-tab:hover { background: var(--accent-bg); }
+.convo { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.bubble { max-width: 92%; border-radius: 12px; padding: 10px 14px; font-size: 13.5px; line-height: 1.5; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+@media (prefers-color-scheme: dark) { .bubble.user { color: #0a2538; } }
+.bubble.ai { align-self: flex-start; background: var(--group); border-bottom-left-radius: 4px; }
+.bubble.ai .who { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--txt-2); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.bubble.ai .who::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--mark); }
+.bubble table { margin: 6px 0; font-size: 12.5px; background: var(--raised); border-radius: 6px; }
+.bubble th, .bubble td { padding: 4px 8px; }
+.bubble h4 { margin: 10px 0 4px; font-size: 13px; }
+.bubble ul, .bubble ol { margin: 4px 0; padding-left: 20px; }
+.bubble pre { background: var(--raised); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+.bubble p { margin: 4px 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.tool { font-size: 10.5px; background: var(--raised); color: var(--txt-2); border: 1px solid var(--divider); border-radius: 10px; padding: 1px 7px; }
+.hint { font-size: 12px; border-left: 3px solid var(--accent); padding: 4px 8px; margin-top: 8px; color: var(--txt-2); }
+.composer { border-top: 1px solid var(--divider); padding: 10px 16px 12px; }
+.composer textarea { min-height: 44px; }
+.composer .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.empty { color: var(--txt-2); text-align: center; margin: auto; max-width: 360px; }
+
+/* Challenges */
+.chals { list-style:none; margin:0; padding:0; }
+.chal { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--divider); }
+.chal:first-child { border-top:0; }
+.chal .tick { flex:none; width:20px; height:20px; border-radius:50%; border:2px solid var(--divider); margin-top:1px; display:grid; place-items:center; font-size:12px; color:#fff; }
+.chal.done .tick { background:var(--ok); border-color:var(--ok); } .chal.done .tick::after { content:"✓"; }
+.chal.next .tick { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-bg); }
+.chal .cbody { flex:1; min-width:0; } .chal .ctitle { font-weight:500; } .chal.done .ctitle { color:var(--txt-2); text-decoration:line-through; text-decoration-color:var(--txt-3); }
+.chal .hint-line { font-size:12.5px; color:var(--txt-2); background:var(--group); border-radius:6px; padding:5px 8px; margin-top:5px; }
+.chal .hint-line b { color:var(--accent); margin-right:6px; }
+.chal button.hint-btn { font-size:12px; padding:3px 9px; flex:none; }
+.chal.flash { animation: flash 2.2s ease-out; } @keyframes flash { 0% { background:var(--ok-bg); } 100% { background:transparent; } }
+details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padding-top:8px; } details#chal-stretch summary { cursor:pointer; color:var(--accent); font-weight:500; }
+@media (prefers-reduced-motion: reduce) { .chal.flash { animation:none; } }
+footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo.svg" alt="Forward Networks">
+  <h1>Know Before You Deploy</h1>
+  <span class="seat"><span class="dot"></span><span id="seat">…</span></span>
+</header>
+<main>
+  <section class="loop" id="loop" aria-label="The change loop"></section>
+  <div class="grid">
+    <div class="col">
+      <section class="card next-card" id="next"></section>
+      <section class="card">
+        <h2>Your network</h2>
+        <svg class="topo" id="topo" viewBox="0 0 760 270" role="img" aria-label="Lab topology"></svg>
+        <div class="legend">
+          <span><i style="background:var(--live-edge)"></i>service path (TCP 8080)</span>
+          <span><i style="background:var(--bad)"></i>broken in the prediction</span>
+          <span style="color:var(--ok)">■ live advertisement</span>
+          <span style="color:var(--warn)">■ stale advertisement</span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Prediction — judged by Forward Predict and the requirements</h2>
+        <div id="prediction"></div>
+      </section>
+      <section class="card" id="verify-card" hidden>
+        <h2>Verify — predicted vs collected</h2>
+        <div id="verify"></div>
+      </section>
+    </div>
+    <div class="col">
+      <section class="card" id="chal-card">
+        <h2>Challenges <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0" id="chal-sum"></span></h2>
+        <ul class="chals" id="chals-core"></ul>
+        <details id="chal-stretch"><summary>Stretch challenges <span class="muted" id="stretch-sum"></span></summary><ul class="chals" id="chals-stretch"></ul></details>
+      </section>
+      <section class="card">
+        <h2>Forward AI advisers <span class="muted" style="text-transform:none;font-weight:400">— they advise, Predict decides</span></h2>
+        <div id="advice"></div>
+      </section>
+      <section class="card chat">
+        <div class="chat-head">
+          <h2>Forward AI</h2>
+          <select id="snap" title="Which snapshot a new conversation is grounded in"><option value="baseline">about the baseline</option><option value="predicted">about the prediction</option><option value="post">about the network after the change</option></select>
+          <button class="ghost" id="new-chat">New conversation</button>
+        </div>
+        <div class="threads" id="threads"></div>
+        <div class="convo" id="convo"></div>
+        <div class="composer">
+          <div class="chips" id="prompts"></div>
+          <textarea id="question" placeholder="Ask about your network… (Enter to send, Shift+Enter for a new line)" maxlength="1000"></textarea>
+          <div class="row"><button id="ask">Send</button><span class="muted" id="ask-note"></span></div>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Tip</h2>
+        <div class="tip" id="tip"></div>
+      </section>
+      <section class="card">
+        <h2>Intent</h2>
+        <div id="intent" class="muted"></div>
+      </section>
+    </div>
+  </div>
+  <footer>Local to your Codespace. Deploying stays a typed command in the terminal: <code>workshop deploy --pr N --confirm &lt;sha7&gt;</code></footer>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+// Inline markdown on already-escaped text: bold, italics, code.
+const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+// Small, safe markdown for Forward AI answers: everything is escaped first, then block structure
+// (tables, lists, headings, code fences, paragraphs) is rebuilt. No raw HTML survives.
+function md(src) {
+  const lines = esc(src).split("\n"), out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith("```")) {
+      const code = [];
+      for (i++; i < lines.length && !lines[i].startsWith("```"); i++) code.push(lines[i]);
+      out.push(`<pre><code>${code.join("\n")}</code></pre>`);
+    } else if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|[\s:|-]+\|\s*$/.test(lines[i + 1] || "")) {
+      const cells = (l) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+      const head = cells(line), rows = [];
+      for (i += 2; i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i]); i++) rows.push(cells(lines[i]));
+      i--;
+      out.push(`<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+    } else if (/^\s*([-*]|\d+[.)])\s+/.test(line)) {
+      const ordered = /^\s*\d/.test(line), items = [];
+      for (; i < lines.length && /^\s*([-*]|\d+[.)])\s+/.test(lines[i]); i++) items.push(inline(lines[i].replace(/^\s*([-*]|\d+[.)])\s+/, "")));
+      i--;
+      out.push(`<${ordered ? "ol" : "ul"}>${items.map((x) => `<li>${x}</li>`).join("")}</${ordered ? "ol" : "ul"}>`);
+    } else if (/^#{1,4}\s/.test(line)) {
+      out.push(`<h4>${inline(line.replace(/^#+\s*/, ""))}</h4>`);
+    } else if (line.trim()) {
+      out.push(`<p>${inline(line)}</p>`);
+    }
+  }
+  return out.join("");
+}
+
+const NEXT = {
+  lab: { title: "Start your lab", cmd: "workshop up", body: "Four cEOS routers, a client and a service start in your Codespace, then the baseline configuration is applied over SSH with Netmiko. It takes a few minutes; watch BGP come up." },
+  baseline: { title: "Give Forward a baseline", cmd: "workshop baseline", body: "The headless collector reads your routers and Forward builds a model of the network. The baseline requirements are checked on it: this is the known-good starting point every prediction is compared with." },
+  change: { title: "Write the change", cmd: "code candidate/r4-bgp.eos", body: "Retire r4's stale advertisements: add <code>no network &lt;prefix&gt;</code> lines. Not sure which prefixes? Ask Forward AI (right), or let the Author draft it with <code>workshop propose</code>." },
+  predict: { title: "Predict it", cmd: "git switch -c retire-stale && git commit -am 'Retire stale advertisements' && git push -u origin HEAD && gh pr create --fill", body: "Open a pull request: create a branch from the branch name at the bottom-left, commit and <b>Publish Branch</b> in <b>Source Control</b>, then <b>Create Pull Request</b> in the <b>GitHub Pull Requests</b> panel (or use the command below). The <b>forward/predict</b> check asks Forward what the network would do with your change and judges it against the requirements, before anything touches a router." },
+  approve: { title: "Review and approve", cmd: "gh pr view --web", body: "Open your PR in the <b>GitHub Pull Requests</b> panel and read the forward/predict result and the forward/advice summary. Merge (Squash and Merge) only a green check. A red check means a requirement fails on the predicted network: fix the candidate and push again." },
+  deploy: { title: "Deploy exactly what was predicted", cmd: "git switch main && git pull && workshop deploy --pr <N> --confirm <sha7>", body: "The exact deploy command, with your PR number and confirmation, is at the top of the green check's summary. Deploy refuses unless the PR is merged, the check passed, the baseline is still current and the routers have not drifted. You type the first 7 characters of the candidate hash to confirm." },
+  verify: { title: "Verify on the real network", cmd: "workshop verify", body: "Probe the real flows, collect the network again, and compare every requirement with what Predict said. MATCH closes the loop." },
+  done: { title: "Loop closed", cmd: "workshop agent", body: "Predicted, approved, deployed and verified. Try the stretch: reset with <code>workshop restore && workshop baseline</code>, then let <code>workshop agent</code> run the loop with the Forward AI advisers, stopping before approval." },
+};
+const TIPS = [
+  "<b>PASS is the only green.</b> FAIL, ERROR, INCONCLUSIVE and STALE all block deployment. An empty result is never a pass.",
+  "<b>Forward AI advises, Predict decides.</b> Ask a chat why a prediction failed with no context and it may blame the wrong router. The requirements, evaluated on the predicted network, are the judge.",
+  "<b>Same bytes, start to finish.</b> The exact candidate lines Predict evaluated are the ones Netmiko sends to r4. Deploy checks the hash.",
+  "<b>STALE is a feature.</b> If anything changed since the baseline — a newer snapshot, or someone edited a router — deploy refuses. Take a new baseline and predict again.",
+  "<b>MGMT-DENY is a requirement too.</b> Safe changes keep what must stay blocked. TCP 2222 must be refused by r1's ACL, not merely unreachable.",
+  "<b>Forward AI answers one question at a time for you.</b> While it thinks, read the evidence: the prediction table shows every requirement and what Forward observed.",
+  "<b>The Author drafts, the scope check guards.</b> Anything drafted by Forward AI must be only <code>[no] network &lt;prefix&gt;</code> lines on r4, or it is rejected before prediction.",
+  "<b>The Reviewer is fast.</b> The forward/advice check on your PR summarises what your change alters and what it would affect, in seconds.",
+];
+
+let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
+
+function renderLoop(stages) {
+  const nextKey = (stages.find((s) => s.state !== "done") || {}).key;
+  $("loop").innerHTML = stages.map((s, i) => `
+    <div class="stage ${s.state}${s.key === nextKey ? " next" : ""}" title="${esc(s.hint)}">
+      <div class="n">${i + 1}</div>
+      <div class="label"><span class="icon"></span>${esc(s.label)}</div>
+      <div class="detail">${esc(s.detail)}</div>
+    </div>`).join("");
+  const n = NEXT[nextKey || "done"];
+  const failed = stages.find((s) => s.key === nextKey && s.state === "failed");
+  $("next").innerHTML = `
+    <h2>Next step${failed ? " — something needs attention" : ""}</h2>
+    <div class="title">${n.title}</div>
+    ${failed ? `<div class="banner bad">${esc(failed.detail)}</div>` : ""}
+    <div>${n.body}</div>
+    <div class="cmd"><code id="cmd">${esc(n.cmd)}</code><button class="ghost" id="copy">Copy</button></div>`;
+  $("copy").onclick = () => navigator.clipboard?.writeText(n.cmd).then(() => { $("copy").textContent = "Copied"; });
+}
+
+function renderTopo(s) {
+  const m = s.prediction, results = Object.fromEntries((m?.results || []).map((r) => [r.id, r]));
+  const current = s.prediction_current;
+  const pathTxt = results["PATH-SERVICE"]?.observed || "";
+  const onPath = pathTxt.includes("->") ? pathTxt.split("->").map((x) => x.trim()) : ["r1", "r2", "r4"];
+  const broken = m && current && results["APP-EXISTING"]?.status === "FAIL";
+  const noRoute = m && current && results["ROUTE-SERVICE"]?.status === "FAIL";
+  const P = { client: [60, 135], r1: [210, 135], r2: [380, 55], r3: [380, 215], r4: [550, 135], service: [700, 135] };
+  const edges = [["client", "r1"], ["r1", "r2"], ["r1", "r3"], ["r2", "r4"], ["r3", "r4"], ["r4", "service"]];
+  const hops = ["client", ...onPath, "service"];
+  const pathEdge = (a, b) => hops.some((h, i) => (hops[i] === a && hops[i + 1] === b) || (hops[i] === b && hops[i + 1] === a));
+  let svg = edges.map(([a, b]) => {
+    const cls = pathEdge(a, b) ? (broken ? "edge broken" : "edge path") : "edge";
+    return `<line class="${cls}" x1="${P[a][0]}" y1="${P[a][1]}" x2="${P[b][0]}" y2="${P[b][1]}"/>`;
+  }).join("");
+  const node = (id, sub, host) => {
+    const [x, y] = P[id], bad = id === "r1" && noRoute;
+    return `<g class="node${host ? " host" : ""}${bad ? " bad" : ""}"><rect x="${x - 46}" y="${y - 22}" width="92" height="44" rx="8"/>
+      <text x="${x}" y="${y - 2}">${id}</text><text class="sub" x="${x}" y="${y + 13}">${sub}</text></g>`;
+  };
+  svg += node("client", "10.10.10.10", true) + node("r1", "AS 65001") + node("r2", "AS 65002") + node("r3", "AS 65003") + node("r4", "AS 65004") + node("service", "10.20.20.20", true);
+  // r4's advertisements, marked by what the current candidate would retire.
+  const retired = new Set((s.candidate?.changes || []).map((l) => l.replace(/^no network /, "")).filter((l) => !l.startsWith("network")));
+  const adv = [["10.20.20.0/24", "live"], ["10.20.30.0/24", "stale"], ["10.20.40.0/24", "stale"]];
+  svg += adv.map(([p, kind], i) => {
+    const cls = retired.has(p) ? (kind === "live" ? "danger" : "retired") : kind;
+    const label = retired.has(p) ? `${p} — retire${kind === "live" ? " (carries the service!)" : ""}` : `${p} — ${kind}`;
+    return `<text class="adv ${cls}" x="${P.r4[0] - 50}" y="${P.r4[1] + 44 + i * 15}">${label}</text>`;
+  }).join("");
+  if (noRoute) svg += `<text class="sub" x="${P.r1[0]}" y="${P.r1[1] + 40}" style="fill:var(--bad)">no route to 10.20.20.0/24</text>`;
+  $("topo").innerHTML = svg;
+}
+
+function renderPrediction(s) {
+  const m = s.prediction;
+  if (!m) { $("prediction").innerHTML = `<div class="muted">No prediction yet. Open a pull request (the forward/predict check), or run <code>workshop predict</code>.</div>`; return; }
+  const stale = !s.prediction_current ? `<div class="banner warn">The candidate has changed since this prediction. Predict it again before you trust this table.</div>` : "";
+  $("prediction").innerHTML = `${stale}
+    <div style="margin-bottom:8px"><span class="pill ${esc(m.status)}">${esc(m.status)}</span> ${md(m.reason)}</div>
+    <table><thead><tr><th>Requirement</th><th>Result</th><th>Forward observed</th></tr></thead><tbody>
+    ${(m.results || []).map((r) => `<tr><td><b>${esc(r.id)}</b><div class="muted">${esc(r.title)}</div></td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc((r.observed || "").slice(0, 160))}</td></tr>`).join("")}
+    </tbody></table>
+    <div class="muted" style="margin-top:6px">Baseline ${esc(m.baseline_snapshot_id)} → predicted ${esc(m.predicted_snapshot_id)} · change set ${esc(m.change_set_id)} · candidate ${esc((m.candidate_sha256 || "").slice(0, 7))}</div>`;
+}
+
+function renderVerify(s) {
+  const v = s.verify;
+  $("verify-card").hidden = !v;
+  if (!v) return;
+  $("verify").innerHTML = `<div style="margin-bottom:8px"><span class="pill ${esc(v.outcome)}">${esc(v.outcome)}</span> ${esc(v.reason || (v.post_snapshot_id ? "post-change snapshot " + v.post_snapshot_id : ""))}</div>
+    <table><thead><tr><th>Requirement</th><th>Predicted</th><th>Collected</th></tr></thead><tbody>
+    ${(v.rows || []).map((r) => `<tr><td>${esc(r.id)}</td><td><span class="pill ${esc(r.predicted)}">${esc(r.predicted)}</span></td><td><span class="pill ${esc(r.collected)}">${esc(r.collected)}</span></td></tr>`).join("")}
+    ${(v.probes || []).map((p) => `<tr><td>probe TCP ${esc(p.port)}</td><td>${esc(p.expected)}</td><td><span class="pill ${p.ok ? "PASS" : "FAIL"}">${esc(p.observed)}</span></td></tr>`).join("")}
+    </tbody></table>`;
+}
+
+function renderAdvice(s) {
+  const a = s.advice, rev = a?.review || {};
+  if (!a) { $("advice").innerHTML = `<div class="muted">After a prediction, <code>workshop explain</code> (or the forward/advice check on your PR) asks Forward AI to review it: what the change alters, what it would affect, and — if it failed — why.</div>`; return; }
+  const role = (name, text) => text ? `<div class="role"><b class="name">${name}</b>${md(text)}</div>` : "";
+  $("advice").innerHTML = (rev.name ? `<div><b>${esc(rev.name)}</b></div><div class="muted">${esc(rev.description)}</div>` : "") +
+    role("Reviewer — what the change alters", rev.config) + role("Reviewer — what it would affect", rev.impact) +
+    role("Troubleshooter — why it failed", a.troubleshooter?.summary) +
+    (rev.notes || []).map((n) => `<div class="muted">(${esc(n)})</div>`).join("");
+}
+
+let current = null, opened = false;  // the thread on screen; null = a new conversation
+const TOOL_NAMES = { NQE: "NQE query", GET_PATHS: "path search", GET_DEVICE: "device", GET_SUBNET_LOCATIONS: "subnet lookup", TASK_ADD: "plan", TASK_UPDATE: "plan" };
+
+function renderChat(s) {
+  const threads = s.threads || [], byId = Object.fromEntries((s.prompts || []).map((p) => [p.id, p]));
+  if (!opened && threads.length) { current = threads[0].id; opened = true; }  // reopen the latest on load
+  if (current && !threads.some((t) => t.id === current)) current = null;
+  $("threads").innerHTML = threads.length ? threads.map((t) => `<button class="thread-tab${t.id === current ? " on" : ""}" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>`).join("") : `<span class="muted" style="font-size:12px">No conversations yet</span>`;
+  document.querySelectorAll(".thread-tab").forEach((b) => b.onclick = () => { current = b.dataset.id; renderChat(state); });
+  const thread = threads.find((t) => t.id === current);
+  const convo = $("convo"), atBottom = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40;
+  if (!thread) {
+    convo.innerHTML = `<div class="empty"><p><b>Ask Forward AI about your network.</b></p><p>It answers from the snapshot you pick above — running NQE queries and path searches on your lab — not from memory. Try a suggestion below.</p></div>`;
+  } else {
+    const sample = byId[(thread.label || "").split(" · ")[0]];
+    convo.innerHTML = `<div class="muted" style="font-size:11px;text-align:center">grounded in snapshot ${esc(thread.snapshot)}${thread.label ? " · " + esc(thread.label) : ""}</div>` +
+      thread.turns.map((turn, i) => {
+        const ai = turn.status === "running" ? `<span class="spinner"></span>Forward is working on it… ${Math.round(Date.now() / 1000 - turn.started)}s`
+          : turn.status === "error" ? `<span style="color:var(--bad)">${esc(turn.error)}</span>` : md(turn.answer?.summary || "");
+        const tools = [...new Set(turn.answer?.tools || [])].map((x) => `<span class="tool">${esc(TOOL_NAMES[x] || x)}</span>`).join("");
+        const look = i === 0 && sample && turn.status === "done" ? `<div class="hint"><b>What to look for:</b> ${esc(sample.look_for)}<br><b>Why it matters:</b> ${esc(sample.why)}</div>` : "";
+        return `<div class="bubble user">${esc(turn.question)}</div><div class="bubble ai"><div class="who">Forward AI${turn.secs ? ` · ${turn.secs}s` : ""}</div>${ai}${tools ? `<div class="tools">${tools}</div>` : ""}${look}</div>`;
+      }).join("");
+  }
+  if (atBottom || thread?.turns.at(-1)?.status === "running") convo.scrollTop = convo.scrollHeight;
+  $("prompts").innerHTML = (s.prompts || []).filter((p) => !thread || p.snapshot === (thread.label || "").split(" · ").pop()).slice(0, 6)
+    .map((p) => `<button class="chip" data-id="${esc(p.id)}" title="${esc(p.prompt)}">${esc(p.prompt.length > 48 ? p.prompt.slice(0, 46) + "…" : p.prompt)}</button>`).join("");
+  document.querySelectorAll("#prompts .chip").forEach((b) => b.onclick = () => send({ prompt: b.dataset.id }));
+  $("ask").disabled = s.busy;
+  $("ask-note").textContent = s.busy ? "Forward AI answers one question at a time — read the evidence while it works." : thread ? "Follow-ups stay in this conversation." : "Starts a new conversation.";
+}
+
+async function send(body) {
+  if (!body.prompt) {
+    const q = $("question").value.trim();
+    if (!q) return;
+    body = current ? { question: q, thread: current } : { question: q, snapshot: $("snap").value };
+  }
+  const r = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json", "X-Workshop-UI": "1" }, body: JSON.stringify(body) });
+  const data = await r.json();
+  if (!r.ok) { $("ask-note").textContent = data.error; return; }
+  $("question").value = "";
+  current = data.thread;
+  refresh();
+}
+$("ask").onclick = () => send({});
+$("question").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (!$("ask").disabled) send({}); } });
+$("new-chat").onclick = () => { current = null; renderChat(state); $("question").focus(); };
+
+function rotateTip() {
+  const el = $("tip");
+  el.style.opacity = 0;
+  setTimeout(() => { el.innerHTML = TIPS[tipIndex++ % TIPS.length]; el.style.opacity = 1; }, 400);
+}
+
+
+/* ---- challenges: a private checklist with hints that reveal one level at a time ---- */
+let hintLevel = {}, prevDone = null, chalSig = "", stretchOpen = false;
+try { hintLevel = JSON.parse(localStorage.getItem("wsa4-hints") || "{}"); } catch { hintLevel = {}; }
+function renderChallenges(s) {
+  const p = s.progress;
+  if (!p) return;
+  const sig = JSON.stringify([p.challenges.map((c) => [c.id, c.done]), p.next, hintLevel, stretchOpen]);
+  if (sig === chalSig) return;
+  chalSig = sig;
+  const done = new Set(p.challenges.filter((c) => c.done).map((c) => c.id));
+  const fresh = prevDone ? [...done].filter((id) => !prevDone.has(id)) : [];
+  prevDone = done;
+  const row = (c) => {
+    const lvl = Math.min(hintLevel[c.id] || 0, 3);
+    const hints = c.done ? "" : c.hints.slice(0, lvl).map((h, i) => `<div class="hint-line"><b>Hint ${i + 1}</b>${inline(esc(h))}</div>`).join("");
+    const btn = c.done || lvl >= 3 ? "" : `<button class="ghost hint-btn" data-id="${esc(c.id)}">${lvl ? "More help" : "Hint"}</button>`;
+    return `<li class="chal${c.done ? " done" : ""}${c.id === p.next ? " next" : ""}${fresh.includes(c.id) ? " flash" : ""}"><span class="tick"></span><div class="cbody"><div class="ctitle">${esc(c.title)}${c.minutes ? ` <span class="muted" style="font-weight:400">· about ${c.minutes} min</span>` : ""}</div>${hints}</div>${btn}</li>`;
+  };
+  $("chals-core").innerHTML = p.challenges.filter((c) => c.kind === "core").map(row).join("");
+  $("chals-stretch").innerHTML = p.challenges.filter((c) => c.kind === "stretch").map(row).join("");
+  $("chal-sum").textContent = `· ${p.core_done} of ${p.core_total} steps`;
+  $("stretch-sum").textContent = `(${p.stretch_done} of ${p.stretch_total})`;
+  $("chal-stretch").open = stretchOpen;
+}
+$("chal-card").addEventListener("click", (e) => {
+  const b = e.target.closest(".hint-btn");
+  if (!b) return;
+  hintLevel[b.dataset.id] = Math.min((hintLevel[b.dataset.id] || 0) + 1, 3);
+  try { localStorage.setItem("wsa4-hints", JSON.stringify(hintLevel)); } catch { /* private window: hints last this page view */ }
+  if (state) renderChallenges(state);
+});
+$("chal-stretch").addEventListener("toggle", () => { stretchOpen = $("chal-stretch").open; chalSig = ""; });
+
+async function refresh() {
+  try {
+    state = await (await fetch("/api/state")).json();
+  } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
+  $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
+  renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state);
+  $("intent").innerHTML = md(state.intent);
+}
+refresh(); rotateTip();
+setInterval(refresh, 3000); setInterval(rotateTip, 15000);
+</script>
+</body>
+</html>

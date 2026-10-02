@@ -1,0 +1,6 @@
+id: post-still-stale
+role: verifier
+snapshot: post
+prompt: Does r4 still have any BGP network statement for a prefix it has no route for?
+look_for: No. Only 10.20.20.0/24 remains, and it is live.
+why: Close the loop on the real network, after the change, from a fresh collection.

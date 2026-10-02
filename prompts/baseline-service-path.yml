@@ -1,0 +1,8 @@
+id: baseline-service-path
+role: analyst
+snapshot: baseline
+prompt: >-
+  Trace TCP 8080 from 10.10.10.10 to 10.20.20.20. Which routers does it cross, which route does each use,
+  and which ACLs does it meet?
+look_for: r1 -> r2 -> r4, learned over BGP, permitted by CLIENT-IN on r1.
+why: This is the path the change must not break. It becomes the APP-EXISTING and PATH-SERVICE requirements.
