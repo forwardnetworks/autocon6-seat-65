@@ -36,7 +36,7 @@ CHALLENGES: tuple[Challenge, ...] = (
         "A prediction runs when a pull request changes `candidate/r4-bgp.eos`.",
         "Make a branch, edit the candidate, commit, publish the branch, and create the pull request.",
         "Retire one stale advertisement: add `no network 10.20.30.0/24` under `address-family ipv4`.")),
-    Challenge("caught", "Catch a break before deploy", "core", 0, (
+    Challenge("caught", "Find a problem before deploy", "core", 0, (
         "Some changes look fine but break the service. The gate should catch one.",
         "r4's three `network` statements look alike. Only two are stale.",
         "Retire all three, including `10.20.20.0/24`, and open a pull request. A red check is the goal.")),
