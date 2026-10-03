@@ -3,3 +3,5 @@
 ! Only r4's BGP advertisements are in scope for this change.
 router bgp 65004
    address-family ipv4
+   no network 10.20.30.0/24
+   no network 10.20.40.0/24
