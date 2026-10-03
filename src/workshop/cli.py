@@ -105,11 +105,16 @@ def main(argv: list[str] | None = None) -> int:
     except config.SettingsError as exc:
         log(f"workshop: {exc}")
         return EXIT["ERROR"]
+    from workshop.lab import LabError
+
     handler = globals()[f"_{args.command}"]
     try:
         return handler(settings, args)
     except KeyboardInterrupt:
         return 130
+    except LabError as exc:  # a missing or stopped lab is a message, not a traceback
+        log(f"workshop {args.command}: {exc}")
+        return EXIT["ERROR"]
 
 
 def _version() -> int:

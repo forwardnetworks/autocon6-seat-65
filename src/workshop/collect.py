@@ -1,14 +1,17 @@
 """The Forward headless collector: fetch it, point it at the lab, run it.
 
-The collector is not pinned: ``ensure`` downloads whatever release the Forward server runs (as the
-seat user, through forward-sdk) and refuses one whose release differs from the server's. Each release
-is unpacked once under ``FWD_HEADLESS_HOME/<release>``.
+The collector is not pinned: ``ensure`` downloads the collector the Forward server serves (as the seat
+user, through forward-sdk). It must come from the server's release line (same ``major.minor``, for example
+26.9): the same release passes quietly, a later patch on the server than the collector passes with a warning
+(Forward publishes the collector package a little after the server), and any other line is refused. Each
+server release is unpacked once under ``FWD_HEADLESS_HOME/<release>``.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tarfile
 import tempfile
@@ -26,6 +29,27 @@ class CollectError(RuntimeError):
     """Collection did not produce a complete snapshot."""
 
 
+_RELEASE = re.compile(r"(\d+)\.(\d+)\.(\d+)-(\d+)")
+
+
+def release_of(file_name: str) -> tuple[int, int, int, int] | None:
+    """The release a collector package name carries (``fwd-unix-26.9.0-18.tar.gz`` -> 26, 9, 0, 18)."""
+    match = _RELEASE.search(file_name)
+    return tuple(int(part) for part in match.groups()) if match else None  # type: ignore[return-value]
+
+
+def compatible(server_release: str, file_name: str) -> str:
+    """How a served collector relates to the server: ``exact``, ``lagging`` (same line, older) or ``refuse``."""
+    served, server = release_of(file_name), release_of(server_release)
+    if served is None or server is None:
+        return "exact" if server_release in file_name else "refuse"
+    if served == server:
+        return "exact"
+    if served[:2] == server[:2] and served <= server:
+        return "lagging"
+    return "refuse"
+
+
 def ensure(settings: Settings, fwd: Forward, log) -> Path:
     release = fwd.release()
     home = settings.collector_home / release
@@ -36,8 +60,11 @@ def ensure(settings: Settings, fwd: Forward, log) -> Path:
     home.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=home) as tmp:
         package = fwd.download_collector(Path(tmp))
-        if release not in package.file_name:
-            raise CollectError(f"server runs {release} but served {package.file_name!r}; refusing a mismatched collector")
+        fit = compatible(release, package.file_name)
+        if fit == "refuse":
+            raise CollectError(f"server runs {release} but served {package.file_name!r}; refusing a collector from another release line")
+        if fit == "lagging":
+            log(f"  note: the server runs {release} and serves {package.file_name}; same release line, so it is used")
         with tarfile.open(package.path) as archive:
             archive.extractall(home, filter="data")
     if not binary.is_file():

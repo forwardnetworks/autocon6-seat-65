@@ -9,6 +9,7 @@ which network state it is predicting against.
 from __future__ import annotations
 
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from typing import Any, Self
 
 from forward_sdk import ForwardClient, answer_of
 from forward_sdk.errors import (
+    ForwardConflictError,
     ForwardError,
     ForwardPermissionError,
     ForwardRateLimitError,
@@ -69,6 +71,28 @@ class Prediction:
     reused: bool
 
 
+UNAVAILABLE_WAIT = 90.0  # seconds a just-processed snapshot may take to become queryable
+
+
+def while_unavailable(call, *, sleep=time.sleep, now=time.monotonic, limit: float = UNAVAILABLE_WAIT):
+    """Run ``call``; if Forward says the snapshot cannot be used yet, wait and try again.
+
+    Forward can report a snapshot PROCESSED a moment before path searches and queries accept it: they answer HTTP 409
+    SNAPSHOT_UNAVAILABLE "(currently PROCESSED)". That is a race, not a verdict, so it is retried for up to ``limit``
+    seconds. Any other error, and the same error after the limit, is raised as it was.
+    """
+    deadline = now() + limit
+    delay = 2.0
+    while True:
+        try:
+            return call()
+        except ForwardConflictError as exc:
+            if "SNAPSHOT_UNAVAILABLE" not in str(exc) or now() + delay > deadline:
+                raise
+            sleep(delay)
+            delay = min(delay * 1.5, 10.0)
+
+
 class SnapshotObserver:
     """Answers the evaluator's questions from one snapshot."""
 
@@ -77,17 +101,17 @@ class SnapshotObserver:
 
     def paths(self, req: Requirement, intent: str) -> dict[str, Any]:
         try:
-            response = self._c.path_search.get_paths(
+            response = while_unavailable(lambda: self._c.path_search.get_paths(
                 src_ip=req.src, dst_ip=req.dst, ip_proto=req.ip_proto, dst_port=str(req.port),
                 intent=intent, snapshot_id=self.snapshot_id, max_results=5, max_return_path_results=1,
-            )
+            ))
         except ForwardTimeoutError as exc:
             raise ObserverTimeout(str(exc)) from exc
         return response.model_dump(by_alias=True, mode="json")
 
     def nqe(self, query: str) -> list[dict[str, Any]]:
         try:
-            return [dict(row) for row in self._c.nqe.query(query, snapshot_id=self.snapshot_id)]
+            return [dict(row) for row in while_unavailable(lambda: self._c.nqe.query(query, snapshot_id=self.snapshot_id))]
         except ForwardTimeoutError as exc:
             raise ObserverTimeout(str(exc)) from exc
 
