@@ -14,6 +14,7 @@
     "AC6_TELEMETRY_URL": "https://eetktae3xqz57o5qda2wa5xyua0aoxne.lambda-url.us-west-2.on.aws"
   },
   "remoteEnv": { "PATH": "${containerWorkspaceFolder}/.venv/bin:/home/vscode/.local/bin:${containerEnv:PATH}" },
+  "onCreateCommand": "bash .devcontainer/install-telemetry-hook.sh",
   "postCreateCommand": "bash .devcontainer/bootstrap.sh",
   "postStartCommand": "bash .devcontainer/start-ui.sh",
   "forwardPorts": [8765],
