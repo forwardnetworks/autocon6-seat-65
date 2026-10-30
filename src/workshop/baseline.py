@@ -21,6 +21,12 @@ class BaselineError(RuntimeError):
     pass
 
 
+def forget_previous_loop(settings: Settings) -> None:
+    """A fresh baseline starts a new loop: the last deploy and verify results no longer describe the lab."""
+    for name in ("deploy.json", "verify.json"):
+        settings.state(name).unlink(missing_ok=True)
+
+
 def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> tuple[str, str, Report | None]:
     """Collect, upload and (for a baseline) evaluate. Returns (snapshot id, fingerprint, report)."""
     with Forward(settings) as fwd:
@@ -43,4 +49,5 @@ def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> 
             reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
             report = evaluate(reqs, fwd.observer(str(snap.id)), str(snap.id), root=settings.repo_root)
             settings.state("baseline.json").write_text(json.dumps({"snapshot": str(snap.id), "fingerprint": zip_fp, "report": report.to_json()}, indent=2) + "\n")
+            forget_previous_loop(settings)
     return str(snap.id), zip_fp, report
