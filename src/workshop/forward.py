@@ -186,7 +186,20 @@ class Forward:
 
     def ask_ai(self, prompt: str, snapshot_id: str, *, timeout: float = 300, busy_timeout: float = 300) -> AiAnswer:
         """One Forward AI chat question grounded in ``snapshot_id``, in a new chat. Forward answers one
-        question per user at a time; ``busy_timeout`` waits for this user's other question to finish."""
+        question per user at a time; ``busy_timeout`` waits for this user's other question to finish.
+
+        When the model gives up on a turn, Forward records a fixed sentence as an ordinary answer. The same
+        question in a fresh chat often works, so it is asked once more (never in the same chat: the sentence
+        is then part of the history)."""
+        answer = self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout)
+        if not gave_up(answer):
+            return answer
+        try:
+            return self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout)
+        except AiUnavailable:
+            return answer
+
+    def _ask_once(self, prompt: str, snapshot_id: str, *, timeout: float, busy_timeout: float) -> AiAnswer:
         with _ai_errors("Forward AI chat"):
             conv = self.c.ai.start(prompt, network_id=self.settings.network_id, snapshot_id=snapshot_id, busy_timeout=busy_timeout)
             conv.wait(timeout=timeout)
@@ -230,6 +243,14 @@ class Forward:
             config = self.c.predict_assist.assist_config_diff_summary(before_snapshot_id=before_id, after_snapshot_id=after_id)
             impact = self.c.predict_assist.assist_impact_diff_summary(before_snapshot_id=before_id, after_snapshot_id=after_id)
         return {"config": config.summary or "", "impact": impact.summary or ""}
+
+
+GAVE_UP = "I wasn't able to produce a complete answer"
+
+
+def gave_up(answer: AiAnswer) -> bool:
+    """Forward's fixed reply when the model's turn carried no usable text (the only marker there is)."""
+    return answer.summary.strip().startswith(GAVE_UP)
 
 
 def _answer(chat_id: str, message) -> AiAnswer:
