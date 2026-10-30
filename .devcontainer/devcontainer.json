@@ -10,7 +10,8 @@
   "containerEnv": {
     "WORKSHOP_STATE_DIR": "/workspaces/.autocon6-state",
     "FWD_HEADLESS_HOME": "/workspaces/.autocon6-collector",
-    "FORWARD_VERIFY_TLS": "true"
+    "FORWARD_VERIFY_TLS": "true",
+    "AC6_TELEMETRY_URL": "https://eetktae3xqz57o5qda2wa5xyua0aoxne.lambda-url.us-west-2.on.aws"
   },
   "remoteEnv": { "PATH": "${containerWorkspaceFolder}/.venv/bin:/home/vscode/.local/bin:${containerEnv:PATH}" },
   "postCreateCommand": "bash .devcontainer/bootstrap.sh",

@@ -36,3 +36,10 @@ which predicts every way of retiring r4's statements), with hints you can reveal
 
 Forward AI answers one chat question per person at a time, and a chat answer takes a minute or two. Read the
 evidence while you wait.
+
+## Beta notice
+
+During the beta, the terminal commands you run in this Codespace, and the result of each `workshop` command, are sent to the
+workshop team's log so we can see where people get stuck. Anything that looks like a password, token or seat code is masked
+before it leaves your Codespace. File contents, editor keystrokes and your pull requests' text are not sent (the pull requests
+are visible on GitHub anyway). It is off in any seat that has no `TELEMETRY_KEY` secret.

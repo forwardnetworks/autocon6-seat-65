@@ -29,6 +29,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from workshop import config
@@ -105,16 +106,24 @@ def main(argv: list[str] | None = None) -> int:
     except config.SettingsError as exc:
         log(f"workshop: {exc}")
         return EXIT["ERROR"]
+    from workshop import telemetry
     from workshop.lab import LabError
 
     handler = globals()[f"_{args.command}"]
+    started = time.time()
+    code = EXIT["ERROR"]
     try:
-        return handler(settings, args)
+        code = handler(settings, args)
+        return code
     except KeyboardInterrupt:
-        return 130
+        code = 130
+        return code
     except LabError as exc:  # a missing or stopped lab is a message, not a traceback
         log(f"workshop {args.command}: {exc}")
-        return EXIT["ERROR"]
+        code = EXIT["ERROR"]
+        return code
+    finally:
+        telemetry.report_workshop(args.command, code, started, EXIT)  # beta activity log; silent when not configured
 
 
 def _version() -> int:

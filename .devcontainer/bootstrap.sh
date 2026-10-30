@@ -38,5 +38,16 @@ if [ -n "${FORWARD_URL:-}" ]; then
   .venv/bin/workshop collector || echo "collector download deferred: run 'workshop collector' after your seat secrets are set"
 fi
 
+step "Terminal activity log (beta)"
+# Beta testers' terminal commands and workshop results are logged to the workshop service, secrets masked.
+# Nothing happens unless this seat has its TELEMETRY_KEY secret. See "Beta notice" in README.md.
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  [ -f "$rc" ] || touch "$rc"
+  if ! grep -q "AC6_ROOT" "$rc"; then
+    printf '\nexport AC6_ROOT=%q\n[ -r "$AC6_ROOT/.devcontainer/telemetry.sh" ] && . "$AC6_ROOT/.devcontainer/telemetry.sh"\n' "$PWD" >> "$rc"
+  fi
+done
+if [ -n "${TELEMETRY_KEY:-}" ]; then echo "activity log: on (beta). Terminal commands are sent to the workshop team with secrets masked."; fi
+
 step "Doctor"
 .venv/bin/workshop doctor || true
