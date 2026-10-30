@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-CONTAINERLAB_VERSION=0.79.0
+CONTAINERLAB_VERSION=0.82.0
 NETLAB_VERSION=26.9
 CEOS_IMAGE="${AUTOCON6_CEOS_IMAGE:-ghcr.io/forwardnetworks/autocon6-ceos:4.36.0.1F}"
 
