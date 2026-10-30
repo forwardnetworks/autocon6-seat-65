@@ -17,7 +17,7 @@ Your own lab: four routers, a client and a service, and a Forward network that m
 
 
 The goal is written down in `intent.md`. The tests that prove it are in `requirements/`. The step-by-step exercises are in
-[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next.
+[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next. Something not working? See [`docs/exercises/stuck.md`](docs/exercises/stuck.md).
 
 ## Forward AI advisers (optional)
 

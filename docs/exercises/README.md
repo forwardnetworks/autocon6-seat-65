@@ -23,5 +23,9 @@ Every exercise has a core part (everyone) and **Finished early?** extras. You ne
 You never need to leave the editor: the file Explorer, **Source Control** and **GitHub Pull Requests** panels on the
 left, and the terminal at the bottom. Each Git step also has the equivalent terminal commands, folded away.
 
-The **Your lab** tab (port 8765) always shows where you are and the next command. Stuck? Raise a hand, or ask Forward
-AI in that tab.
+The **Your lab** tab (port 8765) always shows where you are and the next command. Stuck? Look in
+[If something goes wrong](stuck.md). In the room, raise a hand. On your own, you can also ask Forward AI in that tab.
+
+**Working on your own?** The clock times in the headings are for the live room: ignore them and take your time. Each
+exercise's **Behind?** line is the shortest way through. When you reach `workshop verify` saying **MATCH** you have done
+the whole loop. Exercise 6 is optional.

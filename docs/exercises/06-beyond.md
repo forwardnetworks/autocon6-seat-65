@@ -24,3 +24,8 @@ Reset first: `workshop restore && workshop baseline`.
 - Ask a what-if: *"If r2 failed, which path would traffic to 10.20.20.20 take?"* How would you **prove** the answer
   with a prediction instead of trusting it?
 - **Bring your own agent.** Claude Code, Copilot or anything else is welcome here. `AGENTS.md` gives it the rules.
+
+## Tell us how it went
+
+If you are testing this before the event, send Craig what was unclear, slow or broken, with your seat number. At the event,
+tell a proctor on your way out.
