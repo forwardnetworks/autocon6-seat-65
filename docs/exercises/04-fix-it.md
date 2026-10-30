@@ -8,7 +8,7 @@
 
 On your `retire-all` branch (check the bottom-left), correct `candidate/r4-bgp.eos` so it retires only the stale
 advertisements. Then, in **Source Control**, commit with the message `Keep the live service advertisement` and press
-**Sync Changes** to push.
+**Sync Changes** to push. VS Code asks you to confirm it: press **OK**.
 
 <details><summary>Or in the terminal</summary>
 
@@ -34,6 +34,7 @@ When it's green, read the summary again. Confirm each of these:
 Merge the pull request: in the **GitHub Pull Requests** panel, open it and press **Merge Pull Request** (choose
 **Squash and Merge**). The same button is on the PR's page on github.com. The repository only allows the merge once
 **forward/predict** has passed. Try merging `retire-one` to see the refusal, then close `retire-one`.
+Wait for the checks to finish: GitHub can take a few minutes to start them, so press **Refresh** at the top of the pull request page now and then until it says **2 successful checks**. Pressing **Merge Pull Request** opens a form with the commit message; scroll down and press **Squash and Merge** to finish. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab). That also switches you back to `main`.
 
 **Behind?** No red PR of your own? Make the fix directly: retire only the two stale advertisements, open the PR, and merge it when it is green.
 

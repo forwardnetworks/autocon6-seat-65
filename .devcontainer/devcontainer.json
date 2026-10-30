@@ -18,7 +18,7 @@
   "postCreateCommand": "bash .devcontainer/bootstrap.sh",
   "postStartCommand": "bash .devcontainer/start-ui.sh",
   "forwardPorts": [8765],
-  "portsAttributes": { "8765": { "label": "Your lab (workshop ui)", "onAutoForward": "openPreview" } },
+  "portsAttributes": { "8765": { "label": "Your lab (workshop ui)", "onAutoForward": "notify" } },
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "srl-labs.vscode-containerlab", "GitHub.vscode-pull-request-github"],

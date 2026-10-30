@@ -5,6 +5,8 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 | You see | What it means | What to do |
 |---|---|---|
 | GitHub shows **"Oh no, something unexpected went wrong"** for your Codespace | GitHub's side; its status page failed while the Codespace was starting | Click **Restart and reconnect to codespace** on that page. It takes a minute or two. Your files are kept; run `workshop up` again if your lab was running |
+| The **Your lab** pane is blank, or there is no Your lab page | The page is running, but VS Code's built-in browser pane often can't show it | Open the **Ports** tab at the bottom, click the globe icon beside port **8765**, and keep that browser tab open. If there is no port 8765, run `bash .devcontainer/start-ui.sh` |
+| After you merge, VS Code asks what to delete | A clean-up prompt | Choose **Delete Local Branch**. Don't choose *Suspend Codespace* (it stops your lab) |
 | VS Code asks "Do you trust the authors of the files in this folder?" | The first open of a Codespace | **Trust Folder & Continue** |
 | `workshop doctor` has a FAIL line | It says which part | Do what that line says. If it is "you can push to this seat repository", accept your repository invitation, then reopen the Codespace from your seat page |
 | The editor freezes, or shows **"Disconnected. Attempting to reconnect"**, while `workshop up` runs | Starting four routers uses all of the machine's CPU for about two minutes | Give it a few minutes. If it doesn't come back, reload the browser tab. If the lab isn't up afterwards, run `workshop up` again (it is safe to re-run) |

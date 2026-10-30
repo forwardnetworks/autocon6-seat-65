@@ -6,7 +6,7 @@
 
 ### Deploy what was predicted (8 min)
 
-Switch to `main` (bottom-left) and **Sync Changes** in Source Control to pull the merge, then in the terminal:
+Make sure you are on `main` (bottom-left; deleting the local branch in the last exercise already switched you), then pull the merge: click the circular-arrows icon next to the branch name in the status bar and press **OK**. In the terminal:
 ```
 workshop deploy --pr <number> --confirm <first 7 characters of the candidate sha256>
 ```

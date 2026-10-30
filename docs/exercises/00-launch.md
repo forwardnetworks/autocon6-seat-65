@@ -8,7 +8,8 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
 
 ## Core
 
-1. Your Codespace is open (from your seat page). Wait for setup to finish; the **Your lab** tab opens by itself.
+1. Your Codespace is open (from your seat page). Wait for setup to finish, which takes a few minutes: the terminal shows a prompt starting with `(workshop)` when it is done. If VS Code asks whether you trust the folder, choose **Trust Folder & Continue**.
+   The **Your lab** page (port 8765) shows where you are and the next step. If the pane beside your editor is blank, open the **Ports** tab at the bottom, find port **8765**, and click the globe icon to open it in a browser tab. Keep that tab open.
 2. In the terminal:
    ```
    workshop doctor

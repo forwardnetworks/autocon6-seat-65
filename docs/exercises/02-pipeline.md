@@ -22,7 +22,7 @@ Start small: retire **one** stale advertisement.
          no network 10.20.30.0/24
    ```
 3. **Commit and push:** in **Source Control**, type the message `Retire 10.20.30.0/24 on r4`, then press
-   **Commit**. (If it asks to stage changes, answer **Yes**.) Then **Publish Branch**.
+   **Commit**. (If it asks to stage changes, answer **Yes**. A long message wraps and moves the Commit button down a line.) Then **Publish Branch**. A notification may also ask whether VS Code should periodically run `git fetch`: either answer is fine.
 4. **Pull request:** in **GitHub Pull Requests**, press **Create Pull Request** (or the notification that offers it),
    check that it goes from `retire-one` into `main`, and press **Create**.
 
