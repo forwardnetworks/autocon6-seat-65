@@ -20,7 +20,7 @@
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "srl-labs.vscode-containerlab", "GitHub.vscode-pull-request-github"],
-      "settings": { "workbench.startupEditor": "readme", "files.autoSave": "afterDelay" }
+      "settings": { "workbench.startupEditor": "readme", "files.autoSave": "afterDelay", "containerlab.showWelcomePage": false }
     },
     "codespaces": { "openFiles": ["README.md"] }
   }
