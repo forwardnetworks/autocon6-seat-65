@@ -15,6 +15,20 @@ Monday, November 16, 2026 · 9:00 AM–1:00 PM · hands-on
 | 12:30–12:50 | Deploy and Verify | [5 · Deploy, collect, compare](05-deploy-verify.md) | `workshop verify` says MATCH |
 | 12:50–1:00 | Wrap-Up and Q&A | [6 · Beyond the lab](06-beyond.md) | |
 
+## Why we're doing this
+
+Pushing a change to the network is easy. Knowing what it will do is the hard part.
+
+A syntax check tells you the config is legal. A reviewer reads a diff of one device. Neither can tell you that removing a
+line on r4 takes a route away from r1, two hops away, until the change is live. That gap is what this workshop is about.
+
+Today you put a test stage in front of the deploy. It asks what the **network** will do after the change, using a model
+Forward builds from the real configs, before any router is touched. The lab is small, but the loop is the one you would run
+on a real change: **Baseline → Change → Predict → Approve → Deploy → Verify**.
+
+Each exercise starts with **why it matters** and ends with **what you just proved**. If you only have a minute, read those
+two parts. The slides tell the same story: they are linked from your seat page.
+
 **The critical path** if you fall behind: 0 → 1 → 3 → 4 → 5. Exercise 2 can be skipped. Each exercise says what
 to do if you're behind.
 

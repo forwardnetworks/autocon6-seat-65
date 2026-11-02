@@ -2,6 +2,8 @@
 
 *About 30 minutes. Goal: know the network's good behavior before you change anything, and have Forward model it.*
 
+**Why this matters.** A prediction only means something against a known "before". The baseline is a snapshot of the network at a moment you can name, plus tests that say what has to stay true. If nobody writes down what must stay true, no tool can tell you a change broke it. Pipelines usually go straight to the change; this step is what makes a prediction mean something.
+
 ## Core
 
 ### The topology (5 min)
@@ -44,6 +46,12 @@ baseline tests run against that model. Every line should say **PASS**.
 
 `STALE-KNOWN` is the one to read. It lists r4 `network` statements whose prefixes r4 has no route for. These are
 stale advertisements, and retiring them is today's change request.
+
+### What you just proved
+
+You know the network's good behavior in a form a machine can check, and Forward holds a model of it. Every change from here is judged against that. `STALE-KNOWN` shows one more thing: today's change request was found by a query, not by reading configs.
+
+**At work:** pick a service you care about and write down three things that must stay true after any change: what must be reachable, what must stay blocked, and the path it should take.
 
 **Behind?** The one must-do is `workshop baseline` with every line **PASS**. Skip the router tour and the AI prompts.
 

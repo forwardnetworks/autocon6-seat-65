@@ -2,6 +2,8 @@
 
 *About 20 minutes. Goal: the exact predicted change on the routers, and proof that reality matched the prediction.*
 
+**Why this matters.** Approval is only worth something if what gets deployed is what was approved. Deploy checks that the pull request is merged, that the candidate and the requirements haven't changed, that your baseline is current and that the routers haven't drifted. Then verify closes the loop: it compares what was predicted with what is really there.
+
 ## Core
 
 ### Deploy what was predicted (8 min)
@@ -33,6 +35,12 @@ Verify does four things:
 4. compares each result with its prediction
 
 **MATCH** closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
+
+### What you just proved
+
+The model said which tests would pass, and the real network, collected again, agreed. That is the evidence that lets you trust the next prediction. `MATCH` isn't only a pass, it's a measurement of how good the prediction was.
+
+**At work:** this is the part you can keep even if you change every tool: write down what you expect, deploy, and compare.
 
 **Behind?** Deploy is three steps: switch to `main` and sync, run the command from the green check's summary, then `workshop verify`.
 

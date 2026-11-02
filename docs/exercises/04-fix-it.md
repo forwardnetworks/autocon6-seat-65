@@ -2,6 +2,8 @@
 
 *About 30 minutes. Goal: a corrected change whose prediction passes every test, and an approval.*
 
+**Why this matters.** Catching the problem is half of it. The other half is that the fix goes through the same gate. Nobody gets a shortcut around it: not you, not a deadline, not an AI draft.
+
 ## Core
 
 ### Correct the change (10 min)
@@ -35,6 +37,10 @@ Merge the pull request: in the **GitHub Pull Requests** panel, open it and press
 **Squash and Merge**). The same button is on the PR's page on github.com. The repository only allows the merge once
 **forward/predict** has passed. Try merging `retire-one` to see the refusal, then close `retire-one`.
 Wait for the checks to finish: GitHub can take a few minutes to start them, so press **Refresh** at the top of the pull request page now and then until it says **2 successful checks**. Pressing **Merge Pull Request** opens a form with the commit message; scroll down and press **Squash and Merge** to finish. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab). That also switches you back to `main`.
+
+### What you just proved
+
+The only way to merge is a green check, so approval is a person looking at evidence and not a hunch. That holds no matter who wrote the change or when.
 
 **Behind?** No red PR of your own? Make the fix directly: retire only the two stale advertisements, open the PR, and merge it when it is green.
 

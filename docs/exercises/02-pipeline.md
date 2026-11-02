@@ -3,6 +3,8 @@
 *About 55 minutes. Goal: see how a change travels from Git to Forward Predict and back to the pull request, and be
 able to explain every line of the result.*
 
+**Why this matters.** Most teams already review changes in pull requests. This puts a test inside the review. The code and the requirements come from `main`, not from your pull request, because a test the author can edit isn't a gate.
+
 ## Core
 
 ### Make a small change (10 min)
@@ -71,6 +73,10 @@ cat evidence/evidence.json
 ### Discuss (10 min)
 
 Why do the code and requirements come from `main` and not from the PR? What would a PR author gain if they didn't?
+
+### What you just proved
+
+A change went from a branch to a verdict without anyone reading router configs by hand, and nothing was deployed. The verdict was a failing `STALE-CLEARED`, which means "not done yet", not "broken". The gate doesn't care which: only PASS gets through.
 
 **Behind?** This exercise can be skipped: exercise 3 needs only your baseline. Go straight there. You can read the workflow later.
 

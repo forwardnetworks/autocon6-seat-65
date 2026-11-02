@@ -1,5 +1,11 @@
 # 6 · Beyond the lab (12:50–1:00)
 
+## Monday morning
+
+You don't need the whole pipeline to start. Pick one kind of change you make often and write three requirements for it:
+what must stay reachable, what must stay blocked, and what path it should take. Run Predict on every pull request,
+report-only at first, and make the check required once you trust it. Keep AI as an adviser: the requirements decide.
+
 ## The same pattern, at scale
 
 - **More tests, same gate.** Each requirement is a behavioral test: a flow, a route, a path, an NQE query. A

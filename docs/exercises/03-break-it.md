@@ -3,6 +3,8 @@
 *About 45 minutes. Goal: watch the pipeline stop a regression that is perfectly valid configuration, then find
 exactly why.*
 
+**Why this matters.** This is the failure the whole workshop is about: a change that is valid, three lines long and looks right in review, and it cuts off the service. The line you change is on r4. The damage lands on r1, two hops away. A syntax check passes it, and a reviewer reading r4's diff has no reason to stop it. Here nothing reaches a router, so the only cost is a red check.
+
 ## Core
 
 ### Finish the job the tempting way (10 min)
@@ -62,6 +64,12 @@ workshop ask --prompt predicted-why-broken
 workshop ask --prompt predicted-r1-routes
 ```
 The requirements, evaluated on the predicted network, are the judge. An AI answer is advice.
+
+### What you just proved
+
+A real class of mistake was caught in a pull request, before deploy, by a test someone wrote down, and you can point at the line that caused it.
+
+**At work:** think of the last change you approved because the diff looked fine. A check like this asks the question the diff can't.
 
 **Behind?** Do steps 1 to 3 (make the change, open the PR, see it go red) and read the check's summary. Skip the AI discussion.
 

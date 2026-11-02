@@ -6,6 +6,8 @@ minutes.*
 Configuration validation asks "is this config well formed?" **Behavioral validation** asks "what will the network do
 with it?" Today that second question gets its own stage in the pipeline, and it runs before deploy.
 
+**Why this matters.** Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today. On a network that carries traffic you can't, which is part of why changes there feel risky.
+
 ## Core
 
 1. Your Codespace is open (from your seat page). Wait for setup to finish, which takes a few minutes: the terminal shows a prompt starting with `(workshop)` when it is done. If VS Code asks whether you trust the folder, choose **Trust Folder & Continue**.
@@ -29,6 +31,10 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
 - **A Forward network on fwd.app:** Forward's mathematical model of your lab, built from what the headless collector
   reads off the routers.
 - **This GitHub repository:** where changes are proposed, predicted and approved.
+
+### What you just proved
+
+You have an isolated lab and a Forward network that only you can touch. Nothing you do today affects anyone else, and you can rebuild it in minutes.
 
 **Behind?** The one must-do is `workshop up` running. Everything else can wait.
 
