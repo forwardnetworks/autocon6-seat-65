@@ -37,7 +37,9 @@ jobs:
       - name: Take only the candidate from the pull request
         run: |
           git fetch --no-tags origin "$HEAD_SHA"
-          outside=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" | grep -v '^candidate/' || true)
+          # Three dots: what this pull request changed since it branched (the merge base), not whatever has reached main since. Otherwise a
+          # template update on main would make every open pull request look as if it changed those files.
+          outside=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" | grep -v '^candidate/' || true)
           if [ -n "$outside" ]; then
             echo "::error::This pull request changes files outside candidate/: $(echo $outside)"
             { echo "## Forward Predict: ⚠️ ERROR"; echo; echo "Only files under \`candidate/\` may change in a pull request. Also changed:"; echo; echo "$outside" | sed 's/^/- /'; } >> "$GITHUB_STEP_SUMMARY"
