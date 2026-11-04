@@ -30,6 +30,10 @@ Start small: retire **one** stale advertisement.
 4. **Pull request:** in **GitHub Pull Requests**, press **Create Pull Request** (or the notification that offers it),
    check that it goes from `retire-one` into `main`, and press **Create**.
 
+> **From the lab page.** On the **Predict** step, **Open pull request** does steps 1 to 4 for you: it commits only
+> `candidate/r4-bgp.eos` on a new branch (never `main`), pushes it and opens the pull request. Reviewing and merging
+> still happen on GitHub.
+
 <details><summary>Or in the terminal</summary>
 
 ```

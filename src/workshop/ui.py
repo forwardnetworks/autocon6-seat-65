@@ -492,6 +492,46 @@ class Board:
         draft.replace(mine)
         return {"ok": True, "count": len(loaded.requirements), "text": mine.read_text(encoding="utf-8")}
 
+    def open_pr(self, message: str) -> dict[str, Any]:
+        """Open the pull request for the candidate, the way the exercises teach: a new branch, a commit of ``candidate/r4-bgp.eos`` and
+        nothing else, a push, and the PR. It never commits to main, never stages anything but the candidate, and reuses the open PR if
+        this branch already has one (a second click after an edit just pushes the fix to it)."""
+        root = self.settings.repo_root
+        path = root / "candidate" / "r4-bgp.eos"
+
+        def run(*cmd: str, what: str) -> str:
+            result = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=90, check=False)
+            if result.returncode != 0:
+                raise RuntimeError(f"{what} did not work: {(result.stderr or result.stdout).strip()[:240] or 'no message'}")
+            return result.stdout.strip()
+
+        try:
+            cand = candidate.load(path)
+        except (candidate.CandidateError, OSError) as exc:
+            raise ValueError(f"the candidate is not ready: {str(exc).split(': ', 1)[-1]}") from exc
+        if not cand.changes:
+            raise ValueError("the candidate has no change lines yet: write the change first")
+        title = " ".join(message.split())[:72] or "Retire r4's advertisements"
+        branch = run("git", "rev-parse", "--abbrev-ref", "HEAD", what="reading the branch")
+        if branch in ("main", "master", "HEAD"):
+            branch = f"change-{cand.sha256[:7]}"
+            exists = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"], cwd=root, capture_output=True, check=False).returncode == 0
+            run("git", "switch", branch, what="switching branch") if exists else run("git", "switch", "-c", branch, what="creating the branch")
+        run("git", "add", "--", "candidate/r4-bgp.eos", what="staging the candidate")
+        staged = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=root, check=False).returncode != 0
+        if staged:
+            run("git", "commit", "-m", title, what="committing")
+        run("git", "push", "-u", "origin", "HEAD", what="pushing the branch")
+        existing = json.loads(run("gh", "pr", "list", "--head", branch, "--state", "open", "--json", "number,url", what="looking for the pull request") or "[]")
+        if existing:
+            return {"branch": branch, "number": existing[0]["number"], "url": existing[0]["url"], "created": False, "pushed": staged}
+        if not staged and run("git", "rev-list", "--count", "origin/main..HEAD", what="comparing with main") == "0":
+            raise ValueError("nothing to open: the candidate file is the same as main's. Change it first")
+        url = run("gh", "pr", "create", "--base", "main", "--head", branch, "--title", title,
+                  "--body", "Opened from the lab page. This pull request changes only candidate/r4-bgp.eos; the forward/predict check judges it.", what="opening the pull request")
+        number = url.rstrip("/").rsplit("/", 1)[-1]
+        return {"branch": branch, "number": int(number) if number.isdigit() else 0, "url": url.splitlines()[-1], "created": True, "pushed": staged}
+
     def write_candidate(self, retire: list[str]) -> dict[str, Any]:
         """Write candidate/r4-bgp.eos from a checklist: ``no network`` for each chosen r4 prefix."""
         bad = [p for p in retire if p not in R4_PREFIXES]
@@ -641,10 +681,10 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                 return
             # A custom header cannot be sent cross-site without a CORS preflight, which this server never
             # approves -- so only this page can start a question.
-            if self.path not in ("/api/ask", "/api/run", "/api/candidate", "/api/catchup", "/api/requirement") or self.headers.get("X-Workshop-UI") != "1":
+            if self.path not in ("/api/ask", "/api/run", "/api/candidate", "/api/catchup", "/api/requirement", "/api/pr") or self.headers.get("X-Workshop-UI") != "1":
                 self._json(HTTPStatus.FORBIDDEN, {"error": "forbidden"})
                 return
-            if self.path in ("/api/run", "/api/candidate", "/api/catchup", "/api/requirement"):
+            if self.path in ("/api/run", "/api/candidate", "/api/catchup", "/api/requirement", "/api/pr"):
                 try:
                     body = json.loads(self.rfile.read(max(min(int(self.headers.get("Content-Length", 0)), 2048), 0)) or b"{}")
                     if not isinstance(body, dict):
@@ -657,6 +697,8 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                             raise ValueError("catching up resets your lab and your candidate: confirm first")
                         job = board.catch_up(str(body.get("step", "")))
                         self._json(HTTPStatus.ACCEPTED, {"job": job["id"]})
+                    elif self.path == "/api/pr":
+                        self._json(HTTPStatus.OK, board.open_pr(str(body.get("message", ""))))
                     elif self.path == "/api/requirement":
                         port = int(body.get("port", 0))
                         self._json(HTTPStatus.OK, board.write_requirement(str(body.get("id", "")), port, str(body.get("expect", "")), str(body.get("title", ""))))

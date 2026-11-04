@@ -317,6 +317,7 @@ const TIPS = [
 let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
+let prMsg = "Retire r4's stale advertisements", prNote = "";
 let lastLineAt = Date.now();
 const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
 let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
@@ -517,12 +518,19 @@ function renderGuide(s, key) {
     const label = { "10.20.20.0/24": "r4's service prefix", "10.20.30.0/24": "a leftover", "10.20.40.0/24": "a leftover" };
     extra = `<div class="gsec builder"><h3>Choose what to retire</h3>${(s.r4_prefixes || []).map((p) => `<label><input type="checkbox" value="${p}" ${sel.has(p) ? "checked" : ""}><span><code>${p}</code><small>${label[p]}: you decide, the next steps will tell you whether you were right</small></span></label>`).join("")}
       <div class="runrow"><button id="write-cand">Write candidate/r4-bgp.eos</button><span class="muted" id="cand-note"></span></div>
-      <div class="note muted">This only edits the file. Nothing reaches a router. To go through a pull request instead, commit it as the exercise shows.</div></div>`;
+      <div class="note muted">This only edits the file. Nothing reaches a router. To predict it as the pipeline does, open a pull request from the next step (or commit it yourself, as the exercise shows).</div></div>`;
   }
   if (key === "deploy") {
     extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
       <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false"> <button id="dep-go" ${s.job && !s.job.done ? "disabled" : ""}>Deploy</button></div>
       <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
+  }
+  if (key === "predict") {
+    extra = `<div class="gsec"><h3>Or open a pull request: how the pipeline does it</h3>
+      <div class="muted">This commits only <code>candidate/r4-bgp.eos</code> on a new branch (never main), pushes it and opens the pull request. The forward/predict check then starts by itself on GitHub: follow it in the next step. Reviewing and merging stay on GitHub.</div>
+      <div class="runrow"><input type="text" id="pr-msg" size="36" maxlength="72" placeholder="what this change does" value="${esc(prMsg)}"> <button id="pr-go">Open pull request</button></div>
+      <div id="pr-out" class="muted">${prNote}</div>
+      <div class="termline">In the terminal: <code>git switch -c my-change</code>, <code>git commit -am "…"</code>, <code>git push -u origin HEAD</code>, <code>gh pr create --fill</code></div></div>`;
   }
   if (key === "approve") {
     extra = `<div class="gsec"><div class="term">Approving happens on GitHub: open your pull request in the <b>GitHub Pull Requests</b> panel, read the forward/predict result, and <b>Squash and Merge</b> only a green check.</div></div>`;
@@ -569,6 +577,15 @@ function renderGuide(s, key) {
       guideSig = ""; refresh();
     };
   }
+  const prb = $("pr-go");
+  if (prb) prb.onclick = async () => {
+    prMsg = $("pr-msg").value; prb.disabled = true; prb.textContent = "Opening…"; $("pr-out").innerHTML = '<span class="spinner"></span>Committing, pushing and opening the pull request (a few seconds)…';
+    const r = await post("/api/pr", { message: prMsg });
+    prNote = r.error ? `<div class="banner warn">${esc(r.error)}</div>`
+      : r.created ? `Opened <b>PR #${esc(r.number)}</b> from branch <code>${esc(r.branch)}</code>: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>. forward/predict starts on its own: follow it in the <b>Approve</b> step.`
+      : `Updated <b>PR #${esc(r.number)}</b> (branch <code>${esc(r.branch)}</code>)${r.pushed ? " with your new commit" : ": nothing new to push"}: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`;
+    guideSig = ""; renderGuide(state, key); refresh();
+  };
   const d = $("dep-go");
   if (d) d.onclick = () => runStep({ step: "deploy", pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() });
   showOut();
