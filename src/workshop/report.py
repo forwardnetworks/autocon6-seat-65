@@ -108,6 +108,40 @@ def verify_close(outcome: str, rows: list[dict[str, Any]]) -> list[str]:
             "The model and the network disagree, which is the case this method exists to surface. Investigate, and `workshop restore` if it matters."]
 
 
+def tagline(kind: str, outcome: str, failing: int = 0) -> list[str]:
+    """One light line under a result. Never replaces the explanation above it, and says nothing for outcomes that are not good news
+    or bad news in the plain sense (STALE, ERROR, INCONCLUSIVE): those need the words, not a joke."""
+    lines = {
+        ("baseline", "PASS"): "Clean slate. Now go break something, on paper.",
+        ("predict", "PASS"): "Green light from the model. Now a human gets to say yes.",
+        ("predict", "FAIL"): "Caught before it touched a router. That is the whole point.",
+        ("verify", "MATCH"): "Predicted, deployed, verified. No surprises.",
+        ("verify", "MISMATCH"): "Surprises are exactly what verify is for.",
+    }
+    line = lines.get((kind, outcome))
+    return ["", line] if line and (kind != "predict" or outcome != "FAIL" or failing) else []
+
+
+WAITING = (
+    "Good time to refill your coffee.",
+    "Somewhere a very patient computer is doing real work. Hang tight.",
+    "Slow here is the point: a minute of checking beats an outage.",
+    "Routers, models and CI all take a moment. That is the job.",
+    "Predict never guesses. It computes, and computing takes a moment.",
+)
+
+
+def yolo_lines() -> list[str]:
+    """`workshop yolo`: deploys nothing, ever, and says what the real deploy needs."""
+    return ["NOT DEPLOYED (ERROR): no prediction, no deploy.", "",
+            "YOLO is not a change process. `workshop deploy` goes only when all of these hold:",
+            "  1. Predict judged this exact candidate PASS, with a baseline that is still fresh.",
+            "  2. A person said yes: the pull request is merged and its forward/predict check is green.",
+            "  3. You typed the candidate's 7-character hash with --confirm.",
+            "  4. No router changed since the baseline (the drift check).",
+            "", "Start here: `workshop status` tells you the next step."]
+
+
 def matrix_notes(rows, titles: dict[str, str]) -> list[str]:
     """Under the matrix grid: what each column is, and for every combination why it passed or failed."""
     out = ["", "Columns (the first word of each requirement):"]

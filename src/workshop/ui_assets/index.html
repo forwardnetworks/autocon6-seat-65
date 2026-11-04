@@ -319,6 +319,7 @@ let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
 let prMsg = "Retire r4's stale advertisements", prNote = "";
 let lastLineAt = Date.now();
+const WAITING = ["Good time to refill your coffee.", "Somewhere a very patient computer is doing real work. Hang tight.", "Slow here is the point: a minute of checking beats an outage.", "Routers, models and CI all take a moment. That is the job.", "Predict never guesses. It computes, and computing takes a moment."];
 const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
 let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
 
@@ -679,7 +680,7 @@ function showOut() {
   if (!jobBelongsHere()) { box.innerHTML = ""; return; }
   const quiet = !job.done && Date.now() - lastLineAt > QUIET_AFTER;
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : `<span class="spinner"></span>running… ${job.secs ? job.secs + "s" : ""}`;
-  const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.</div>` : "";
+  const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.<br><em class="muted">${esc(WAITING[Math.floor(Date.now() / 15000) % WAITING.length])}</em></div>` : "";
   box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3>${patience}<pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }

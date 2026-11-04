@@ -47,7 +47,7 @@ def banner(settings: config.Settings, action: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="workshop", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="command")
     sub.add_parser("doctor", help="check tools, Forward access and the lab")
     sub.add_parser("up", help="start the lab and apply the baseline")
     sub.add_parser("down", help="stop and remove the lab")
@@ -106,10 +106,15 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="where this lab is in the loop")
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
     sub.add_parser("version", help="print versions")
+    sub.add_parser("yolo")  # no help text, so it is not listed: a joke that teaches the gate, and it always refuses
     args = parser.parse_args(argv)
 
     if args.command == "version":
         return _version()
+    if args.command == "yolo":
+        for line in report_.yolo_lines():
+            log(line)
+        return EXIT["ERROR"]
     try:
         settings = config.load()
     except config.SettingsError as exc:
@@ -229,7 +234,7 @@ def _baseline(settings: config.Settings, args) -> int:
         log(line)
     log("")
     log(f"baseline: {report.status.value}")
-    for line in report_.baseline_close(report.status.value):
+    for line in report_.baseline_close(report.status.value) + report_.tagline("baseline", report.status.value):
         log(line)
     return EXIT[report.status.value]
 
@@ -273,7 +278,8 @@ def _predict(settings: config.Settings, args) -> int:
         else:
             log("")
             log("No predicted network was built, so there are no requirements or routing changes to show for this change.")
-        for line in report_.predict_close(m.status, [r["id"] for r in m.results if r["status"] == "FAIL"]):
+        failing = [r["id"] for r in m.results if r["status"] == "FAIL"]
+        for line in report_.predict_close(m.status, failing) + report_.tagline("predict", m.status, len(failing)):
             log(line)
     if m.deployable:
         target = f"--pr {args.pr}" if args.pr else f"--evidence {out / 'evidence.json'}"
@@ -335,7 +341,7 @@ def _verify(settings: config.Settings, args) -> int:
             log(line)
     log("")
     log(f"verify: {result['outcome']} (post-change snapshot {result['post_snapshot_id']})")
-    for line in report_.verify_close(result["outcome"], result["rows"]):
+    for line in report_.verify_close(result["outcome"], result["rows"]) + report_.tagline("verify", result["outcome"]):
         log(line)
     return 0 if result["outcome"] == "MATCH" else EXIT["FAIL"]
 
