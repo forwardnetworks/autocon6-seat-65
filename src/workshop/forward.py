@@ -8,6 +8,7 @@ which network state it is predicting against.
 
 from __future__ import annotations
 
+import json
 import re
 import time
 from collections.abc import Iterator
@@ -94,10 +95,24 @@ def while_unavailable(call, *, sleep=time.sleep, now=time.monotonic, limit: floa
 
 
 class SnapshotObserver:
-    """Answers the evaluator's questions from one snapshot."""
+    """Answers the evaluator's questions from one snapshot.
 
-    def __init__(self, client: ForwardClient, snapshot_id: str) -> None:
-        self._c, self.snapshot_id = client, snapshot_id
+    Every raw, structured answer Forward gives (path searches as the SDK's typed models dumped to JSON, NQE
+    result rows) is also written to ``sink`` so the lab page can show exactly what Forward said. The file is
+    for people to read: nothing in the gate reads it.
+    """
+
+    def __init__(self, client: ForwardClient, snapshot_id: str, sink: Path | None = None) -> None:
+        self._c, self.snapshot_id, self._sink = client, snapshot_id, sink
+        self.calls: list[dict[str, Any]] = []
+
+    def _record(self, call: str, request: dict[str, Any], response: Any) -> None:
+        self.calls.append({"call": call, "request": request, "response": response})
+        if self._sink is not None:
+            try:
+                self._sink.write_text(json.dumps({"snapshot_id": self.snapshot_id, "calls": self.calls}, indent=1, default=str) + "\n")
+            except OSError:
+                pass  # display only; never a reason to fail a check
 
     def paths(self, req: Requirement, intent: str) -> dict[str, Any]:
         try:
@@ -107,13 +122,18 @@ class SnapshotObserver:
             ))
         except ForwardTimeoutError as exc:
             raise ObserverTimeout(str(exc)) from exc
-        return response.model_dump(by_alias=True, mode="json")
+        dumped = response.model_dump(by_alias=True, mode="json")
+        self._record("path_search.get_paths", {"requirement": req.id, "src_ip": req.src, "dst_ip": req.dst, "ip_proto": req.ip_proto,
+                                               "dst_port": req.port, "intent": intent}, dumped)
+        return dumped
 
     def nqe(self, query: str) -> list[dict[str, Any]]:
         try:
-            return [dict(row) for row in while_unavailable(lambda: self._c.nqe.query(query, snapshot_id=self.snapshot_id))]
+            rows = [dict(row) for row in while_unavailable(lambda: self._c.nqe.query(query, snapshot_id=self.snapshot_id))]
         except ForwardTimeoutError as exc:
             raise ObserverTimeout(str(exc)) from exc
+        self._record("nqe.query", {"query": query}, rows)
+        return rows
 
 
 class Forward:
@@ -157,7 +177,7 @@ class Forward:
         return fingerprint.of(self.configs(snapshot_id))
 
     def observer(self, snapshot_id: str) -> SnapshotObserver:
-        return SnapshotObserver(self.c, snapshot_id)
+        return SnapshotObserver(self.c, snapshot_id, sink=self.settings.state(f"forward-{snapshot_id}.json"))
 
     def predict(self, candidate: Candidate, baseline_id: str, name: str, description: str) -> Prediction:
         """Predict ``candidate`` against ``baseline_id`` in change set ``name``.

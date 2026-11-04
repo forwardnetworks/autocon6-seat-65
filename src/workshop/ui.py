@@ -42,6 +42,27 @@ SHA7 = re.compile(r"^[0-9a-f]{7}$")
 R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
 # What the page may start. Anything else (down, collector, agent...) stays a typed command.
 STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "deploy", "verify", "restore", "status")
+MAX_ARTIFACT = 60_000
+# What each step uses and produces, shown on the page so people see exactly what they are deploying. Paths are
+# repo-relative; "state:" paths live in the seat's state folder; "forward:<which>" is Forward's raw answers.
+ARTIFACTS: dict[str, list[tuple[str, str, str, bool]]] = {
+    "lab": [("The topology netlab builds: four routers, a client, a service and their links", "lab/topology.yml", "yaml", True),
+            ("r4's baseline configuration, as NAPALM applies it", "lab/baseline/r4.eos", "text", False)],
+    "baseline": [("What must stay true: the baseline requirements", "requirements/baseline.yml", "yaml", True),
+                 ("The NQE query that finds stale advertisements", "nqe/stale_bgp_advertisements.nqe", "text", False),
+                 ("What Forward said about the baseline (structured)", "forward:baseline", "json", False)],
+    "change": [("Why: the change request", "intent.md", "text", False),
+               ("The change you are making (the exact lines Predict judges and the router receives)", "candidate/r4-bgp.eos", "text", True)],
+    "predict": [("The change being predicted", "candidate/r4-bgp.eos", "text", True),
+                ("The requirements the prediction is judged against", "requirements/candidate.yml", "yaml", False),
+                ("The verdict, as evidence.json", "evidence:", "json", False),
+                ("What Forward said about the predicted network (structured)", "forward:predicted", "json", False)],
+    "approve": [("The pipeline that runs on your pull request", ".github/workflows/forward-predict.yml", "yaml", True)],
+    "deploy": [("The change that will be sent to r4", "candidate/r4-bgp.eos", "text", True),
+               ("What was deployed, with the router's own diff", "state:deploy.json", "json", True)],
+    "verify": [("The result compared with the prediction", "state:verify.json", "json", True),
+               ("What Forward said about the real network afterwards (structured)", "forward:post", "json", False)],
+}
 EXIT_WORDS = {0: "PASS", 1: "FAIL", 2: "ERROR", 3: "INCONCLUSIVE", 4: "STALE"}
 
 
@@ -280,6 +301,37 @@ class Board:
             "job": self.jobs.summary(), "r4_prefixes": list(R4_PREFIXES),
         }
 
+    def artifacts(self, step: str) -> list[dict[str, Any]]:
+        out = []
+        for title, ref, lang, opened in ARTIFACTS.get(step, []):
+            path: Path | None
+            if ref.startswith("state:"):
+                path = self.settings.state(ref[6:])
+            elif ref == "evidence:":
+                path = self.evidence
+            elif ref.startswith("forward:"):
+                try:
+                    path = self.settings.state(f"forward-{self.snapshot_for(ref[8:])}.json")
+                except LookupError:
+                    path = None
+            else:
+                path = self.settings.repo_root / ref
+            text = ""
+            if path is not None:
+                try:
+                    text = path.read_text(errors="replace")
+                except OSError:
+                    text = ""
+            if lang == "json" and text:
+                try:
+                    text = json.dumps(json.loads(text), indent=2)
+                except ValueError:
+                    pass
+            shown = ref if not ref.startswith(("forward:", "state:", "evidence:")) else (path.name if path else "not collected yet")
+            out.append({"title": title, "path": shown, "lang": lang, "open": opened, "text": text[:MAX_ARTIFACT],
+                        "truncated": len(text) > MAX_ARTIFACT, "missing": not text})
+        return out
+
     def write_candidate(self, retire: list[str]) -> dict[str, Any]:
         """Write candidate/r4-bgp.eos from a checklist: ``no network`` for each chosen r4 prefix."""
         bad = [p for p in retire if p not in R4_PREFIXES]
@@ -395,6 +447,9 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                 self._send(HTTPStatus.OK, (ASSETS / "fn-logo.svg").read_bytes(), "image/svg+xml")
             elif self.path == "/api/state":
                 self._json(HTTPStatus.OK, board.state())
+            elif self.path.startswith("/api/artifacts"):
+                q = parse_qs(urlparse(self.path).query)
+                self._json(HTTPStatus.OK, board.artifacts((q.get("step") or [""])[0]))
             elif self.path == "/api/guide":
                 self._send(HTTPStatus.OK, (ASSETS / "guide.json").read_bytes(), "application/json")
             elif self.path.startswith("/api/job"):

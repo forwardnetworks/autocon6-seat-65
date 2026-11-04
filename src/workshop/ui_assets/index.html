@@ -173,6 +173,10 @@ details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padd
 .builder label { display:flex; gap:8px; align-items:flex-start; padding:6px 0; }
 .builder small { color:var(--txt-2); display:block; }
 input[type=text] { font:inherit; padding:6px 8px; border-radius:var(--radius); border:1px solid var(--divider); background:var(--raised); color:var(--txt); }
+.art { margin:6px 0; border:1px solid var(--divider); border-radius:var(--radius); background:var(--raised); }
+.art > summary { cursor:pointer; padding:7px 10px; font-weight:500; } .art > summary code { margin-left:6px; font-weight:400; }
+.art pre { margin:0; padding:10px; background:var(--group); max-height:340px; overflow:auto; white-space:pre; border-top:1px solid var(--divider); }
+.art .none { padding:8px 10px; color:var(--txt-2); border-top:1px solid var(--divider); }
 .term { background:var(--group); border-radius:var(--radius); padding:8px 10px; font-size:13px; }
 footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 24px; }
 </style>
@@ -393,6 +397,7 @@ function renderGuide(s, key) {
     <div class="nafrow">Framework block: ${naf}</div>
     ${failed ? `<div class="banner bad">${esc(stage.detail)}</div>` : ""}
     <div>${esc(g.what)}</div>
+    <div class="gsec" id="arts"><h3>What you're working with</h3><div class="muted">loading…</div></div>
     ${(g.before || []).length ? `<div class="gsec"><h3>Before you run it: what do you expect?</h3>${quiz(g.before, "b")}</div>` : ""}
     ${runs ? `<div class="gsec"><h3>Run it</h3><div class="runrow">${runs}</div>${notes}</div>` : ""}
     ${extra}
@@ -414,6 +419,17 @@ function renderGuide(s, key) {
   const d = $("dep-go");
   if (d) d.onclick = () => runStep({ step: "deploy", pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() });
   showOut();
+  loadArts(key);
+}
+
+async function loadArts(key) {
+  let items = [];
+  try { items = await (await fetch(`/api/artifacts?step=${encodeURIComponent(key)}`)).json(); } catch { return; }
+  const box = $("arts");
+  if (!box || (selected || (state.stages.find((x) => x.state !== "done") || {}).key || "done") !== key) return;
+  if (!items.length) { box.hidden = true; return; }
+  box.innerHTML = `<h3>What you're working with</h3>` + items.map((a) => `<details class="art"${a.open && !a.missing ? " open" : ""}><summary>${esc(a.title)} <code>${esc(a.path)}</code></summary>${
+    a.missing ? `<div class="none">Not here yet. It appears once you have run this step.</div>` : `<pre>${esc(a.text)}${a.truncated ? "\n… (shortened)" : ""}</pre>`}</details>`).join("");
 }
 
 async function post(path, body) {
