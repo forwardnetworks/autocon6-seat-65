@@ -245,13 +245,17 @@ def _predict(settings: config.Settings, args) -> int:
     git = {k: v for k, v in {"pr": args.pr, "head_sha": args.head_sha, "base_sha": args.base_sha,
                              "repo": os.environ.get("GITHUB_REPOSITORY"), "run_id": os.environ.get("GITHUB_RUN_ID"),
                              "actor": os.environ.get("GITHUB_ACTOR")}.items() if v}
-    m = predict.run(settings, predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git))
+    m = predict.run(settings, predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git), log=log)
     out = Path(args.out)
     m.write(out / "evidence.json")
     routing = None
     if m.predicted_snapshot_id:
         with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only: short timeout, no retries
             routing = report_.routing_table(fwd.c, str(m.baseline_snapshot_id), str(m.predicted_snapshot_id))
+    for snap in {str(m.baseline_snapshot_id), str(m.predicted_snapshot_id)} - {"", "None"}:  # Forward's raw answers travel with the evidence
+        raw = settings.state_dir / f"forward-{snap}.json"
+        if raw.is_file():
+            shutil.copy(raw, out / raw.name)
     summary = evidence.markdown(m, routing)
     (out / "summary.md").write_text(summary)
     _append_summary(summary)

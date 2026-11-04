@@ -8,6 +8,7 @@ which network state it is predicting against.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import time
@@ -136,6 +137,41 @@ class SnapshotObserver:
         return rows
 
 
+class ProcessingWatch:
+    """Turns what Forward reports while it works (the snapshot's state, its processing stage, its place in the processing queue) into
+    lines a person can read, so a wait never looks like a hang. Used as the SDK's ``on_poll`` callback: it is called every few seconds,
+    prints when something changes and otherwise a steady heartbeat, and can never raise into the wait it reports on."""
+
+    def __init__(self, client: ForwardClient, log, what: str, *, every: float = 15.0, clock=time.monotonic) -> None:
+        self.c, self.log, self.what, self.every, self.clock = client, log, what, every, clock
+        self._state, self._detail, self._last = None, None, -1e9
+
+    def __call__(self, snapshot: Any, elapsed: float) -> None:
+        state = str(getattr(snapshot, "state", "") or "").lower()
+        detail = self._where(str(getattr(snapshot, "id", "") or ""))
+        now = self.clock()
+        changed = (state, detail) != (self._state, self._detail)
+        if not changed and now - self._last < self.every:
+            return
+        self._state, self._detail, self._last = state, detail, now
+        line = f"  Forward is {self.what}: {state or 'working'}{detail} ({elapsed:.0f}s)"
+        self.log(line if changed else line + ". Still going: nothing is stuck.")
+
+    def _where(self, snapshot_id: str) -> str:
+        """Forward's own answer to 'where is it': waiting in the processing queue (position), or which stage it is in."""
+        with contextlib.suppress(Exception):  # status only: a failed look is just a line with less in it
+            queue = sorted(self.c.snapshots.processing_queue().entries or [], key=lambda e: e.created_at or 0)
+            ids = [str(e.snapshot_id) for e in queue]
+            if snapshot_id in ids:
+                return f", waiting in Forward's processing queue: {ids.index(snapshot_id) + 1} of {len(ids)}"
+        with contextlib.suppress(Exception):
+            stages = [s for s in (self.c.snapshots.progress(snapshot_id).stages or []) if s.stage]
+            if stages:
+                current = max(stages, key=lambda s: s.started_at or 0)
+                return f", stage {str(current.stage).lower().replace('_', ' ')}" + (f" ({str(current.operation_state).lower()})" if current.operation_state else "")
+        return ""
+
+
 class Forward:
     def __init__(self, settings: Settings, *, quick: bool = False) -> None:
         """``quick=True`` is for display-only questions (the routing diff and inventory shown after a result): a short timeout and no
@@ -166,9 +202,10 @@ class Forward:
                 return snap
         return None
 
-    def upload(self, zip_path: Path, tag: SnapshotTag, extra: str = ""):
+    def upload(self, zip_path: Path, tag: SnapshotTag, extra: str = "", log=None):
         snap = self.c.snapshots.upload(zip_path, note=tag.note(extra), process=True, wait=False)
-        return self.c.snapshots.wait_until_processed(snap.id, poll_interval=3, timeout=900)
+        watch = ProcessingWatch(self.c, log, "processing your snapshot into a model") if log else None
+        return self.c.snapshots.wait_until_processed(snap.id, poll_interval=3, timeout=900, on_poll=watch)
 
     def device_names(self, snapshot_id: str) -> set[str]:
         return {d.name for d in self.c.devices.list(snapshot_id=snapshot_id)}
@@ -182,7 +219,7 @@ class Forward:
     def observer(self, snapshot_id: str) -> SnapshotObserver:
         return SnapshotObserver(self.c, snapshot_id, sink=self.settings.state(f"forward-{snapshot_id}.json"))
 
-    def predict(self, candidate: Candidate, baseline_id: str, name: str, description: str) -> Prediction:
+    def predict(self, candidate: Candidate, baseline_id: str, name: str, description: str, log=None) -> Prediction:
         """Predict ``candidate`` against ``baseline_id`` in change set ``name``.
 
         Re-running with the same name reuses a finished prediction of the same baseline instead of
@@ -199,7 +236,11 @@ class Forward:
         handle = self.c.change_sets.create(name, snapshot_id=baseline_id, description=description, tags=["autocon6"])
         handle.set_commands(candidate.device, candidate.text)
         handle.commit(f"{name} {candidate.sha256[:12]}")
-        snap = handle.predict_and_wait(f"{name} {candidate.sha256[:12]}", timeout=600, poll_interval=3)
+        started = handle.predict(f"{name} {candidate.sha256[:12]}")  # what predict_and_wait does, with the status shown while it waits
+        if not started.id:
+            raise ValueError("Forward did not return the predicted snapshot's id")
+        watch = ProcessingWatch(self.c, log, "building the predicted network") if log else None
+        snap = self.c.snapshots.wait_until_processed(str(started.id), poll_interval=3, timeout=600, on_poll=watch)
         return Prediction(handle.id, str(snap.id), str(snap.parent_snapshot_id), False)
 
     def download_collector(self, destination: Path):

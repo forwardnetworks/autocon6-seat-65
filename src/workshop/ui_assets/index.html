@@ -157,6 +157,7 @@ details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padd
 
 /* Guided step */
 .stage { cursor: pointer; } .stage.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.why-it-matters { margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--accent); background:var(--group); border-radius:0 var(--radius) var(--radius) 0; font-size:13px; }
 .nafrow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:2px 0 8px; font-size:12px; color:var(--txt-2); }
 .naf { background:var(--accent-bg); color:var(--accent); border-radius:12px; padding:2px 10px; font-weight:600; cursor:help; }
 .gsec { border-top:1px solid var(--divider); margin-top:14px; padding-top:12px; }
@@ -316,6 +317,8 @@ const TIPS = [
 let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
+let lastLineAt = Date.now();
+const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
 let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
 
 async function loadGuide() { try { guide = await (await fetch("/api/guide")).json(); } catch { guide = null; } }
@@ -440,6 +443,15 @@ function renderLane(s) {
   }
 }
 
+function checkWords(check) {
+  const c = (check || "PENDING").toUpperCase();
+  if (["QUEUED", "PENDING", "WAITING", "REQUESTED"].includes(c)) return "forward/predict is queued: GitHub has not started it yet. That is normal when many people open a PR at once, and it starts on its own. If it is still queued after about five minutes, tell a proctor: you can carry on with Predict my change here while it waits";
+  if (c === "IN_PROGRESS") return "forward/predict is running: it asks Forward to predict your change (usually one to two minutes)";
+  if (c === "SUCCESS") return "forward/predict passed";
+  if (c === "FAILURE") return "forward/predict failed: open it to see why (a red check is a finding, not a fault)";
+  return "forward/predict " + c.toLowerCase();
+}
+
 /* What the page can say about the evidence in front of the person, from the state files the CLI wrote. */
 function facts(key, s) {
   const f = [], m = s.prediction, v = s.verify, b = s.baseline, rs = (m?.results || []);
@@ -468,7 +480,7 @@ function facts(key, s) {
   }
   if (key === "approve") {
     const pr = (s.prs || [])[0];
-    f.push(pr ? `PR #${pr.number} is ${esc(pr.state.toLowerCase())}; forward/predict is ${esc((pr.predict || "pending").toLowerCase())}.` : "No pull request yet.");
+    f.push(pr ? `PR #${pr.number} is ${esc(pr.state.toLowerCase())}; ${esc(checkWords(pr.predict))}.` : "No pull request yet.");
   }
   if (key === "deploy" && s.deploy) f.push(`Deployed ${Math.max((s.deploy.lines || []).length - 2, 0)} change line(s) to r4.`);
   if (key === "verify" && v) {
@@ -526,6 +538,7 @@ function renderGuide(s, key) {
     <div class="nafrow">Framework block: ${naf}</div>
     ${failed ? `<div class="banner bad">${esc(stage.detail)}</div>` : ""}
     <div>${esc(g.what)}</div>
+    ${g.why ? `<div class="why-it-matters"><b>Why this matters.</b> ${esc(g.why)}</div>` : ""}
     <div class="gsec" id="arts"><h3>What you're working with</h3><div class="muted">loading…</div></div>
     ${(g.data || []).length ? `<div class="gsec" id="fdata"><h3>What Forward says</h3><div class="muted">asking Forward…</div></div>` : ""}
     ${(g.before || []).length ? `<div class="gsec"><h3>Before you run it: what do you expect?</h3>${quiz(g.before, "b")}</div>` : ""}
@@ -614,7 +627,7 @@ async function post(path, body) {
 async function runStep(body, home = "guide") {
   const r = await post("/api/run", body);
   if (r.error) { const keep = job; showMsg(r.error); if (keep && !keep.done) job = keep; return; }
-  job = { id: r.job, done: false, cmd: "workshop " + body.step, step: body.step, next: 0, home }; outLines = [];
+  job = { id: r.job, done: false, cmd: "workshop " + body.step, step: body.step, next: 0, home }; outLines = []; lastLineAt = Date.now();
   guideSig = ""; pollJob();
 }
 
@@ -624,7 +637,7 @@ function pollJob() {
     try {
       const v = await (await fetch(`/api/job?id=${job.id}&since=${job.next}`)).json();
       if (v.error) { job = { ...job, done: true }; outLines.push("The page lost track of that step. Reload and check Status."); }
-      else { outLines.push(...v.lines); job = { ...job, ...v }; }
+      else { if (v.lines.length) lastLineAt = Date.now(); outLines.push(...v.lines); job = { ...job, ...v }; }
     } catch { /* retry */ }
     showOut();
     if (job && !job.done) pollJob(); else { for (const k in dataCache) delete dataCache[k]; guideSig = ""; laneSig = ""; refresh(); }
@@ -647,8 +660,10 @@ function showOut() {
   const box = $(job && job.home === "lane" ? "lane-out" : "outbox");
   if (!box || !job) return;
   if (!jobBelongsHere()) { box.innerHTML = ""; return; }
-  const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : '<span class="spinner"></span>running…';
-  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3><pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
+  const quiet = !job.done && Date.now() - lastLineAt > QUIET_AFTER;
+  const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : `<span class="spinner"></span>running… ${job.secs ? job.secs + "s" : ""}`;
+  const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.</div>` : "";
+  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3>${patience}<pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }
 

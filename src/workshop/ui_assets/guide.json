@@ -63,7 +63,8 @@
      "cmd": "workshop doctor"
     }
    ],
-   "catchup": "Starts the lab if it isn't running and applies the baseline configuration. Nothing else changes."
+   "catchup": "Starts the lab if it isn't running and applies the baseline configuration. Nothing else changes.",
+   "why": "Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today."
   },
   "baseline": {
    "title": "Give Forward a baseline",
@@ -126,7 +127,8 @@
      "snapshot": "baseline",
      "limit": 5
     }
-   ]
+   ],
+   "why": "A prediction only means something against a known \"before\". Pipelines usually go straight to the change; this step is what makes a prediction mean something."
   },
   "change": {
    "title": "Write the change",
@@ -159,7 +161,8 @@
     }
    ],
    "run": [],
-   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It also clears your candidate, so you start the change from nothing."
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It also clears your candidate, so you start the change from nothing.",
+   "why": "The change is a few lines in a file under version control. Nothing reaches a router until later steps approve it, so you can propose a change you suspect is bad and find out safely."
   },
   "predict": {
    "title": "Predict it",
@@ -208,7 +211,8 @@
      "snapshot": "baseline",
      "against": "predicted"
     }
-   ]
+   ],
+   "why": "This puts a test inside the review. Most teams already review changes in pull requests; Predict adds a judge that asks what the network will do, not whether the syntax is legal."
   },
   "approve": {
    "title": "Review and approve",
@@ -250,7 +254,8 @@
      "snapshot": "baseline",
      "against": "predicted"
     }
-   ]
+   ],
+   "why": "The code and the requirements come from main, not from your pull request, because a test the author can edit isn't a gate. Nobody gets a shortcut around it: not you, not a deadline, not an AI draft."
   },
   "deploy": {
    "title": "Deploy exactly what was predicted",
@@ -292,7 +297,8 @@
      "snapshot": "baseline",
      "against": "predicted"
     }
-   ]
+   ],
+   "why": "Approval is only worth something if what gets deployed is what was approved. Deploy checks the pull request, the candidate, the requirements, the baseline and the routers before it writes anything."
   },
   "verify": {
    "title": "Verify on the real network",
@@ -348,7 +354,8 @@
      "snapshot": "baseline",
      "against": "post"
     }
-   ]
+   ],
+   "why": "Verify closes the loop: it compares what was predicted with what is really there. A MATCH is a measurement of how good the prediction was, and that is what lets you trust the next one."
   },
   "done": {
    "title": "Loop closed",
@@ -384,7 +391,8 @@
      "cmd": "workshop baseline"
     }
    ],
-   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It clears your candidate, ready for another go."
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It clears your candidate, ready for another go.",
+   "why": "The loop you just ran is the habit to keep, whatever tools you use: write down what must stay true, predict the change, approve it, deploy exactly that, and check reality against the prediction."
   }
  },
  "terms": {

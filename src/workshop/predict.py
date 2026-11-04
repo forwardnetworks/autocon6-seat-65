@@ -42,7 +42,7 @@ def change_set_name(lab_id: str, git: dict[str, Any], candidate_sha: str) -> str
     return f"ac6-{lab_id}-local-{candidate_sha[:7]}"
 
 
-def run(settings: Settings, inputs: Inputs) -> Manifest:
+def run(settings: Settings, inputs: Inputs, log=None) -> Manifest:
     m = Manifest(
         lab_id=settings.lab_id, network_id=settings.network_id, forward_release="", workshop_version=__version__,
         candidate_path=_display_path(inputs.candidate, settings.repo_root),
@@ -81,7 +81,7 @@ def run(settings: Settings, inputs: Inputs) -> Manifest:
 
             name = change_set_name(settings.lab_id, inputs.git, cand.sha256)
             description = json.dumps({"candidate_sha256": cand.sha256, "requirements_sha256": reqs.sha256, "baseline": str(baseline.id), **inputs.git}, sort_keys=True)
-            prediction = fwd.predict(cand, str(baseline.id), name, description)
+            prediction = fwd.predict(cand, str(baseline.id), name, description, log=log)
             m.change_set_id, m.predicted_snapshot_id = prediction.change_set_id, prediction.snapshot_id
             if prediction.parent_snapshot_id not in ("", "None", str(baseline.id)):
                 return _stop(m, "ERROR", f"Predicted snapshot {prediction.snapshot_id} is based on {prediction.parent_snapshot_id}, not the baseline {baseline.id}.")

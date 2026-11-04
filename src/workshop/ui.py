@@ -117,6 +117,20 @@ def _containers() -> dict[str, Any]:
     return {"running": sum(1 for s in states.values() if s == "running"), "total": len(states), "states": states}
 
 
+def check_words(check: str) -> str:
+    """What a forward/predict status means, in words, so a check that is waiting never looks like one that is stuck."""
+    c = (check or "PENDING").upper()
+    if c in ("QUEUED", "PENDING", "WAITING", "REQUESTED"):
+        return "forward/predict is queued: GitHub has not started it yet. That is normal when many people open a PR at once, and it starts on its own. If it is still queued after about five minutes, tell a proctor: you can carry on with Predict my change here while it waits"
+    if c == "IN_PROGRESS":
+        return "forward/predict is running: it asks Forward to predict your change (usually one to two minutes)"
+    if c == "SUCCESS":
+        return "forward/predict passed"
+    if c == "FAILURE":
+        return "forward/predict failed: open it for why (a red check is a finding, not a fault)"
+    return f"forward/predict {c.lower()}"
+
+
 def _pull_requests(root: Path) -> list[dict[str, Any]]:
     out = subprocess.run(
         ["gh", "pr", "list", "--state", "all", "--limit", "10", "--json", "number,title,state,headRefOid,statusCheckRollup,url,author"],
@@ -131,8 +145,9 @@ def _pull_requests(root: Path) -> list[dict[str, Any]]:
         if me and (pr.get("author") or {}).get("login") != me:
             continue
         checks = {c.get("name"): (c.get("conclusion") or c.get("status") or "").upper() for c in pr.get("statusCheckRollup") or []}
+        started = next((c.get("startedAt") for c in pr.get("statusCheckRollup") or [] if c.get("name") == "forward/predict" and c.get("startedAt")), "")
         prs.append({"number": pr["number"], "title": pr["title"], "state": pr["state"], "url": pr["url"], "sha": pr.get("headRefOid", ""),
-                    "predict": checks.get("forward/predict", ""), "advice": checks.get("forward/advice", "")})
+                    "predict": checks.get("forward/predict", ""), "advice": checks.get("forward/advice", ""), "predict_since": started})
     return prs[:5]
 
 
@@ -413,9 +428,13 @@ class Board:
                 path = self.shown_evidence()
             elif ref.startswith("forward:"):
                 try:
-                    path = self.settings.state(f"forward-{self.snapshot_for(ref[8:])}.json")
+                    name = f"forward-{self.snapshot_for(ref[8:])}.json"
                 except LookupError:
                     path = None
+                else:
+                    path = self.settings.state(name)
+                    if not path.is_file() and (self.shown_evidence().parent / name).is_file():
+                        path = self.shown_evidence().parent / name  # a pull request's prediction ran in CI: its raw answers came with the evidence
             else:
                 path = self.settings.repo_root / ref
             text = ""
@@ -535,7 +554,7 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
         out.append(stage("approve", "Approve", "done", f"PR #{pr['number']} merged", ""))
     elif pr and pr["state"] == "OPEN":
         check = pr["predict"] or "PENDING"
-        out.append(stage("approve", "Approve", "active" if check != "FAILURE" else "failed", f"PR #{pr['number']} open, forward/predict {check.lower()}", "merge only a green check"))
+        out.append(stage("approve", "Approve", "active" if check != "FAILURE" else "failed", f"PR #{pr['number']} open: {check_words(check)}", "merge only a green check"))
     else:
         out.append(stage("approve", "Approve", "todo", "no pull request yet", "open a pull request"))
     out.append(stage("deploy", "Deploy", "done" if deployed else "todo",

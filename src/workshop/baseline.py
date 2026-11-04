@@ -39,7 +39,7 @@ def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> 
         if zip_fp != live_fp:
             raise BaselineError("the router configs changed while they were being collected; run it again")
         log("uploading to Forward and waiting for the model ...")
-        snap = fwd.upload(zip_path, SnapshotTag(kind, settings.lab_id, zip_fp), f"collected {datetime.now(UTC).isoformat(timespec='seconds')}")
+        snap = fwd.upload(zip_path, SnapshotTag(kind, settings.lab_id, zip_fp), f"collected {datetime.now(UTC).isoformat(timespec='seconds')}", log=log)
         devices = fwd.device_names(str(snap.id))
         if not set(fingerprint.ROUTERS) <= devices:
             raise BaselineError(f"snapshot {snap.id} is missing {sorted(set(fingerprint.ROUTERS) - devices)}")
