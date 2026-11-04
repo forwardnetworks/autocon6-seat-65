@@ -177,6 +177,21 @@ input[type=text] { font:inherit; padding:6px 8px; border-radius:var(--radius); b
 .art > summary { cursor:pointer; padding:7px 10px; font-weight:500; } .art > summary code { margin-left:6px; font-weight:400; }
 .art pre { margin:0; padding:10px; background:var(--group); max-height:340px; overflow:auto; white-space:pre; border-top:1px solid var(--divider); }
 .art .none { padding:8px 10px; color:var(--txt-2); border-top:1px solid var(--divider); }
+.catch { border:1px dashed var(--divider); border-radius:var(--radius); padding:8px 10px; }
+button.warn { background:var(--warn); color:#fff; } @media (prefers-color-scheme: dark) { button.warn { color:#13181b; } }
+.pace { padding:8px 12px; border-radius:var(--radius); margin:0 0 10px; font-size:13px; }
+.pace.ok { background:var(--ok-bg); color:var(--ok); } .pace.behind { background:var(--warn-bg); color:var(--warn); }
+abbr.g { text-decoration:underline dotted var(--txt-3); cursor:help; }
+.lane-item { border-top:1px solid var(--divider); padding:10px 0; } .lane-item:first-of-type { border-top:0; }
+.lane-item .lv { font-size:11px; font-weight:600; color:var(--accent); background:var(--accent-bg); border-radius:10px; padding:1px 8px; margin-right:6px; }
+.lane-item .lt { font-weight:500; } .lane-item .why { color:var(--txt-2); font-size:13px; margin:3px 0 6px; }
+.lane-item.done .lt::after { content:" ✓"; color:var(--ok); }
+details.optai { background:transparent; } details.optai > summary { cursor:pointer; color:var(--accent); font-weight:500; padding:4px 2px; }
+.termline { font-size:12px; color:var(--txt-2); } .termline code { font-size:12px; }
+.dsum { font-weight:500; margin:2px 0 6px; } .dwhy { color:var(--txt-2); font-size:13px; margin-bottom:6px; }
+.dtab { max-height:300px; overflow:auto; border:1px solid var(--divider); border-radius:var(--radius); } .dtab table { font-size:12.5px; } .dtab th { position:sticky; top:0; background:var(--raised); }
+.dtab td.DELETED, .dtab td.ADDED, .dtab td.MODIFIED { font-weight:600; } .dtab td.DELETED { color:var(--bad); } .dtab td.ADDED { color:var(--ok); } .dtab td.MODIFIED { color:var(--warn); }
+.dnote { font-size:12px; color:var(--txt-2); margin-top:4px; } details.raw > summary { cursor:pointer; font-size:12px; color:var(--accent); margin-top:4px; } details.raw pre { max-height:260px; overflow:auto; background:var(--group); padding:8px; border-radius:var(--radius); }
 .term { background:var(--group); border-radius:var(--radius); padding:8px 10px; font-size:13px; }
 footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 24px; }
 </style>
@@ -217,6 +232,9 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
         <ul class="chals" id="chals-core"></ul>
         <details id="chal-stretch"><summary>Stretch challenges <span class="muted" id="stretch-sum"></span></summary><ul class="chals" id="chals-stretch"></ul></details>
       </section>
+      <section class="card" id="lane"></section>
+      <details class="optai" id="optai"><summary>Optional: Forward AI explains and advises (it never decides)</summary>
+      <div class="col" style="margin-top:10px">
       <section class="card">
         <h2>Forward AI advisers <span class="muted" style="text-transform:none;font-weight:400">— they advise, Predict decides</span></h2>
         <div id="advice"></div>
@@ -235,6 +253,7 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
           <div class="row"><button id="ask">Send</button><span class="muted" id="ask-note"></span></div>
         </div>
       </section>
+      </div></details>
       <section class="card">
         <h2>Tip</h2>
         <div class="tip" id="tip"></div>
@@ -296,7 +315,7 @@ const TIPS = [
 
 let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
-let guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
+let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
 
 async function loadGuide() { try { guide = await (await fetch("/api/guide")).json(); } catch { guide = null; } }
 
@@ -314,6 +333,110 @@ function renderLoop(stages) {
     el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
   });
   renderGuide(state, key);
+}
+
+/* Pace: only on the day. Compares the core challenges done with how many are due by now (Tucson time). */
+function paceHtml(s) {
+  try { return paceHtmlUnsafe(s); } catch { return ""; }  // a bad ?now= must never stop the page
+}
+function paceHtmlUnsafe(s) {
+  const pc = guide && guide.pace, p = s.progress;
+  if (!pc || !p) return "";
+  const q = new URLSearchParams(location.search).get("now");  // ?now=2026-11-16T10:50 lets a proctor preview this
+  const now = q ? new Date(q + ":00-07:00") : new Date();
+  if (isNaN(now)) return "";
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: pc.tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now).map((x) => [x.type, x.value]));
+  if (`${parts.year}-${parts.month}-${parts.day}` !== pc.date) return "";
+  const hm = `${parts.hour}:${parts.minute}`;
+  if (hm < pc.start || hm >= pc.end) return "";
+  const due = pc.due.filter(([t]) => t <= hm).map(([, id]) => id);
+  const done = new Set(p.challenges.filter((c) => c.done).map((c) => c.id));
+  const late = due.filter((id) => !done.has(id));
+  if (!late.length) return `<div class="pace ok">On pace. ${due.length} of ${pc.due.length} milestones are due by now, and you have them.</div>`;
+  const title = (id) => (p.challenges.find((c) => c.id === id) || {}).title || id;
+  const next = p.next ? title(p.next) : "", first = title(late[0]);
+  const lead = next && next !== first ? `Most of the room has got as far as <i>${esc(first)}</i>. Do only the must-do next: <b>${esc(next)}</b>.` : `Most of the room has reached <i>${esc(first)}</i>. That is your must-do now.`;
+  return `<div class="pace behind"><b>A little behind, and that's fine.</b> ${lead} Skip the extras for now. If you are stuck, use <b>Catch me up</b> at the bottom of this card.</div>`;
+}
+
+/* Glossary: the first time a term appears in a card, underline it with its definition on hover. */
+function glossarize(root) {
+  const terms = guide && guide.terms;
+  if (!terms) return;
+  const names = Object.keys(terms).sort((a, b) => b.length - a.length);
+  const re = new RegExp(`\\b(${names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`);
+  const seen = new Set(), skip = new Set(["PRE", "CODE", "BUTTON", "INPUT", "LABEL", "SUMMARY", "TEXTAREA", "ABBR", "H2", "H3"]);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => {
+    for (let e = n.parentElement; e && e !== root; e = e.parentElement) if (skip.has(e.tagName) || e.classList.contains("quiz")) return NodeFilter.FILTER_REJECT;
+    return n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; } });
+  const nodes = []; while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const n of nodes) {
+    let text = n.nodeValue, m, frag = null, last = 0;
+    const local = new RegExp(re.source, "g");
+    while ((m = local.exec(text))) {
+      const key = names.find((x) => x === m[1]);
+      if (!key || seen.has(key.toLowerCase())) continue;
+      seen.add(key.toLowerCase());
+      frag = frag || document.createDocumentFragment();
+      frag.append(text.slice(last, m.index));
+      const a = document.createElement("abbr"); a.className = "g"; a.title = terms[key]; a.textContent = m[1]; frag.append(a);
+      last = m.index + m[1].length;
+    }
+    if (frag) { frag.append(text.slice(last)); n.replaceWith(frag); }
+  }
+}
+
+/* The "go further" lane: deterministic challenges first, Forward AI ones folded away as optional. */
+let laneSig = "";
+function renderLane(s) {
+  if (!guide || !s.progress) return;
+  const done = new Set(s.progress.challenges.filter((c) => c.done).map((c) => c.id)), busy = s.job && !s.job.done;
+  const sig = JSON.stringify([[...done], busy, s.stages.map((x) => x.state)]);
+  if (sig === laneSig && $("lane").children.length) return;
+  const a = document.activeElement; if (a && $("lane").contains(a) && a.tagName === "INPUT" && a.type === "text") return;
+  laneSig = sig;
+  const core = s.progress.core_done >= s.progress.core_total;
+  const item = (it) => {
+    let body = "";
+    if (it.kind === "explore") {
+      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option></select>
+        <select id="ex-snap"><option value="baseline">baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
+        <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option></select></div>
+        <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
+        <div class="termline">In the terminal: <code>workshop data routes --prefix 10.20.20.0/24</code> (add <code>--json</code> for the raw answer)</div><div id="ex-out"></div>`;
+    } else if (it.kind === "own") {
+      body = `<div class="runrow"><input type="text" id="rq-id" size="12" placeholder="NAME" value="HTTPS-DENY"> <input type="text" id="rq-port" size="6" placeholder="port" value="8443" inputmode="numeric"> <select id="rq-expect"><option value="deny">must be blocked</option><option value="permit">must work</option></select> <input type="text" id="rq-title" size="26" placeholder="title" value="HTTPS stays blocked at r1"></div>
+        <div class="runrow"><button id="rq-write" ${busy ? "disabled" : ""}>Write my requirement</button><button class="ghost" id="rq-predict" ${busy ? "disabled" : ""}>Predict with my requirements</button></div>
+        <div class="termline">In the terminal: copy <code>requirements/candidate.yml</code> to <code>requirements/mine.yml</code>, add it, then <code>workshop predict --requirements requirements/mine.yml</code></div><div id="rq-note" class="muted"></div>`;
+    } else if (it.kind === "chat") {
+      body = `<div class="runrow"><button class="ghost" data-lane-chat ${""}>Open the chat</button></div>`;
+    } else {
+      body = `<div class="runrow"><button class="ghost" data-lane-step="${esc(it.step)}" ${busy ? "disabled" : ""}>${esc(it.label)}</button></div>${it.note ? `<div class="muted" style="font-size:12px">${esc(it.note)}</div>` : ""}<div class="termline">In the terminal: <code>${esc(it.cmd)}</code></div>`;
+    }
+    return `<div class="lane-item${done.has(it.id) ? " done" : ""}"><span class="lv">${esc(it.level)}</span><span class="lt">${esc(it.title)}</span><div class="why">${esc(it.why)}</div>${body}</div>`;
+  };
+  $("lane").innerHTML = `<h2>Go further ${core ? "" : '<span class="muted" style="text-transform:none;font-weight:400">· after the six core steps</span>'}</h2>
+    ${guide.lane.map(item).join("")}
+    <details style="margin-top:6px"><summary style="cursor:pointer;color:var(--accent)">Optional: Forward AI</summary>${guide.lane_ai.map(item).join("")}</details>
+    <div id="lane-out"></div>`;
+  showOut();  // the rebuild above empties the output box: put the job's output back
+  $("lane").querySelectorAll("[data-lane-step]").forEach((b) => b.onclick = () => runStep({ step: b.dataset.laneStep }, "lane"));
+  $("lane").querySelectorAll("[data-lane-chat]").forEach((b) => b.onclick = () => { $("optai").open = true; $("optai").scrollIntoView({ behavior: "smooth" }); $("question").focus(); });
+  const go = $("ex-go");
+  if (go) go.onclick = async () => {
+    const topic = $("ex-topic").value, out = $("ex-out");
+    out.innerHTML = '<span class="spinner"></span>asking Forward…';
+    const t = await askData({ topic, snapshot: $("ex-snap").value, against: topic === "diff" ? $("ex-against").value : "", device: $("ex-device").value.trim(), prefix: $("ex-prefix").value.trim() });
+    out.innerHTML = t.error ? `<div class="banner warn">${esc(t.error)}</div>` : tableHtml(t, 200);
+  };
+  const w = $("rq-write");
+  if (w) {
+    w.onclick = async () => {
+      const r = await post("/api/requirement", { id: $("rq-id").value.trim(), port: Number($("rq-port").value), expect: $("rq-expect").value, title: $("rq-title").value });
+      $("rq-note").textContent = r.error ? r.error : `Written to requirements/mine.yml: ${r.count} requirements, yours included. Now predict with them.`;
+    };
+    $("rq-predict").onclick = () => runStep({ step: "predict", requirements: "mine" }, "lane");
+  }
 }
 
 /* What the page can say about the evidence in front of the person, from the state files the CLI wrote. */
@@ -359,7 +482,7 @@ let guideSig = "";
 function renderGuide(s, key) {
   if (!guide) { $("next").innerHTML = ""; return; }
   const g = guide.steps[key] || guide.steps.done;
-  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered]);
+  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s)]);
   if (sig === guideSig) return;
   const a = document.activeElement;
   if (a && $("next").contains(a) && a.tagName === "INPUT" && a.type === "text" && a.value) return;  // never rebuild the card under someone's typing
@@ -375,7 +498,7 @@ function renderGuide(s, key) {
   }).join("");
   const fl = facts(key, s);
   const runs = (g.run || []).map((r) => `<button data-step="${esc(r.step)}" ${s.job && !s.job.done ? "disabled" : ""}>${esc(r.label)}</button>`).join("");
-  const notes = (g.run || []).map((r) => `<div class="note"><b>${esc(r.label)}:</b> ${esc(r.note)}</div>`).join("");
+  const notes = (g.run || []).map((r) => `<div class="note"><b>${esc(r.label)}:</b> ${esc(r.note)}<div class="termline">In the terminal: <code>${esc(r.cmd || "workshop " + r.step)}</code></div></div>`).join("");
   let extra = "";
   if (key === "change") {
     const sel = builderSel || new Set((s.candidate?.changes || []).map((l) => l.replace("no network ", "")));
@@ -392,18 +515,35 @@ function renderGuide(s, key) {
   if (key === "approve") {
     extra = `<div class="gsec"><div class="term">Approving happens on GitHub: open your pull request in the <b>GitHub Pull Requests</b> panel, read the forward/predict result, and <b>Squash and Merge</b> only a green check.</div></div>`;
   }
+  const busy = s.job && !s.job.done;
+  const catchBlock = `<div class="gsec"><h3>Behind or stuck?</h3><div class="catch"><div class="muted">${esc(g.catchup || "")}</div>
+    <div class="runrow">${catchAsk === key
+      ? `<button class="warn" id="catch-yes" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Yes, start a fresh loop" : "Yes, reset to the start of this step"}</button><button class="ghost" id="catch-no">Cancel</button>`
+      : `<button class="ghost" id="catch-btn" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Start a fresh loop" : "Catch me up"}</button>`}</div></div></div>`;
   $("next").innerHTML = `
+    ${paceHtml(s)}
     <h2>${esc(g.title)}${failed ? " — something needs attention" : ""}</h2>
     <div class="nafrow">Framework block: ${naf}</div>
     ${failed ? `<div class="banner bad">${esc(stage.detail)}</div>` : ""}
     <div>${esc(g.what)}</div>
     <div class="gsec" id="arts"><h3>What you're working with</h3><div class="muted">loading…</div></div>
+    ${(g.data || []).length ? `<div class="gsec" id="fdata"><h3>What Forward says</h3><div class="muted">asking Forward…</div></div>` : ""}
     ${(g.before || []).length ? `<div class="gsec"><h3>Before you run it: what do you expect?</h3>${quiz(g.before, "b")}</div>` : ""}
     ${runs ? `<div class="gsec"><h3>Run it</h3><div class="runrow">${runs}</div>${notes}</div>` : ""}
     ${extra}
     <div id="outbox"></div>
     ${fl.length ? `<div class="gsec"><h3>What you're seeing</h3><ul class="facts">${fl.map((x) => `<li>${x}</li>`).join("")}</ul></div>` : ""}
-    ${(g.after || []).length && fl.length ? `<div class="gsec"><h3>Check yourself</h3>${quiz(g.after, "a")}</div>` : ""}`;
+    ${(g.after || []).length && fl.length ? `<div class="gsec"><h3>Check yourself</h3>${quiz(g.after, "a")}</div>` : ""}
+    ${catchBlock}`;
+  glossarize($("next"));
+  const cb = $("catch-btn"); if (cb) cb.onclick = () => { catchAsk = key; guideSig = ""; renderGuide(state, key); };
+  const cn = $("catch-no"); if (cn) cn.onclick = () => { catchAsk = null; guideSig = ""; renderGuide(state, key); };
+  const cy = $("catch-yes");
+  if (cy) cy.onclick = async () => {
+    const r = await post("/api/catchup", { step: key, confirm: true }); catchAsk = null; guideSig = "";
+    if (r.error) { renderGuide(state, key); showMsg(r.error); return; }
+    job = { id: r.job, done: false, cmd: "catch-up", next: 0, home: "guide" }; outLines = []; pollJob(); renderGuide(state, key);
+  };
   document.querySelectorAll("#next input[type=radio]").forEach((r) => r.onchange = () => { answered[r.name] = Number(r.value); guideSig = ""; renderGuide(state, key); });
   document.querySelectorAll("#next button[data-step]").forEach((b) => b.onclick = () => runStep({ step: b.dataset.step }));
   const w = $("write-cand");
@@ -420,6 +560,40 @@ function renderGuide(s, key) {
   if (d) d.onclick = () => runStep({ step: "deploy", pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() });
   showOut();
   loadArts(key);
+  loadData(key, g);
+}
+
+const dataCache = {};
+function tableHtml(t, limit) {
+  const rows = (t.rows || []).slice(0, limit || 1000);
+  const cell = (c, v) => `<td${c === "change" ? ` class="${esc(v)}"` : ""}>${esc(v)}</td>`;
+  const body = rows.length ? `<div class="dtab"><table><thead><tr>${t.columns.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+    rows.map((r) => `<tr>${t.columns.map((c) => cell(c, r[c] ?? "")).join("")}</tr>`).join("")}</tbody></table></div>` : "";
+  const more = t.truncated ? `<div class="dnote">Showing the first ${t.rows.length}. Narrow it with a device or a prefix.</div>`
+    : (t.rows || []).length > rows.length ? `<div class="dnote">Showing ${rows.length} of ${t.rows.length}. The explorer in <b>Go further</b> has them all, with filters.</div>` : "";
+  return `<div class="dsum">${esc(t.summary)}</div>${body}${more}${t.note ? `<div class="dnote">${esc(t.note)}</div>` : ""}
+    <details class="raw"><summary>Show what Forward returned (raw JSON)</summary><pre>${esc(JSON.stringify(t.raw, null, 2).slice(0, 40000))}</pre></details>`;
+}
+async function askData(item) {
+  const q = new URLSearchParams({ topic: item.topic, snapshot: item.snapshot || "baseline", against: item.against || "", device: item.device || "", prefix: item.prefix || "" });
+  const key = q.toString();
+  if (dataCache[key] && Date.now() - dataCache[key].at < 30000) return dataCache[key].v;
+  const r = await fetch("/api/data?" + key);
+  const v = await r.json();
+  if (r.ok) dataCache[key] = { at: Date.now(), v };
+  return r.ok ? v : { error: v.error };
+}
+async function loadData(key, g) {
+  const items = g.data || [];
+  if (!items.length) return;
+  const parts = [];
+  for (const it of items) {
+    const t = await askData(it);
+    if ((selected || (state.stages.find((x) => x.state !== "done") || {}).key || "done") !== key || !$("fdata")) return;
+    parts.push(`<div class="art"><div style="padding:8px 10px"><div style="font-weight:500">${esc(it.title)}</div><div class="dwhy">${esc(it.why)}</div>${
+      t.error ? `<div class="muted">${esc(t.error)}</div>` : tableHtml(t, it.limit)}</div></div>`);
+    $("fdata").innerHTML = `<h3>What Forward says</h3>${parts.join("")}`;
+  }
 }
 
 async function loadArts(key) {
@@ -437,10 +611,10 @@ async function post(path, body) {
   return r.json();
 }
 
-async function runStep(body) {
+async function runStep(body, home = "guide") {
   const r = await post("/api/run", body);
   if (r.error) { const keep = job; showMsg(r.error); if (keep && !keep.done) job = keep; return; }
-  job = { id: r.job, done: false, cmd: "workshop " + body.step, next: 0 }; outLines = [];
+  job = { id: r.job, done: false, cmd: "workshop " + body.step, next: 0, home }; outLines = [];
   guideSig = ""; pollJob();
 }
 
@@ -453,7 +627,7 @@ function pollJob() {
       else { outLines.push(...v.lines); job = { ...job, ...v }; }
     } catch { /* retry */ }
     showOut();
-    if (job && !job.done) pollJob(); else { guideSig = ""; refresh(); }
+    if (job && !job.done) pollJob(); else { for (const k in dataCache) delete dataCache[k]; guideSig = ""; laneSig = ""; refresh(); }
   }, 1000);
 }
 
@@ -463,10 +637,10 @@ function showMsg(text) {
 }
 
 function showOut() {
-  const box = $("outbox");
+  const box = $(job && job.home === "lane" ? "lane-out" : "outbox");
   if (!box || !job) return;
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : '<span class="spinner"></span>running…';
-  box.innerHTML = `<div class="gsec"><h3>Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3><pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
+  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3><pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }
 
@@ -631,7 +805,7 @@ async function refresh() {
   } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
   $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
   if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
-  renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state);
+  renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
   $("intent").innerHTML = md(state.intent);
 }
 loadGuide().then(refresh); rotateTip();

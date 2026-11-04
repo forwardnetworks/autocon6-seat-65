@@ -44,6 +44,8 @@ The model said which tests would pass, and the real network, collected again, ag
 
 **At work:** this is the part you can keep even if you change every tool: write down what you expect, deploy, and compare.
 
+**What really changed.** After `workshop verify`, run `workshop data diff --against post`: the routing changes between the baseline and the network as it is now, from Forward's model of the collected result. Compare it with the prediction's `workshop data diff`. For the fixed change, both say the same thing: no route changed, because the two stale advertisements were never in anyone's routing table.
+
 **Behind?** Deploy is three steps: switch to `main` and sync, run the command from the green check's summary, then `workshop verify`.
 
 ## Finished early?

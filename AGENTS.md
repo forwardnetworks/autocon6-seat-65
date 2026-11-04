@@ -43,3 +43,5 @@ pass. Treat anything else as "not safe yet", including an empty or missing answe
 The requirements, evaluated by Forward on the **predicted** network, are the judge. They are not your reasoning, and
 not an AI chat answer. Forward AI can be confidently wrong, so check its advice with a prediction.
 `evidence/evidence.json` records exactly what was predicted and against which baseline.
+
+- `workshop data inventory|routes|vulns|diff` shows what Forward knows as structured data (add `--json` for the raw answer). It is read-only evidence for people; it never decides anything.

@@ -93,6 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     u = sub.add_parser("ui", help="your loop, the network and the advisers in a browser tab")
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
+    dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
+    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff"])
+    dt.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | <snapshot id> (diff: the 'before' side)")
+    dt.add_argument("--against", help="diff only: the 'after' side (default: predicted if there is one, else post)")
+    dt.add_argument("--device", default="", help="only this device (routes, diff)")
+    dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff)")
+    dt.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
+    dt.add_argument("--json", action="store_true", help="the structured answer as JSON, including Forward's raw response")
     sub.add_parser("collector", help="download the headless collector for the server's release")
     sub.add_parser("status", help="where this lab is in the loop")
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
@@ -517,6 +525,38 @@ def _probe(settings: config.Settings, args) -> int:
         p = lab.probe(port)
         state = "open" if p.reachable else ("blocked" if p.listener_up else "no answer, and the service is not listening")
         log(f"  TCP {port:<5} {state}")
+    return 0
+
+
+def _data(settings: config.Settings, args) -> int:
+    from workshop import data
+    from workshop.forward import Forward
+
+    evidence = settings.repo_root / args.evidence
+    try:
+        snap = data.snapshot_for(settings, evidence, args.snapshot)
+        against = ""
+        if args.topic == "diff":
+            for which in ([args.against] if args.against else ["predicted", "post"]):
+                try:
+                    if which == "predicted":  # the prediction's own baseline, and only for the change in the candidate file now
+                        snap, against = data.prediction_pair(settings, evidence)
+                    else:
+                        against = data.snapshot_for(settings, evidence, which)
+                    break
+                except data.NoSuchSnapshot:
+                    continue  # that step has not run: try the next (a stale prediction is an error, not a reason to skip)
+            if not against:
+                raise data.NoSuchSnapshot("there is nothing to compare yet: run workshop predict (or deploy and verify) first")
+        with Forward(settings) as fwd:
+            table = data.ask(fwd.c, args.topic, snap, against=against, device=args.device, prefix=args.prefix)
+    except data.DataError as exc:
+        log(f"workshop data: {exc}")
+        return EXIT["ERROR"]
+    except Exception as exc:  # noqa: BLE001 - Forward unreachable or slow: say so in one line
+        log(f"workshop data: Forward could not answer ({type(exc).__name__}: {str(exc)[:160]})")
+        return EXIT["ERROR"]
+    log(json.dumps(table.to_json(), indent=2, default=str) if args.json else data.render(table))
     return 0
 
 

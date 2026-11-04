@@ -40,8 +40,8 @@ ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
 SHA7 = re.compile(r"^[0-9a-f]{7}$")
 # The prefixes r4 advertises; the change builder may only retire these.
 R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
-# What the page may start. Anything else (down, collector, agent...) stays a typed command.
-STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "deploy", "verify", "restore", "status")
+# What the page may start. Anything else (down, collector, ask...) stays a typed command.
+STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "matrix", "agent", "deploy", "verify", "restore", "status")
 MAX_ARTIFACT = 60_000
 # What each step uses and produces, shown on the page so people see exactly what they are deploying. Paths are
 # repo-relative; "state:" paths live in the seat's state folder; "forward:<which>" is Forward's raw answers.
@@ -63,6 +63,22 @@ ARTIFACTS: dict[str, list[tuple[str, str, str, bool]]] = {
     "verify": [("The result compared with the prediction", "state:verify.json", "json", True),
                ("What Forward said about the real network afterwards (structured)", "forward:post", "json", False)],
 }
+# "Catch me up": put the lab and Forward's baseline into the state a step expects. It never skips a gate: Predict,
+# approval, deploy and verify are still the person's to run. ``candidate`` is the change written first (None: leave it).
+KNOWN_GOOD = ["10.20.30.0/24", "10.20.40.0/24"]
+CATCHUP: dict[str, dict[str, Any]] = {
+    "lab": {"candidate": None, "steps": ["up"]},
+    "baseline": {"candidate": None, "steps": ["up", "restore", "baseline"]},
+    "change": {"candidate": [], "steps": ["up", "restore", "baseline"]},
+    "predict": {"candidate": KNOWN_GOOD, "steps": ["up", "restore", "baseline"]},
+    "approve": {"candidate": KNOWN_GOOD, "steps": ["up", "restore", "baseline"]},
+    "deploy": {"candidate": [], "steps": ["up", "restore", "baseline"]},  # a fresh loop: the old approval is stale
+    "verify": {"candidate": [], "steps": ["up", "restore", "baseline"]},
+    "done": {"candidate": [], "steps": ["up", "restore", "baseline"]},
+}
+DEVICE_NAME = re.compile(r"[A-Za-z0-9._-]{1,40}", re.ASCII)
+PREFIX = re.compile(r"[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}", re.ASCII)
+REQ_ID = re.compile(r"^[A-Z][A-Z0-9-]{1,30}$")
 EXIT_WORDS = {0: "PASS", 1: "FAIL", 2: "ERROR", 3: "INCONCLUSIVE", 4: "STALE"}
 
 
@@ -183,7 +199,7 @@ class Jobs:
 
     def __init__(self, settings: Settings, evidence: Path) -> None:
         self.settings, self.evidence = settings, evidence
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()  # catch-up holds it across check, write and start
         self.current: dict[str, Any] | None = None
 
     def argv(self, step: str, params: dict[str, Any]) -> list[str]:
@@ -192,6 +208,10 @@ class Jobs:
         out = [step]
         if step == "predict":
             out += ["--candidate", "candidate/r4-bgp.eos", "--out", str(self.evidence.parent)]
+            if params.get("requirements") == "mine":
+                if not (self.settings.repo_root / "requirements" / "mine.yml").is_file():
+                    raise ValueError("write your requirement first: there is no requirements/mine.yml yet")
+                out += ["--requirements", "requirements/mine.yml"]
         elif step == "verify" or step == "explain":
             out += ["--evidence", str(self.evidence)]
         elif step == "deploy":
@@ -206,17 +226,37 @@ class Jobs:
         return out
 
     def start(self, step: str, params: dict[str, Any]) -> dict[str, Any]:
-        argv = self.argv(step, params)
+        return self.start_many(step, [self.argv(step, params)])
+
+    def start_many(self, label: str, argvs: list[list[str]]) -> dict[str, Any]:
+        """Run workshop commands one after another in a single job, stopping at the first one that does not succeed."""
         with self.lock:
             if self.current and not self.current["done"]:
                 raise RuntimeError(f"'workshop {self.current['step']}' is still running; wait for it to finish")
-            job = {"id": uuid.uuid4().hex[:8], "step": step, "cmd": "workshop " + " ".join(argv), "lines": [],
+            job = {"id": uuid.uuid4().hex[:8], "step": label, "cmd": " then ".join("workshop " + " ".join(a) for a in argvs), "lines": [],
                    "done": False, "code": None, "word": "", "started": time.time(), "secs": 0, "dropped": 0}
             self.current = job
-        threading.Thread(target=self._run, args=(job, argv), daemon=True).start()
+        threading.Thread(target=self._run_all, args=(job, argvs), daemon=True).start()
         return job
 
-    def _run(self, job: dict[str, Any], argv: list[str]) -> None:
+    def _run_all(self, job: dict[str, Any], argvs: list[list[str]]) -> None:
+        code = 2
+        try:
+            for i, argv in enumerate(argvs):
+                if len(argvs) > 1:
+                    job["lines"].append(f"== {i + 1} of {len(argvs)}: workshop {' '.join(argv)}")
+                code = self._run_one(job, argv)
+                if code != 0:
+                    break
+        except Exception as exc:  # noqa: BLE001 - a job must always finish, or the page refuses every later step
+            job["lines"].append(f"the step stopped unexpectedly: {type(exc).__name__}: {exc}")
+            code = 2
+        finally:
+            job["code"], job["word"] = code, EXIT_WORDS.get(code, "ERROR" if code else "")
+            job["secs"] = round(time.time() - job["started"])
+            job["done"] = True
+
+    def _run_one(self, job: dict[str, Any], argv: list[str]) -> int:
         cmd = [sys.executable, "-c", "import sys; from workshop.cli import main; sys.exit(main(sys.argv[1:]))", *argv]
         try:
             proc = subprocess.Popen(cmd, cwd=self.settings.repo_root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
@@ -227,13 +267,10 @@ class Jobs:
                     drop = len(job["lines"]) - MAX_LINES
                     del job["lines"][:drop]
                     job["dropped"] += drop
-            code = proc.wait()
+            return proc.wait()
         except OSError as exc:
             job["lines"].append(f"could not start: {exc}")
-            code = 2
-        job["code"], job["word"] = code, EXIT_WORDS.get(code, "ERROR" if code else "")
-        job["secs"] = round(time.time() - job["started"])
-        job["done"] = True
+            return 2
 
     def view(self, job_id: str, since: int) -> dict[str, Any]:
         job = self.current
@@ -263,6 +300,7 @@ class Board:
         self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30)
         self.chats = Chats(settings)
         self.jobs = Jobs(settings, evidence)
+        self._data_cache: dict[tuple, tuple[float, dict[str, Any], float]] = {}
 
     def snapshot_for(self, which: str) -> str:
         if which == "baseline":
@@ -301,6 +339,31 @@ class Board:
             "job": self.jobs.summary(), "r4_prefixes": list(R4_PREFIXES),
         }
 
+    def data(self, topic: str, snapshot: str, against: str = "", device: str = "", prefix: str = "") -> dict[str, Any]:
+        """Forward's structured answer for the page. Cached briefly: each ask is a call to Forward."""
+        from workshop import data as fdata
+        from workshop.forward import Forward
+
+        if topic not in fdata.TOPICS:
+            raise fdata.DataError(f"unknown topic '{topic}'")
+        if device and not DEVICE_NAME.fullmatch(device):
+            raise fdata.DataError("that is not a device name")
+        if prefix and not PREFIX.fullmatch(prefix):
+            raise fdata.DataError("a prefix looks like 10.20.20.0/24")
+        if topic == "diff" and against == "predicted":
+            snap, other = fdata.prediction_pair(self.settings, self.evidence)  # the prediction's own baseline, and only if it is current
+        else:
+            snap = fdata.snapshot_for(self.settings, self.evidence, snapshot or "baseline")
+            other = fdata.snapshot_for(self.settings, self.evidence, against) if against else ""
+        key = (topic, snap, other, device, prefix)
+        hit = self._data_cache.get(key)
+        if hit and time.monotonic() - hit[0] < hit[2]:
+            return hit[1]
+        with Forward(self.settings) as fwd:
+            table = fdata.ask(fwd.c, topic, snap, against=other, device=device, prefix=prefix).to_json()
+        self._data_cache[key] = (time.monotonic(), table, 600.0)  # a snapshot pair never changes, so an answer can be kept
+        return table
+
     def artifacts(self, step: str) -> list[dict[str, Any]]:
         out = []
         for title, ref, lang, opened in ARTIFACTS.get(step, []):
@@ -331,6 +394,45 @@ class Board:
             out.append({"title": title, "path": shown, "lang": lang, "open": opened, "text": text[:MAX_ARTIFACT],
                         "truncated": len(text) > MAX_ARTIFACT, "missing": not text})
         return out
+
+    def catch_up(self, step: str) -> dict[str, Any]:
+        plan = CATCHUP.get(step)
+        if plan is None:
+            raise ValueError(f"no catch-up for '{step}'")
+        argvs = [self.jobs.argv(n, {}) for n in plan["steps"]]  # the same whitelist as any step
+        with self.jobs.lock:  # no job can start between the busy check, the candidate write and the start
+            if self.jobs.current and not self.jobs.current["done"]:
+                raise RuntimeError(f"'workshop {self.jobs.current['step']}' is still running; wait for it to finish")
+            if plan["candidate"] is not None:
+                self.write_candidate(plan["candidate"])
+            return self.jobs.start_many(f"catch-up ({step})", argvs)
+
+    def write_requirement(self, ident: str, port: int, expect: str, title: str) -> dict[str, Any]:
+        """Your own behavioral test: requirements/mine.yml is candidate.yml plus one flow requirement, validated before it is kept."""
+        from workshop import requirements as reqs
+
+        if not REQ_ID.fullmatch(ident) or ident in ("NO", "ON", "OFF", "YES", "NULL"):
+            raise ValueError("the name must be capitals, digits and dashes, starting with a letter (for example HTTPS-DENY)")
+        if not 1 <= port <= 65535:
+            raise ValueError("the port must be 1 to 65535")
+        if expect not in ("permit", "deny"):
+            raise ValueError("expect permit or deny")
+        title = " ".join(title.split())[:80] or f"{ident}: TCP {port} {expect}"
+        base = (self.settings.repo_root / "requirements" / "candidate.yml").read_text().rstrip("\n")
+        block = [f"  - id: {ident}", "    kind: flow", f"    port: {port}", f"    expect: {expect}"]
+        if expect == "deny":
+            block.append("    deny_at: r1")
+        block += [f"    title: {json.dumps(title, ensure_ascii=False)}", '    why: "Added by you on the lab page."']
+        mine = self.settings.repo_root / "requirements" / "mine.yml"
+        draft = mine.with_name("mine.yml.draft")  # validated first, so a bad request never destroys a good mine.yml
+        draft.write_text(base + "\n" + "\n".join(block) + "\n", encoding="utf-8")
+        try:
+            loaded = reqs.load(draft, root=self.settings.repo_root)
+        except reqs.RequirementError as exc:
+            draft.unlink(missing_ok=True)
+            raise ValueError(str(exc).split(": ", 1)[-1]) from exc
+        draft.replace(mine)
+        return {"ok": True, "count": len(loaded.requirements), "text": mine.read_text(encoding="utf-8")}
 
     def write_candidate(self, retire: list[str]) -> dict[str, Any]:
         """Write candidate/r4-bgp.eos from a checklist: ``no network`` for each chosen r4 prefix."""
@@ -380,7 +482,9 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
         out.append(stage("change", "Change", "done", f"{len(cand['changes'])} line(s) in candidate/r4-bgp.eos", "edit, commit, open a PR"))
     else:
         out.append(stage("change", "Change", "active", (cand.get("problems") or ["edit the candidate"])[0], "edit candidate/r4-bgp.eos"))
-    if m and cand.get("sha256") != m.candidate_sha256:
+    if m and base and m.baseline_snapshot_id and str(base.get("snapshot")) != str(m.baseline_snapshot_id):
+        out.append(stage("predict", "Predict", "todo", "that prediction was against an earlier baseline", "workshop predict, or the PR check"))
+    elif m and cand.get("sha256") != m.candidate_sha256:
         out.append(stage("predict", "Predict", "todo", f"last prediction ({m.status}) was of a different candidate", "open a PR, or workshop predict"))
     elif m:
         state = {"PASS": "done", "FAIL": "failed"}.get(m.status, "failed")
@@ -441,18 +545,30 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
         def do_GET(self) -> None:
             if not self._host_ok():
                 return
-            if self.path in ("/", "/index.html"):
+            route = urlparse(self.path).path  # a query string (?now=...) never changes which page this is
+            if route in ("/", "/index.html"):
                 self._send(HTTPStatus.OK, (ASSETS / "index.html").read_bytes(), "text/html; charset=utf-8")
-            elif self.path == "/logo.svg":
+            elif route == "/logo.svg":
                 self._send(HTTPStatus.OK, (ASSETS / "fn-logo.svg").read_bytes(), "image/svg+xml")
-            elif self.path == "/api/state":
+            elif route == "/api/state":
                 self._json(HTTPStatus.OK, board.state())
-            elif self.path.startswith("/api/artifacts"):
+            elif route == "/api/artifacts":
                 q = parse_qs(urlparse(self.path).query)
                 self._json(HTTPStatus.OK, board.artifacts((q.get("step") or [""])[0]))
-            elif self.path == "/api/guide":
+            elif route == "/api/data":
+                from workshop import data as fdata
+
+                q = parse_qs(urlparse(self.path).query)
+                one = lambda name: (q.get(name) or [""])[0]
+                try:
+                    self._json(HTTPStatus.OK, board.data(one("topic"), one("snapshot"), one("against"), one("device"), one("prefix")))
+                except fdata.DataError as exc:
+                    self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
+                except Exception as exc:  # noqa: BLE001 - Forward unreachable or slow: a message on the page, never a dropped connection
+                    self._json(HTTPStatus.BAD_GATEWAY, {"error": f"Forward could not answer just now ({type(exc).__name__}). Try again in a moment."})
+            elif route == "/api/guide":
                 self._send(HTTPStatus.OK, (ASSETS / "guide.json").read_bytes(), "application/json")
-            elif self.path.startswith("/api/job"):
+            elif route == "/api/job":
                 q = parse_qs(urlparse(self.path).query)
                 try:
                     since = max(int((q.get("since") or ["0"])[0]), 0)
@@ -467,10 +583,10 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                 return
             # A custom header cannot be sent cross-site without a CORS preflight, which this server never
             # approves -- so only this page can start a question.
-            if self.path not in ("/api/ask", "/api/run", "/api/candidate") or self.headers.get("X-Workshop-UI") != "1":
+            if self.path not in ("/api/ask", "/api/run", "/api/candidate", "/api/catchup", "/api/requirement") or self.headers.get("X-Workshop-UI") != "1":
                 self._json(HTTPStatus.FORBIDDEN, {"error": "forbidden"})
                 return
-            if self.path in ("/api/run", "/api/candidate"):
+            if self.path in ("/api/run", "/api/candidate", "/api/catchup", "/api/requirement"):
                 try:
                     body = json.loads(self.rfile.read(max(min(int(self.headers.get("Content-Length", 0)), 2048), 0)) or b"{}")
                     if not isinstance(body, dict):
@@ -478,9 +594,17 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                     if self.path == "/api/run":
                         job = board.jobs.start(str(body.get("step", "")), body)
                         self._json(HTTPStatus.ACCEPTED, {"job": job["id"]})
+                    elif self.path == "/api/catchup":
+                        if body.get("confirm") is not True:
+                            raise ValueError("catching up resets your lab and your candidate: confirm first")
+                        job = board.catch_up(str(body.get("step", "")))
+                        self._json(HTTPStatus.ACCEPTED, {"job": job["id"]})
+                    elif self.path == "/api/requirement":
+                        port = int(body.get("port", 0))
+                        self._json(HTTPStatus.OK, board.write_requirement(str(body.get("id", "")), port, str(body.get("expect", "")), str(body.get("title", ""))))
                     else:
                         self._json(HTTPStatus.OK, board.write_candidate([str(x) for x in (body.get("retire") if isinstance(body.get("retire"), list) else [])]))
-                except (ValueError, RuntimeError, OSError) as exc:
+                except (ValueError, TypeError, OverflowError, RuntimeError, OSError) as exc:
                     self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             try:

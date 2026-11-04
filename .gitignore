@@ -14,3 +14,7 @@ lab/netlab.lock
 lab/*.log
 **/data_sources.json
 *.zip
+
+# your own requirements from the lab page: predict with them locally, they are not part of the change
+requirements/mine.yml
+requirements/mine.yml.draft

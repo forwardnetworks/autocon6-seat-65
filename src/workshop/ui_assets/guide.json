@@ -53,14 +53,17 @@
     {
      "step": "up",
      "label": "Start the lab",
-     "note": "Takes 2 to 3 minutes. You will see netlab start the six nodes, then the baseline go on. The machine will be busy; that is normal."
+     "note": "Takes 2 to 3 minutes. You will see netlab start the six nodes, then the baseline go on. The machine will be busy; that is normal.",
+     "cmd": "workshop up"
     },
     {
      "step": "doctor",
      "label": "Check my setup",
-     "note": "Checks tools, your Forward access and the lab."
+     "note": "Checks tools, your Forward access and the lab.",
+     "cmd": "workshop doctor"
     }
-   ]
+   ],
+   "catchup": "Starts the lab if it isn't running and applies the baseline configuration. Nothing else changes."
   },
   "baseline": {
    "title": "Give Forward a baseline",
@@ -97,7 +100,31 @@
     {
      "step": "baseline",
      "label": "Collect the baseline",
-     "note": "Reads all four routers and uploads the snapshot. About a minute."
+     "note": "Reads all four routers and uploads the snapshot. About a minute.",
+     "cmd": "workshop baseline"
+    }
+   ],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline.",
+   "data": [
+    {
+     "topic": "inventory",
+     "title": "What Forward found: your devices",
+     "why": "Forward read these straight from the routers. This is the inventory it builds everything else on.",
+     "snapshot": "baseline"
+    },
+    {
+     "topic": "routes",
+     "title": "Who can reach the service prefix",
+     "why": "Every device's route to 10.20.20.0/24, from Forward's model of the baseline.",
+     "snapshot": "baseline",
+     "prefix": "10.20.20.0/24"
+    },
+    {
+     "topic": "vulns",
+     "title": "What Forward knows about this software",
+     "why": "Published CVEs for this OS, from Forward's CVE index. The same data exists for a real network.",
+     "snapshot": "baseline",
+     "limit": 5
     }
    ]
   },
@@ -131,7 +158,8 @@
      "why": "r1 loses its only route to the service. The change is on r4; the damage is not. That distance is why review of the diff misses it."
     }
    ],
-   "run": []
+   "run": [],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It also clears your candidate, so you start the change from nothing."
   },
   "predict": {
    "title": "Predict it",
@@ -167,12 +195,18 @@
     {
      "step": "predict",
      "label": "Predict my change",
-     "note": "Runs the same check as the pull request, locally. A minute or two."
-    },
+     "note": "Runs the same check as the pull request, locally. A minute or two.",
+     "cmd": "workshop predict"
+    }
+   ],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It writes the known-good change (retire the two stale prefixes) so you can carry on from here. You still predict, approve, deploy and verify it yourself. Your candidate file is replaced.",
+   "data": [
     {
-     "step": "explain",
-     "label": "Explain the result",
-     "note": "Asks Forward AI's reviewer what the change alters and what it affects. Advice only."
+     "topic": "diff",
+     "title": "What your change does to the routing tables",
+     "why": "Forward compared the baseline model with the predicted one. These are the routes that would change.",
+     "snapshot": "baseline",
+     "against": "predicted"
     }
    ]
   },
@@ -206,7 +240,17 @@
      "why": "Change any of the three and deploy refuses, so you cannot approve one change and ship another."
     }
    ],
-   "run": []
+   "run": [],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It writes the known-good change as the candidate. You still open the pull request and approve it yourself. Your candidate file is replaced.",
+   "data": [
+    {
+     "topic": "diff",
+     "title": "What you are approving, as routing changes",
+     "why": "The same comparison: read it before you merge.",
+     "snapshot": "baseline",
+     "against": "predicted"
+    }
+   ]
   },
   "deploy": {
    "title": "Deploy exactly what was predicted",
@@ -238,7 +282,17 @@
      "why": "It refuses. The prediction was about a network that no longer exists, which is the STALE outcome."
     }
    ],
-   "run": []
+   "run": [],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. Use this if Deploy keeps saying STALE or the routers drifted. This restarts the loop from the Change step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
+   "data": [
+    {
+     "topic": "diff",
+     "title": "What you are about to ship, as routing changes",
+     "why": "Predicted, not yet real: deploy sends exactly the change that produced this.",
+     "snapshot": "baseline",
+     "against": "predicted"
+    }
+   ]
   },
   "verify": {
    "title": "Verify on the real network",
@@ -275,12 +329,24 @@
     {
      "step": "verify",
      "label": "Verify the network",
-     "note": "Probes the real flows, collects again and compares."
+     "note": "Probes the real flows, collects again and compares.",
+     "cmd": "workshop verify"
     },
     {
      "step": "probe",
      "label": "Just test the flows",
-     "note": "TCP 8080 should work, TCP 2222 must be refused."
+     "note": "TCP 8080 should work, TCP 2222 must be refused.",
+     "cmd": "workshop probe"
+    }
+   ],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. This restarts the loop from the Change step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
+   "data": [
+    {
+     "topic": "diff",
+     "title": "What really changed in the network",
+     "why": "Baseline against the network collected after deploy: the real routing changes.",
+     "snapshot": "baseline",
+     "against": "post"
     }
    ]
   },
@@ -308,14 +374,138 @@
     {
      "step": "restore",
      "label": "Restore r4",
-     "note": "Puts r4's three advertisements back."
+     "note": "Puts r4's three advertisements back.",
+     "cmd": "workshop restore"
     },
     {
      "step": "baseline",
      "label": "Take a new baseline",
-     "note": "Do this after every restore."
+     "note": "Do this after every restore.",
+     "cmd": "workshop baseline"
     }
-   ]
+   ],
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It clears your candidate, ready for another go."
   }
- }
+ },
+ "terms": {
+  "BGP": "Border Gateway Protocol: how these routers tell each other which networks they can reach.",
+  "prefix": "A block of IP addresses written like 10.20.20.0/24.",
+  "advertisement": "A router telling its neighbors \"I can reach this prefix\". r4 advertises three.",
+  "advertisements": "A router telling its neighbors \"I can reach this prefix\". r4 advertises three.",
+  "stale": "Left over and no longer needed, but still announced.",
+  "ACL": "Access control list: the rule list on r1 that decides which traffic is allowed through.",
+  "NQE": "Network Query Engine: Forward's way of asking a question of the whole network model.",
+  "snapshot": "A saved picture of the network's configuration and state at one moment.",
+  "baseline": "The snapshot taken before the change: what is true now, and the starting point for every comparison.",
+  "requirement": "A statement about what must be true, such as \"the client can reach the service on 8080\". Requirements decide the verdict.",
+  "requirements": "Statements about what must be true, such as \"the client can reach the service on 8080\". They decide the verdict.",
+  "prediction": "Forward's model of the network after your change, built without touching any router.",
+  "Predict": "The Forward feature that builds that model and checks the requirements on it.",
+  "candidate": "The file holding your proposed change.",
+  "eAPI": "Arista's HTTPS interface for configuring and reading a router.",
+  "netlab": "The tool that describes the lab (routers, links, addresses) and has containerlab start it.",
+  "containerlab": "The tool that runs network devices as containers.",
+  "drift": "The network no longer matching what was predicted, for example because someone edited a router by hand.",
+  "hash": "A short fingerprint of a file. If one character of the change differs, the hash differs.",
+  "collector": "Forward's tool that logs in to the devices and reads their configuration and state."
+ },
+ "pace": {
+  "date": "2026-11-16",
+  "tz": "America/Phoenix",
+  "start": "09:00",
+  "end": "13:00",
+  "due": [
+   [
+    "09:50",
+    "baseline"
+   ],
+   [
+    "10:45",
+    "first-prediction"
+   ],
+   [
+    "12:00",
+    "caught"
+   ],
+   [
+    "12:30",
+    "approved"
+   ],
+   [
+    "12:45",
+    "deployed"
+   ],
+   [
+    "12:55",
+    "verified"
+   ]
+  ]
+ },
+ "lane": [
+  {
+   "id": "explore",
+   "level": "Everyone",
+   "title": "Explore what Forward knows",
+   "why": "Devices, routes, CVEs and routing changes, straight from Forward's model, with filters. Read the sentence first; open the raw JSON to see exactly what Forward returned.",
+   "kind": "explore"
+  },
+  {
+   "id": "own-test",
+   "level": "Intermediate",
+   "title": "Write your own requirement",
+   "why": "r1's ACL blocks HTTPS (TCP 8443) too, but no requirement says it must stay blocked. Add one and see the prediction judge it.",
+   "kind": "own"
+  },
+  {
+   "id": "matrix",
+   "level": "Advanced",
+   "title": "Predict every way of retiring r4's statements",
+   "why": "Four changes, predicted side by side: which pass, which fail, and why. No router is touched.",
+   "kind": "run",
+   "step": "matrix",
+   "label": "Run the comparison",
+   "cmd": "workshop matrix",
+   "note": "Takes several minutes: it runs one prediction per change."
+  }
+ ],
+ "lane_ai": [
+  {
+   "id": "ask-ai",
+   "level": "Optional",
+   "title": "Ask Forward AI about your network",
+   "why": "A chat grounded in one snapshot. It explains; the requirements still decide.",
+   "kind": "chat"
+  },
+  {
+   "id": "explain",
+   "level": "Optional",
+   "title": "Have a prediction explained",
+   "why": "Forward AI summarizes what the change alters and what it affects.",
+   "kind": "run",
+   "step": "explain",
+   "label": "Explain my prediction",
+   "cmd": "workshop explain"
+  },
+  {
+   "id": "propose",
+   "level": "Optional",
+   "title": "Let Forward AI draft the change",
+   "why": "Shows a draft from intent.md. It is checked against the same scope rules and predicted like any other change.",
+   "kind": "run",
+   "step": "propose",
+   "label": "Show a draft",
+   "cmd": "workshop propose"
+  },
+  {
+   "id": "agent",
+   "level": "Optional",
+   "title": "Let an agent iterate to a passing change",
+   "why": "Draft, predict, adjust, repeat, stopping before approval. Compare its answer with yours.",
+   "kind": "run",
+   "step": "agent",
+   "label": "Run the agent",
+   "cmd": "workshop agent",
+   "note": "Takes several minutes. It replaces your candidate file."
+  }
+ ]
 }
