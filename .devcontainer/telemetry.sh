@@ -1,8 +1,9 @@
 # Beta activity log: after each terminal command, report the command line and its exit code to the workshop
 # service (secrets masked first). Sourced from ~/.bashrc and ~/.zshrc by bootstrap.sh. Does nothing unless this
-# seat's TELEMETRY_KEY secret and AC6_TELEMETRY_URL are set. Runs in the background and never prints.
+# seat's TELEMETRY_KEY secret, AC6_TELEMETRY_URL and AC6_SHELL_LOG=1 are set (the beta seats only: at the event shell
+# commands are not logged, only workshop results). Runs in the background and never prints.
 
-if [ -n "${TELEMETRY_KEY:-}" ] && [ -n "${AC6_TELEMETRY_URL:-}" ] && [ -n "${AC6_ROOT:-}" ] && command -v python3 >/dev/null 2>&1; then
+if [ "${AC6_SHELL_LOG:-}" = "1" ] && [ -n "${TELEMETRY_KEY:-}" ] && [ -n "${AC6_TELEMETRY_URL:-}" ] && [ -n "${AC6_ROOT:-}" ] && command -v python3 >/dev/null 2>&1; then
   __ac6_send() {
     # $1 exit code, $2 command line
     [ -n "$2" ] || return 0

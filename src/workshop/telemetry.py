@@ -83,7 +83,7 @@ def report_workshop(command: str, exit_code: int, started: float, statuses: dict
 
 def _main(argv: list[str]) -> int:
     # python3 telemetry.py cmd <exit> <cwd> <command line...>
-    if len(argv) >= 5 and argv[1] == "cmd":
+    if len(argv) >= 5 and argv[1] == "cmd" and os.environ.get("AC6_SHELL_LOG") == "1":
         try:
             code = int(argv[2])
         except ValueError:

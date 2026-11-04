@@ -39,10 +39,10 @@ if [ -n "${FORWARD_URL:-}" ]; then
 fi
 
 step "Terminal activity log (beta)"
-# Beta testers' terminal commands and workshop results are logged to the workshop service, secrets masked.
-# Nothing happens unless this seat has its TELEMETRY_KEY secret. See "Beta notice" in README.md.
+# Beta testers' terminal commands (AC6_SHELL_LOG=1) and every seat's workshop results (TELEMETRY_KEY) are logged to
+# the workshop service, secrets masked. Nothing happens unless this seat has its TELEMETRY_KEY secret. See "Beta notice" in README.md.
 bash .devcontainer/install-telemetry-hook.sh   # also runs earlier, from onCreateCommand
-if [ -n "${TELEMETRY_KEY:-}" ]; then echo "activity log: on (beta). Terminal commands are sent to the workshop team with secrets masked."; fi
+if [ -n "${TELEMETRY_KEY:-}" ] && [ "${AC6_SHELL_LOG:-}" = "1" ]; then echo "activity log: on (beta). Terminal commands are sent to the workshop team with secrets masked."; fi
 
 step "Doctor"
 .venv/bin/workshop doctor || true
