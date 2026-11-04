@@ -67,8 +67,8 @@ class Manifest:
 _MARK = {"PASS": "✅ PASS", "FAIL": "❌ FAIL", "ERROR": "⚠️ ERROR", "INCONCLUSIVE": "❔ INCONCLUSIVE", "STALE": "⏳ STALE"}
 
 
-def markdown(m: Manifest) -> str:
-    """The PR check summary: result first, then the evidence a reviewer needs."""
+def markdown(m: Manifest, routing=None) -> str:
+    """The PR check summary: result first, then the evidence a reviewer needs. ``routing`` is Forward's routing diff (a data.Table), if it could be had."""
     lines = [f"## Forward Predict: {_MARK.get(m.status, m.status)}", ""]
     if m.reason:
         lines += [m.reason, ""]
@@ -81,6 +81,13 @@ def markdown(m: Manifest) -> str:
         for r in m.results:
             lines.append(f"| **{r['id']}** — {r['title']} | {_MARK.get(r['status'], r['status'])} | {r['expected']} | {_cell(r['observed'])} |")
         lines.append("")
+    if routing is not None:
+        lines += ["### What the change does to the routing tables", "", _cell(routing.summary), ""]
+        if routing.rows:
+            lines += ["| Device | Prefix | Change | Before | After |", "|---|---|---|---|---|"]
+            lines += [f"| {_cell(str(r['device']))} | `{_cell(str(r['prefix']))}` | {_cell(str(r['change']))} | {_cell(str(r['before']))} | {_cell(str(r['after']))} |" for r in routing.rows[:20]]
+            lines.append("")
+        lines += ["<sub>From Forward's models of the baseline and the predicted network. No router was touched.</sub>", ""]
     lines += [
         "<details><summary>What was checked</summary>",
         "",

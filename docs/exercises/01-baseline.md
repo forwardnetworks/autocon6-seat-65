@@ -46,6 +46,10 @@ workshop baseline
 The headless collector reads the four routers into a snapshot, Forward processes it into a model, and the
 baseline tests run against that model. Every line should say **PASS**.
 
+Read the output top to bottom. It starts with what Forward modelled (how many devices, running what). Then each requirement
+is a block: its **name and meaning**, **must be** (what had to be true), and **Forward saw** (what Forward's model shows,
+with the path traffic takes where there is one). It ends with **What this means** and the next step.
+
 `STALE-KNOWN` is the one to read. It lists r4 `network` statements whose prefixes r4 has no route for. These are
 stale advertisements, and retiring them is today's change request.
 

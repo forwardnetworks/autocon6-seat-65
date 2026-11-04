@@ -36,6 +36,11 @@ Verify does four things:
 3. reruns every test on the new snapshot
 4. compares each result with its prediction
 
+The output is laid out so you can read it as evidence, top to bottom: the probes first, then every requirement as a block
+(what it must be, what Forward saw on the real network, and "predicted PASS, collected PASS: as predicted"), then **what
+really changed in the routing tables** between the baseline and now, then **What this means**. A `DIFFERENT from the
+prediction` line is the thing to look for.
+
 **MATCH** closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
 
 ### What you just proved

@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 
 from workshop import config
+from workshop import report as report_
 from workshop.evidence import EXIT
 
 
@@ -194,17 +195,24 @@ def _up(settings: config.Settings, args) -> int:
         log(f"workshop up: {exc}")
         return EXIT["ERROR"]
     log("lab is up at baseline")
+    for line in report_.up_close():
+        log(line)
     return 0
 
 
 def _down(settings: config.Settings, args) -> int:
     banner(settings, "down")
     result = subprocess.run(["netlab", "down", "--cleanup"], cwd=settings.repo_root / "lab", check=False)
+    if result.returncode == 0:
+        log("lab removed: the six containers and their links are gone. `workshop up` builds it again (your Forward snapshots stay).")
     return 0 if result.returncode == 0 else EXIT["ERROR"]
 
 
 def _baseline(settings: config.Settings, args) -> int:
+    import contextlib
+
     from workshop import baseline
+    from workshop.forward import Forward
 
     banner(settings, "baseline")
     try:
@@ -212,15 +220,25 @@ def _baseline(settings: config.Settings, args) -> int:
     except Exception as exc:  # noqa: BLE001
         log(f"workshop baseline: {exc}")
         return EXIT["ERROR"]
-    log(f"baseline snapshot {snapshot_id} (fingerprint {fp[:12]})")
-    for r in report.results:
-        log(f"  {r.status.value:<12} {r.id:<14} {r.observed[:90]}")
+    log(f"baseline snapshot {snapshot_id} (fingerprint {fp[:12]}): Forward's model of your network as it is now")
+    with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only
+        log(report_.inventory_line(fwd.c, snapshot_id))
+    log("")
+    log("Requirements checked on that model:")
+    for line in report_.requirement_lines([r.to_json() for r in report.results]):
+        log(line)
+    log("")
     log(f"baseline: {report.status.value}")
+    for line in report_.baseline_close(report.status.value):
+        log(line)
     return EXIT[report.status.value]
 
 
 def _predict(settings: config.Settings, args) -> int:
+    import contextlib
+
     from workshop import evidence, predict
+    from workshop.forward import Forward
 
     banner(settings, "predict")
     root = settings.repo_root
@@ -230,12 +248,29 @@ def _predict(settings: config.Settings, args) -> int:
     m = predict.run(settings, predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git))
     out = Path(args.out)
     m.write(out / "evidence.json")
-    summary = evidence.markdown(m)
+    routing = None
+    if m.predicted_snapshot_id:
+        with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only: short timeout, no retries
+            routing = report_.routing_table(fwd.c, str(m.baseline_snapshot_id), str(m.predicted_snapshot_id))
+    summary = evidence.markdown(m, routing)
     (out / "summary.md").write_text(summary)
     _append_summary(summary)
     log(f"{m.status}: {m.reason}")
-    for r in m.results:
-        log(f"  {r['status']:<12} {r['id']:<14} {r['observed'][:90]}")
+    with contextlib.suppress(Exception):  # display only: whatever happens below, the verdict above and the exit code stand
+        if m.predicted_snapshot_id and m.results:
+            log("")
+            log("Requirements, judged on the network that would result:")
+            for line in report_.requirement_lines(m.results):
+                log(line)
+            log("")
+            log(f"What the change does to the routing tables (baseline {m.baseline_snapshot_id} -> predicted {m.predicted_snapshot_id}):")
+            for line in report_.routing_lines(routing):
+                log(line)
+        else:
+            log("")
+            log("No predicted network was built, so there are no requirements or routing changes to show for this change.")
+        for line in report_.predict_close(m.status, [r["id"] for r in m.results if r["status"] == "FAIL"]):
+            log(line)
     if m.deployable:
         target = f"--pr {args.pr}" if args.pr else f"--evidence {out / 'evidence.json'}"
         log(f"to deploy after merging: workshop deploy {target} --confirm {m.candidate_sha256[:7]}")
@@ -264,7 +299,11 @@ def _deploy(settings: config.Settings, args) -> int:
 
 
 def _verify(settings: config.Settings, args) -> int:
+    import contextlib
+
     from workshop import verify
+    from workshop.evidence import Manifest
+    from workshop.forward import Forward
 
     banner(settings, "verify")
     evidence = args.evidence
@@ -278,10 +317,22 @@ def _verify(settings: config.Settings, args) -> int:
     if result["outcome"] == "INCOMPLETE":
         log(result["reason"])
         return EXIT["INCONCLUSIVE"]
-    log(f"{'Requirement':<16} {'Predicted':<13} {'Collected':<13}")
-    for row in result["rows"]:
-        log(f"{row['id']:<16} {row['predicted']:<13} {row['collected']:<13}")
+    log("")
+    log("Requirements on the real network, compared with what Predict said:")
+    for line in report_.requirement_lines(result["rows"], compare=True):
+        log(line)
+    with contextlib.suppress(Exception):  # display only: the verdict above never depends on this
+        before = Manifest.read(Path(evidence)).baseline_snapshot_id
+        with Forward(settings, quick=True) as fwd:
+            table = report_.routing_table(fwd.c, str(before), str(result["post_snapshot_id"]))
+        log("")
+        log(f"What really changed in the routing tables (baseline {before} -> the network now, snapshot {result['post_snapshot_id']}):")
+        for line in report_.routing_lines(table):
+            log(line)
+    log("")
     log(f"verify: {result['outcome']} (post-change snapshot {result['post_snapshot_id']})")
+    for line in report_.verify_close(result["outcome"], result["rows"]):
+        log(line)
     return 0 if result["outcome"] == "MATCH" else EXIT["FAIL"]
 
 
@@ -479,13 +530,17 @@ def _agent(settings: config.Settings, args) -> int:
 
 
 def _matrix(settings: config.Settings, args) -> int:
-    from workshop import matrix
+    from workshop import matrix, requirements
 
     banner(settings, "matrix")
     log("Predicting each combination against your baseline (about half a minute each). Nothing is written and nothing is deployed.")
     rows = matrix.run(settings, log, everything=args.all)
     log("")
-    log(matrix.table(rows, matrix.requirement_ids(settings)))
+    ids = matrix.requirement_ids(settings)
+    log(matrix.table(rows, ids))
+    titles = {r.id: r.title for r in requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root).requirements}
+    for line in report_.matrix_notes(rows, titles):
+        log(line)
     log("\nEach line is a real Forward prediction judged by your requirements. Which combinations are safe? Which pass every test?")
     return 0
 
@@ -520,11 +575,12 @@ def _probe(settings: config.Settings, args) -> int:
     from workshop import lab
 
     banner(settings, "probe")
-    log(f"from the client (10.10.10.10) to the service ({lab.SERVICE_IP}):")
+    results = []
     for port in lab.SERVICE_PORTS:
         p = lab.probe(port)
-        state = "open" if p.reachable else ("blocked" if p.listener_up else "no answer, and the service is not listening")
-        log(f"  TCP {port:<5} {state}")
+        results.append((port, p.reachable, p.listener_up))
+    for line in report_.probe_lines(results, lab.SERVICE_IP):
+        log(line)
     return 0
 
 
@@ -562,16 +618,25 @@ def _data(settings: config.Settings, args) -> int:
 
 def _status(settings: config.Settings, args) -> int:
     banner(settings, "status")
-    blocks = {"baseline.json": "Collector + Observability", "deploy.json": "Executor", "verify.json": "Collector + Observability"}
-    for name in ("baseline.json", "deploy.json", "verify.json"):
+    from workshop import candidate
+
+    def read(name: str):
         path = settings.state_dir / name
-        if path.is_file():
-            data = json.loads(path.read_text())
-            summary = {k: data.get(k) for k in ("snapshot", "outcome", "post_snapshot_id", "finished_at") if data.get(k)}
-            log(f"  {name:<14} [{blocks[name]}] {summary}")
-        else:
-            log(f"  {name:<14} [{blocks[name]}] (none yet)")
-    log("  (the bracketed names are NAF Framework blocks: docs/exercises/framework.md)")
+        try:
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+
+    try:
+        changes = len(candidate.load(settings.repo_root / "candidate" / "r4-bgp.eos").changes)
+    except (candidate.CandidateError, OSError):
+        changes = 0
+    base, deployed, verified = read("baseline.json"), read("deploy.json"), read("verify.json")
+    # a deploy or verify from an earlier loop is history, not progress
+    if not base:
+        deployed = verified = None
+    for line in report_.status_lines(base, deployed, verified, changes):
+        log(line)
     return 0
 
 

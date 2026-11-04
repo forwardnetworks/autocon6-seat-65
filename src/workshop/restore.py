@@ -36,4 +36,6 @@ def run(settings: Settings, log) -> None:
         raise RuntimeError(f"restore did not take: {left} still advertised on r4")
     if extras:
         log(f"  removed hand-added advertisements: {', '.join(extras)}")
-    log("  r4 advertisements restored; run `workshop baseline` before predicting again")
+    log(f"  r4 was advertising: {', '.join(current) or 'nothing'}")
+    log(f"  r4 now advertises:  {', '.join(readback)}  (the baseline: the live service prefix and the two stale ones)")
+    log("  r4 advertisements restored; the old baseline no longer matches the network, so run `workshop baseline` before predicting again")

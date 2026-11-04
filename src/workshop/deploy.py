@@ -35,13 +35,13 @@ def lab_lock(settings: Settings):
         try:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
-            raise Refused("ERROR", "another workshop command is changing this lab; wait for it to finish") from exc
+            raise Refused("ERROR", "another workshop command is changing this lab (a deploy, or the lab page's catch-up); wait for it to finish, then run this again") from exc
         yield
 
 
 def gates(settings: Settings, m: Manifest, fwd: Forward, *, check_github: bool = True) -> None:
     if not m.deployable:
-        raise Refused("ERROR", f"the evidence is {m.status} ({m.mode}); only a live PASS can be deployed")
+        raise Refused("ERROR", f"the evidence is {m.status} ({m.mode}); only a live PASS can be deployed. Fix the change, predict again, and deploy the evidence that passes")
     if m.lab_id != settings.lab_id or m.network_id != settings.network_id:
         raise Refused("ERROR", f"the evidence is for lab {m.lab_id} / network {m.network_id}, not this lab")
     merged = candidate.load(settings.repo_root / m.candidate_path)
@@ -91,7 +91,12 @@ def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], N
         settings.state("deploy.json").write_text(json.dumps(record, indent=2) + "\n")
         if problems:
             raise Refused("ERROR", "the change was sent but the router does not show it as expected: " + "; ".join(problems))
-        log(f"  {candidate.DEVICE}: {len(lines) - len(candidate.HEADER)} change(s) applied and read back")
+        log(f"  {candidate.DEVICE}: {len(lines) - len(candidate.HEADER)} change(s) applied and read back from the router")
+        log("")
+        log("What this means: r4 now holds exactly the lines Predict judged (hash " + m.candidate_sha256[:12] + "), nothing more. The gates that")
+        approved = "the pull request merged and its check green" if check_github and m.git.get("pr") else "no pull request was involved (a local rehearsal)"
+        log(f"allowed it: evidence PASS, {approved}, the baseline still current, and no router edited by hand since.")
+        log("Whether the real network behaves as predicted is what `workshop verify` checks next.")
         return record
 
 

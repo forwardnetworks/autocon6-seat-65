@@ -683,8 +683,8 @@ function renderPrediction(s) {
   const stale = !s.prediction_current ? `<div class="banner warn">The candidate has changed since this prediction. Predict it again before you trust this table.</div>` : "";
   $("prediction").innerHTML = `${stale}
     <div style="margin-bottom:8px"><span class="pill ${esc(m.status)}">${esc(m.status)}</span> ${md(m.reason)}</div>
-    <table><thead><tr><th>Requirement</th><th>Result</th><th>Forward observed</th></tr></thead><tbody>
-    ${(m.results || []).map((r) => `<tr><td><b>${esc(r.id)}</b><div class="muted">${esc(r.title)}</div></td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc((r.observed || "").slice(0, 160))}</td></tr>`).join("")}
+    <table><thead><tr><th>Requirement</th><th>Result</th><th>What Forward observed</th></tr></thead><tbody>
+    ${(m.results || []).map((r) => `<tr><td><b>${esc(r.id)}</b><div class="muted">${esc(r.title)}</div></td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td>${esc((r.observed || "").slice(0, 160))}${r.expected ? `<div class="muted">must be: ${esc(r.expected)}</div>` : ""}</td></tr>`).join("")}
     </tbody></table>
     <div class="muted" style="margin-top:6px">Baseline ${esc(m.baseline_snapshot_id)} → predicted ${esc(m.predicted_snapshot_id)} · change set ${esc(m.change_set_id)} · candidate ${esc((m.candidate_sha256 || "").slice(0, 7))}</div>`;
 }
@@ -694,9 +694,9 @@ function renderVerify(s) {
   $("verify-card").hidden = !v;
   if (!v) return;
   $("verify").innerHTML = `<div style="margin-bottom:8px"><span class="pill ${esc(v.outcome)}">${esc(v.outcome)}</span> ${esc(v.reason || (v.post_snapshot_id ? "post-change snapshot " + v.post_snapshot_id : ""))}</div>
-    <table><thead><tr><th>Requirement</th><th>Predicted</th><th>Collected</th></tr></thead><tbody>
-    ${(v.rows || []).map((r) => `<tr><td>${esc(r.id)}</td><td><span class="pill ${esc(r.predicted)}">${esc(r.predicted)}</span></td><td><span class="pill ${esc(r.collected)}">${esc(r.collected)}</span></td></tr>`).join("")}
-    ${(v.probes || []).map((p) => `<tr><td>probe TCP ${esc(p.port)}</td><td>${esc(p.expected)}</td><td><span class="pill ${p.ok ? "PASS" : "FAIL"}">${esc(p.observed)}</span></td></tr>`).join("")}
+    <table><thead><tr><th>Requirement</th><th>Predicted</th><th>Collected</th><th>What Forward saw on the real network</th></tr></thead><tbody>
+    ${(v.rows || []).map((r) => `<tr><td><b>${esc(r.id)}</b><div class="muted">${esc(r.title || "")}</div></td><td><span class="pill ${esc(r.predicted)}">${esc(r.predicted)}</span></td><td><span class="pill ${esc(r.collected)}">${esc(r.collected)}</span></td><td>${esc((r.observed || "").slice(0, 160))}${r.expected ? `<div class="muted">must be: ${esc(r.expected)}</div>` : ""}</td></tr>`).join("")}
+    ${(v.probes || []).map((p) => `<tr><td>probe TCP ${esc(p.port)}<div class="muted">a real connection from the client</div></td><td>${esc(p.expected)}</td><td><span class="pill ${p.ok ? "PASS" : "FAIL"}">${esc(p.observed)}</span></td><td></td></tr>`).join("")}
     </tbody></table>`;
 }
 

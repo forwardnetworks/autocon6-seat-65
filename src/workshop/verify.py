@@ -42,8 +42,8 @@ def run(settings: Settings, evidence: Path, log) -> dict:
     with Forward(settings) as fwd:
         report = evaluate(reqs, fwd.observer(snapshot_id), snapshot_id, root=settings.repo_root)
     predicted = {r["id"]: r["status"] for r in m.results}
-    rows = [{"id": r.id, "title": r.title, "predicted": predicted.get(r.id, "?"), "collected": r.status.value, "observed": r.observed}
-            for r in report.results]
+    rows = [{"id": r.id, "title": r.title, "expected": r.expected, "predicted": predicted.get(r.id, "?"), "collected": r.status.value,
+             "observed": r.observed, "evidence": r.evidence} for r in report.results]
     match = all(row["predicted"] == row["collected"] for row in rows) and all(p["ok"] for p in probes)
     result = {"outcome": "MATCH" if match else "MISMATCH", "post_snapshot_id": snapshot_id, "fingerprint": fp, "rows": rows, "probes": probes}
     settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")

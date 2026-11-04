@@ -137,9 +137,12 @@ class SnapshotObserver:
 
 
 class Forward:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, *, quick: bool = False) -> None:
+        """``quick=True`` is for display-only questions (the routing diff and inventory shown after a result): a short timeout and no
+        retries, so a slow Forward costs a few seconds and a note, never a stuck command or a CI job past its limit."""
         self.settings = settings
-        self.c = ForwardClient.from_env(network_id=settings.network_id, user_agent=f"autocon6-workshop/{__version__}")
+        extra = {"timeout": 30, "retries": 0} if quick else {}
+        self.c = ForwardClient.from_env(network_id=settings.network_id, user_agent=f"autocon6-workshop/{__version__}", **extra)
 
     def __enter__(self) -> Self:
         return self
