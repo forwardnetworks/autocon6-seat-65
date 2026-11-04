@@ -79,11 +79,11 @@ def up(settings: Settings, log) -> None:
     lab = lab_dir(settings)
     if not states:
         log("starting the lab (netlab up --no-config) ...")
-        _run(["netlab", "up", "--no-config", "-p", "clab"], cwd=lab)
+        _run(["netlab", "up", "--no-config", "-p", "clab"], cwd=lab, log=log)
     elif any(state != "running" for state in states.values()):
         # Containers that were stopped lose their data-plane links; only a redeploy restores them.
         log("the lab was stopped; redeploying it (containerlab deploy --reconfigure) ...")
-        _run(["sudo", "-E", "containerlab", "deploy", "--reconfigure", "-t", "clab.yml"], cwd=lab)
+        _run(["sudo", "-E", "containerlab", "deploy", "--reconfigure", "-t", "clab.yml"], cwd=lab, log=log)
     else:
         log("lab containers are running")
     wait_ssh(settings, log)
@@ -157,8 +157,14 @@ def probe(port: int) -> Probe:
     return Probe(port, reach.returncode == 0, listen.returncode == 0)
 
 
-def _run(cmd: list[str], cwd: Path) -> None:
-    result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        tail = "\n".join((result.stdout + result.stderr).splitlines()[-15:])
-        raise LabError(f"{' '.join(cmd)} failed:\n{tail}")
+def _run(cmd: list[str], cwd: Path, log=None) -> None:
+    """Run a lab command, showing its output as it happens (netlab and containerlab take minutes, and people should see them work)."""
+    lines: list[str] = []
+    proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+    for raw in proc.stdout:  # type: ignore[union-attr]
+        line = raw.rstrip("\n")
+        lines.append(line)
+        if log is not None and line.strip():
+            log("  | " + line)
+    if proc.wait() != 0:
+        raise LabError(f"{' '.join(cmd)} failed:\n" + "\n".join(lines[-15:]))

@@ -126,7 +126,7 @@ def prediction_pair(settings, evidence_path) -> tuple[str, str]:
 
 def inventory(client, snapshot_id: str) -> Table:
     forward_rows = [dict(r) for r in client.nqe.query(_INVENTORY, snapshot_id=snapshot_id)]
-    rows = [dict(r) for r in forward_rows]
+    rows = sorted((dict(r) for r in forward_rows), key=lambda r: str(r.get("name")))  # the table reads r1, r2, r3, r4
     for r in rows:
         support = r.pop("support", None)
         r["end of support"] = _support_text(support)

@@ -32,18 +32,19 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
      reaches a router, and Deploy can check it.
 
    It takes 2 to 3 minutes and the machine will be busy. Leave it running and read on.
-4. **Look at what netlab built.** Click the **Containerlab** icon in the left activity bar. Under **Running Labs** you
-   will find your lab, `autocon6`, with six nodes:
+4. **Look at what netlab built.** In the terminal, `containerlab inspect --all` lists your lab, `autocon6`, with six nodes
+   (and the **Containerlab** icon in the left activity bar shows the same tree: if it stays blank, the terminal is the reliable way):
    - **r1, r2, r3, r4**: Arista cEOS routers in the diamond (AS 65001 to 65004)
    - **client** and **service**: small Linux containers. The client sits behind r1 and the service behind r4, and the
      requirements test whether the client can still reach the service
 
-   Right-click a node to open a terminal on it (**Connect to SSH** for a router, **Attach shell** for the Linux ones).
-   Right-click the lab for **Graph** to see the topology drawn. Try this on r1:
+   To get a prompt on a router: `docker exec -it clab-autocon6-r1 Cli` (type `enable` first), and `docker exec -it clab-autocon6-client sh`
+   for the client. In the Containerlab panel, right-click a node for **Connect to SSH** or **Attach shell**, and the lab for **Graph**.
+   Try this on r1:
    ```
    show ip bgp summary
    ```
-   Three neighbors should be **Established**. In the terminal you can also run `netlab status` from the `lab/` folder.
+   Two neighbors should be **Established**. `netlab status` (from the `lab/` folder) lists the lab too.
 
 ## What you have
 

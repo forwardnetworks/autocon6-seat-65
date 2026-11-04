@@ -14,6 +14,7 @@ means rewriting these five functions: ``connect``, ``apply``, ``show``, ``show_j
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -22,6 +23,11 @@ from napalm.base.exceptions import ConnectionException, MergeConfigException, Na
 from pyeapi.eapilib import EapiError
 
 from workshop.config import Settings
+
+# pyeapi logs every refused connection as an exception, and with no handler Python prints those tracebacks to the terminal. While
+# the routers boot that is expected (the wait loop retries), so it must not be shown: our DeployError carries the real message.
+for _name in ("pyeapi", "napalm"):
+    logging.getLogger(_name).addHandler(logging.NullHandler())
 
 
 class DeployError(RuntimeError):
