@@ -149,7 +149,8 @@ def routes(client, snapshot_id: str, device: str = "", prefix: str = "") -> Tabl
     forward_rows = [dict(r) for r in client.nqe.query(_ROUTES, snapshot_id=snapshot_id)]
     total = len({(r["device"], str(r["prefix"])) for r in forward_rows})
     picked = [r for r in forward_rows if (not device or r["device"] == device) and (not prefix or str(r["prefix"]) == prefix)]
-    rows = [{k: ("" if v is None else v) for k, v in r.items()} for r in picked]
+    rows = [{k: ("" if v is None else v) for k, v in r.items()}
+            for r in sorted(picked, key=lambda r: (str(r["device"]), str(r["prefix"])))]  # r1..r4, each router's routes in prefix order; raw keeps Forward's order
     count = len({(r["device"], str(r["prefix"])) for r in rows})  # an ECMP route has several next hops but is one route
     scope = " and ".join(x for x in (f"on {device}" if device else "", f"for {prefix}" if prefix else "") if x)
     if prefix and rows:

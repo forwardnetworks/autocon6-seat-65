@@ -150,12 +150,12 @@
     {
      "q": "Say you retire 10.20.20.0/24. Which router shows the damage?",
      "options": [
-      "r4, where you made the change",
-      "r1, two hops away, which loses its route",
+      "Only r4, where you made the change",
+      "Every router that learned the route from r4: r2 and r3 first, then r1, where the client's traffic enters",
       "None: BGP re-converges"
      ],
      "answer": 1,
-     "why": "r1 loses its only route to the service. The change is on r4; the damage is not. That distance is why review of the diff misses it."
+     "why": "r4 stops advertising 10.20.20.0/24, so r2 and r3 lose the route, and r1 loses it too because it has no other way to the service. The edit is on r4; the outage is felt at the client's door. That distance is why reviewing r4's diff misses it. The routing changes Forward lists after Predict show exactly this."
     }
    ],
    "run": [],

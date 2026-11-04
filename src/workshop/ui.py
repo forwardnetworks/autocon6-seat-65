@@ -15,6 +15,7 @@ on r4, and ask Forward AI a question (advice).
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -29,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from workshop import ai, candidate, progress
+from workshop import ai, candidate, github, progress
 from workshop.config import Settings
 from workshop.evidence import Manifest
 
@@ -59,8 +60,8 @@ ARTIFACTS: dict[str, list[tuple[str, str, str, bool]]] = {
                 ("What Forward said about the predicted network (structured)", "forward:predicted", "json", False)],
     "approve": [("The pipeline that runs on your pull request", ".github/workflows/forward-predict.yml", "yaml", True)],
     "deploy": [("The change that will be sent to r4", "candidate/r4-bgp.eos", "text", True),
-               ("What was deployed, with the router's own diff", "state:deploy.json", "json", True)],
-    "verify": [("The result compared with the prediction", "state:verify.json", "json", True),
+               ("What was deployed, with the router's own diff", "state:deploy.json", "json", False)],
+    "verify": [("The result compared with the prediction", "state:verify.json", "json", False),
                ("What Forward said about the real network afterwards (structured)", "forward:post", "json", False)],
 }
 # "Catch me up": put the lab and Forward's baseline into the state a step expects. It never skips a gate: Predict,
@@ -118,17 +119,21 @@ def _containers() -> dict[str, Any]:
 
 def _pull_requests(root: Path) -> list[dict[str, Any]]:
     out = subprocess.run(
-        ["gh", "pr", "list", "--state", "all", "--limit", "5", "--json", "number,title,state,headRefOid,statusCheckRollup,url"],
+        ["gh", "pr", "list", "--state", "all", "--limit", "10", "--json", "number,title,state,headRefOid,statusCheckRollup,url,author"],
         cwd=root, capture_output=True, text=True, timeout=20, check=False,
     )
     if out.returncode != 0:
         return []
+    me = os.environ.get("GITHUB_USER", "") if os.environ.get("CODESPACES") else ""
     prs = []
     for pr in json.loads(out.stdout or "[]"):
+        # In a Codespace only this person's pull requests are their progress: provisioning leaves a closed "wave" PR on every seat.
+        if me and (pr.get("author") or {}).get("login") != me:
+            continue
         checks = {c.get("name"): (c.get("conclusion") or c.get("status") or "").upper() for c in pr.get("statusCheckRollup") or []}
-        prs.append({"number": pr["number"], "title": pr["title"], "state": pr["state"], "url": pr["url"],
+        prs.append({"number": pr["number"], "title": pr["title"], "state": pr["state"], "url": pr["url"], "sha": pr.get("headRefOid", ""),
                     "predict": checks.get("forward/predict", ""), "advice": checks.get("forward/advice", "")})
-    return prs
+    return prs[:5]
 
 
 class Chats:
@@ -300,17 +305,48 @@ class Board:
         self.settings, self.evidence = settings, evidence
         self.containers = _Cached(_containers, 10)
         self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30)
+        self.pr_evidence = _Cached(self._pr_evidence, 20)
         self.chats = Chats(settings)
         self.jobs = Jobs(settings, evidence)
         self._data_cache: dict[tuple, tuple[float, dict[str, Any], float]] = {}
+
+    def _pr_evidence(self) -> Path | None:
+        """The evidence of the newest of this person's pull requests whose forward/predict check has finished (downloaded once per commit)."""
+        for pr in self.prs.get() or []:
+            if (pr.get("predict") or "").upper() not in ("SUCCESS", "FAILURE") or not pr.get("sha"):
+                continue
+            dest = self.settings.state(f"pr-evidence/{pr['sha']}")
+            evidence = dest / "evidence.json"
+            if not evidence.is_file():
+                try:
+                    github.download_pr_evidence(int(pr["number"]), str(pr["sha"]), dest)
+                except github.GitHubError:
+                    continue
+            return evidence
+        return None
+
+    def shown_evidence(self) -> Path:
+        """The prediction to show people: the newest of the one ``workshop predict`` wrote here and the one the pull request's check made.
+        The exercises teach the pull-request path, so a page that only knew the local prediction told people nothing had been predicted."""
+        found = [p for p in (self.evidence if self.evidence.is_file() else None, self.pr_evidence.get()) if isinstance(p, Path) and p.is_file()]
+        if not found:
+            return self.evidence
+
+        def made(path: Path) -> str:
+            try:
+                return Manifest.read(path).created_at
+            except (OSError, ValueError, KeyError, TypeError):
+                return ""
+
+        return max(found, key=made)
 
     def snapshot_for(self, which: str) -> str:
         if which == "baseline":
             data = _read_json(self.settings.state_dir / "baseline.json")
             if data:
                 return str(data["snapshot"])
-        elif which == "predicted" and self.evidence.is_file():
-            m = Manifest.read(self.evidence)
+        elif which == "predicted" and self.shown_evidence().is_file():
+            m = Manifest.read(self.shown_evidence())
             if m.predicted_snapshot_id:
                 return m.predicted_snapshot_id
         elif which == "post":
@@ -324,7 +360,8 @@ class Board:
         base = _read_json(s.state_dir / "baseline.json")
         deployed = _read_json(s.state_dir / "deploy.json")
         verified = _read_json(s.state_dir / "verify.json")
-        m = Manifest.read(self.evidence) if self.evidence.is_file() else None
+        shown = self.shown_evidence()
+        m = Manifest.read(shown) if shown.is_file() else None
         advice = _read_json(self.evidence.parent / "ai.json")
         cand = self._candidate()
         lab = self.containers.get()
@@ -353,10 +390,10 @@ class Board:
         if prefix and not PREFIX.fullmatch(prefix):
             raise fdata.DataError("a prefix looks like 10.20.20.0/24")
         if topic == "diff" and against == "predicted":
-            snap, other = fdata.prediction_pair(self.settings, self.evidence)  # the prediction's own baseline, and only if it is current
+            snap, other = fdata.prediction_pair(self.settings, self.shown_evidence())  # the prediction's own baseline, and only if it is current
         else:
-            snap = fdata.snapshot_for(self.settings, self.evidence, snapshot or "baseline")
-            other = fdata.snapshot_for(self.settings, self.evidence, against) if against else ""
+            snap = fdata.snapshot_for(self.settings, self.shown_evidence(), snapshot or "baseline")
+            other = fdata.snapshot_for(self.settings, self.shown_evidence(), against) if against else ""
         key = (topic, snap, other, device, prefix)
         hit = self._data_cache.get(key)
         if hit and time.monotonic() - hit[0] < hit[2]:
@@ -373,7 +410,7 @@ class Board:
             if ref.startswith("state:"):
                 path = self.settings.state(ref[6:])
             elif ref == "evidence:":
-                path = self.evidence
+                path = self.shown_evidence()
             elif ref.startswith("forward:"):
                 try:
                     path = self.settings.state(f"forward-{self.snapshot_for(ref[8:])}.json")

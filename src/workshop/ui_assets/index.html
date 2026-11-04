@@ -315,6 +315,7 @@ const TIPS = [
 
 let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
+const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
 let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
 
 async function loadGuide() { try { guide = await (await fetch("/api/guide")).json(); } catch { guide = null; } }
@@ -454,9 +455,8 @@ function facts(key, s) {
   if (key === "change") {
     const c = s.candidate || {};
     if (c.ok && c.changes?.length) {
-      const live = c.changes.filter((l) => l.includes("10.20.20.0/24")).length;
       f.push(`The candidate retires ${c.changes.length} prefix(es): ${c.changes.map((l) => `<code>${esc(l.replace("no network ", ""))}</code>`).join(", ")}.`);
-      f.push(live ? `<b>One of them is the live service prefix.</b> Expect a FAIL when you predict.` : "None of them carries the service. Expect a PASS when you predict.");
+      f.push("Before you predict, decide what you expect: will every requirement still hold, or will something break? Then predict and see whether you were right.");
     } else f.push("No lines yet. Tick the prefixes to retire, or edit <code>candidate/r4-bgp.eos</code>.");
     if (c.sha256) f.push(`Candidate hash: <code>${esc(c.sha256.slice(0, 7))}</code> (this is what you will confirm at deploy).`);
   }
@@ -614,7 +614,7 @@ async function post(path, body) {
 async function runStep(body, home = "guide") {
   const r = await post("/api/run", body);
   if (r.error) { const keep = job; showMsg(r.error); if (keep && !keep.done) job = keep; return; }
-  job = { id: r.job, done: false, cmd: "workshop " + body.step, next: 0, home }; outLines = [];
+  job = { id: r.job, done: false, cmd: "workshop " + body.step, step: body.step, next: 0, home }; outLines = [];
   guideSig = ""; pollJob();
 }
 
@@ -636,9 +636,17 @@ function showMsg(text) {
   if (box) box.innerHTML = `<div class="gsec"><div class="banner warn">${esc(text)}</div></div>`;
 }
 
+function jobBelongsHere() {
+  // A job's output is shown on the step that runs it (and for a catch-up, wherever it was started), never under an unrelated step.
+  if (!job || job.home === "lane") return true;
+  const here = ((guide && guide.steps[currentKey()] || {}).run || []).map((r) => r.step).concat(currentKey() === "deploy" ? ["deploy"] : []);
+  return String(job.step || "").startsWith("catch-up") || String(job.cmd || "").includes("catch-up") || here.includes(job.step);
+}
+
 function showOut() {
   const box = $(job && job.home === "lane" ? "lane-out" : "outbox");
   if (!box || !job) return;
+  if (!jobBelongsHere()) { box.innerHTML = ""; return; }
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : '<span class="spinner"></span>running…';
   box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3><pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
@@ -804,7 +812,7 @@ async function refresh() {
     state = await (await fetch("/api/state")).json();
   } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
   $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
-  if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
+  if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, step: state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
   renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
   $("intent").innerHTML = md(state.intent);
 }

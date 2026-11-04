@@ -45,15 +45,25 @@ ARTIFACT = "forward-predict-evidence"
 
 def download_evidence(pr: MergedPR, destination: Path) -> Path:
     """The evidence manifest from the successful forward/predict run on the PR's final commit."""
-    runs = json.loads(_gh("run", "list", "--workflow", WORKFLOW, "--commit", pr.head_sha, "--json", "databaseId,conclusion,status", "--limit", "20"))
-    good = [r for r in runs if r.get("conclusion") == "success"]
+    return _download(pr.number, pr.head_sha, destination, ("success",))
+
+
+def download_pr_evidence(number: int, head_sha: str, destination: Path) -> Path:
+    """The evidence from the finished forward/predict run on a PR's commit, whether it passed or failed. For showing people what the
+    check found: deploy never uses this (it only accepts a successful run of a merged PR, via ``download_evidence``)."""
+    return _download(number, head_sha, destination, ("success", "failure"))
+
+
+def _download(number: int, head_sha: str, destination: Path, conclusions: tuple[str, ...]) -> Path:
+    runs = json.loads(_gh("run", "list", "--workflow", WORKFLOW, "--commit", head_sha, "--json", "databaseId,conclusion,status", "--limit", "20"))
+    good = [r for r in runs if r.get("conclusion") in conclusions]
     if not good:
-        raise GitHubError(f"no successful forward/predict run on PR #{pr.number}'s final commit {pr.head_sha[:7]}")
+        raise GitHubError(f"no finished ({'/'.join(conclusions)}) forward/predict run on PR #{number}'s final commit {head_sha[:7]}")
     destination.mkdir(parents=True, exist_ok=True)
     for old in destination.glob("*"):
         old.unlink()
     _gh("run", "download", str(good[0]["databaseId"]), "--name", ARTIFACT, "--dir", str(destination))
     evidence = destination / "evidence.json"
     if not evidence.is_file():
-        raise GitHubError(f"the forward/predict run for PR #{pr.number} left no evidence.json")
+        raise GitHubError(f"the forward/predict run for PR #{number} left no evidence.json")
     return evidence

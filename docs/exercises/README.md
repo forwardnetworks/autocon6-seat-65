@@ -35,7 +35,7 @@ The [Network Automation Forum framework](https://reference.networkautomation.for
 Pushing a change to the network is easy. Knowing what it will do is the hard part.
 
 A syntax check tells you the config is legal. A reviewer reads a diff of one device. Neither can tell you that removing a
-line on r4 takes a route away from r1, two hops away, until the change is live. That gap is what this workshop is about.
+line on r4 takes a route away from r2, r3 and r1 (two hops away) until the change is live. That gap is what this workshop is about.
 
 Today you put a test stage in front of the deploy. It asks what the **network** will do after the change, using a model
 Forward builds from the real configs, before any router is touched. The lab is small, but the loop is the one you would run
