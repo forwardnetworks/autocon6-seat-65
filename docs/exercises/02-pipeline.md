@@ -3,6 +3,8 @@
 *About 55 minutes. Goal: see how a change travels from Git to Forward Predict and back to the pull request, and be
 able to explain every line of the result.*
 
+**Framework map.** Your candidate file is **Intent**. Opening the pull request is the event the **Orchestrator** reacts to, and the forward/predict check is **Observability** judging a network that doesn't exist yet. Nothing here touches a router. See [the framework map](framework.md).
+
 **Why this matters.** Most teams already review changes in pull requests. This puts a test inside the review. The code and the requirements come from `main`, not from your pull request, because a test the author can edit isn't a gate.
 
 ## Core

@@ -107,6 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         log(f"workshop: {exc}")
         return EXIT["ERROR"]
     from workshop import telemetry
+    from workshop.executor import DeployError
     from workshop.lab import LabError
 
     handler = globals()[f"_{args.command}"]
@@ -118,7 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         code = 130
         return code
-    except LabError as exc:  # a missing or stopped lab is a message, not a traceback
+    except (LabError, DeployError) as exc:  # a missing lab, or a router that refused or can't be reached: a message, exit 2 (ERROR)
         log(f"workshop {args.command}: {exc}")
         code = EXIT["ERROR"]
         return code
@@ -127,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _version() -> int:
-    for name in ("workshop", "forward-sdk", "netmiko"):
+    for name in ("workshop", "forward-sdk", "napalm"):
         try:
             log(f"{name} {importlib.metadata.version(name)}")
         except importlib.metadata.PackageNotFoundError:
@@ -521,14 +522,16 @@ def _probe(settings: config.Settings, args) -> int:
 
 def _status(settings: config.Settings, args) -> int:
     banner(settings, "status")
+    blocks = {"baseline.json": "Collector + Observability", "deploy.json": "Executor", "verify.json": "Collector + Observability"}
     for name in ("baseline.json", "deploy.json", "verify.json"):
         path = settings.state_dir / name
         if path.is_file():
             data = json.loads(path.read_text())
             summary = {k: data.get(k) for k in ("snapshot", "outcome", "post_snapshot_id", "finished_at") if data.get(k)}
-            log(f"  {name:<14} {summary}")
+            log(f"  {name:<14} [{blocks[name]}] {summary}")
         else:
-            log(f"  {name:<14} (none yet)")
+            log(f"  {name:<14} [{blocks[name]}] (none yet)")
+    log("  (the bracketed names are NAF Framework blocks: docs/exercises/framework.md)")
     return 0
 
 

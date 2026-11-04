@@ -6,6 +6,8 @@ minutes.*
 Configuration validation asks "is this config well formed?" **Behavioral validation** asks "what will the network do
 with it?" Today that second question gets its own stage in the pipeline, and it runs before deploy.
 
+**Framework map.** You are starting the **network** and writing its baseline configuration with the **Executor** (NAPALM). netlab only builds the topology. See [the framework map](framework.md).
+
 **Why this matters.** Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today. On a network that carries traffic you can't, which is part of why changes there feel risky.
 
 ## Core
@@ -22,12 +24,30 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
    ```
    workshop up
    ```
-   Four Arista cEOS routers, a client and a service start, and their baseline configuration is applied over SSH with
-   Netmiko. Leave it running and read on.
+   Nothing starts until you run this. Two tools split the work, and you can watch both:
+   - **netlab** reads `lab/topology.yml` (four routers, a client and a service, and the links between them) and asks
+     **containerlab** to start them. You will see `netlab up --no-config` in the output. `--no-config` matters: netlab
+     builds the network but does not configure it.
+   - Then `workshop` writes each router's baseline configuration over eAPI with **NAPALM**, so there is one way a change
+     reaches a router, and Deploy can check it.
+
+   It takes 2 to 3 minutes and the machine will be busy. Leave it running and read on.
+4. **Look at what netlab built.** Click the **Containerlab** icon in the left activity bar. Under **Running Labs** you
+   will find your lab, `autocon6`, with six nodes:
+   - **r1, r2, r3, r4**: Arista cEOS routers in the diamond (AS 65001 to 65004)
+   - **client** and **service**: small Linux containers. The client sits behind r1 and the service behind r4, and the
+     requirements test whether the client can still reach the service
+
+   Right-click a node to open a terminal on it (**Connect to SSH** for a router, **Attach shell** for the Linux ones).
+   Right-click the lab for **Graph** to see the topology drawn. Try this on r1:
+   ```
+   show ip bgp summary
+   ```
+   Three neighbors should be **Established**. In the terminal you can also run `netlab status` from the `lab/` folder.
 
 ## What you have
 
-- **This Codespace:** the lab (containerlab + netlab) and the `workshop` command.
+- **This Codespace:** the lab (netlab defines it, containerlab runs it, NAPALM configures it) and the `workshop` command.
 - **A Forward network on fwd.app:** Forward's mathematical model of your lab, built from what the headless collector
   reads off the routers.
 - **This GitHub repository:** where changes are proposed, predicted and approved.

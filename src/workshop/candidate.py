@@ -2,7 +2,7 @@
 
 ``candidate/r4-bgp.eos`` may only retire or add BGP ``network`` statements on r4. The scope check
 refuses anything else, so a pull request cannot slip an unrelated edit past the gate, and the
-normalized lines are exactly what goes to Predict (``set_commands``) and to the router (Netmiko).
+normalized lines are exactly what goes to Predict (``set_commands``) and to the router (NAPALM).
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ class Candidate:
     path: Path
     device: str
     lines: tuple[str, ...]  # normalized: no comments, no blank lines, no indentation
-    sha256: str  # of the normalized text -- what Predict and Netmiko receive
+    sha256: str  # of the normalized text -- what Predict and NAPALM receive
 
     @property
     def text(self) -> str:

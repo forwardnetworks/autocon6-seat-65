@@ -1,4 +1,4 @@
-! Restore r4's baseline advertisements (instructor recovery; applied through Netmiko).
+! Restore r4's baseline advertisements (instructor recovery; applied through NAPALM).
 router bgp 65004
    address-family ipv4
       network 10.20.20.0/24

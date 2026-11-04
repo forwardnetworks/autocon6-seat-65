@@ -3,6 +3,8 @@
 *About 45 minutes. Goal: watch the pipeline stop a regression that is perfectly valid configuration, then find
 exactly why.*
 
+**Framework map.** The change is **Intent**; **Observability** is what catches it. The check going red is the Observability to Orchestrator hand-off: the pipeline refuses to continue on anything but PASS. See [the framework map](framework.md).
+
 **Why this matters.** This is the failure the whole workshop is about: a change that is valid, three lines long and looks right in review, and it cuts off the service. The line you change is on r4. The damage lands on r1, two hops away. A syntax check passes it, and a reviewer reading r4's diff has no reason to stop it. Here nothing reaches a router, so the only cost is a red check.
 
 ## Core

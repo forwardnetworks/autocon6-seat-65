@@ -1,5 +1,7 @@
 # 6 · Beyond the lab (12:50–1:00)
 
+**Framework map.** Every block here has a swap point: a different Collector or Executor, a second source of Intent, a different Orchestrator. [The framework map](framework.md) lists where each one lives and what is vendor-specific today.
+
 ## Monday morning
 
 You don't need the whole pipeline to start. Pick one kind of change you make often and write three requirements for it:

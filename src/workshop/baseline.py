@@ -1,6 +1,6 @@
 """``workshop baseline``: collect the lab, prove it, and give Forward a tagged baseline.
 
-The live configs (over Netmiko) are fingerprinted before collection and must match what the
+The live configs (over NAPALM) are fingerprinted before collection and must match what the
 collector captured -- otherwise the network changed while it was being collected. The snapshot is
 uploaded with its note tagged ``autocon6:baseline lab=<lab> fp=<fingerprint>``, then judged against
 the baseline requirements.

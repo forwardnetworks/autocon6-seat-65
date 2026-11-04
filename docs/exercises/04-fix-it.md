@@ -2,6 +2,8 @@
 
 *About 30 minutes. Goal: a corrected change whose prediction passes every test, and an approval.*
 
+**Framework map.** You change the **Intent**, **Observability** re-judges it, and your merge is the human approval the **Orchestrator** waits for, bound to the candidate's hash. See [the framework map](framework.md).
+
 **Why this matters.** Catching the problem is half of it. The other half is that the fix goes through the same gate. Nobody gets a shortcut around it: not you, not a deadline, not an AI draft.
 
 ## Core

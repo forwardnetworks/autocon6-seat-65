@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from workshop import candidate, fingerprint, github, lab, netmiko_ops, requirements
+from workshop import candidate, executor, fingerprint, github, lab, requirements
 from workshop.config import Settings
 from workshop.evidence import Manifest
 from workshop.forward import Forward
@@ -74,13 +74,19 @@ def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], N
         log("  evidence PASS, candidate and requirements unchanged, baseline current, routers unchanged")
         lines = candidate.normalize(m.candidate_text)
         started = datetime.now(UTC)
-        applied = netmiko_ops.apply(settings, candidate.DEVICE, lab.mgmt_ips(settings)[candidate.DEVICE], lines)
-        readback = netmiko_ops.show(settings, lab.mgmt_ips(settings)[candidate.DEVICE], "show running-config section router bgp")
+        applied = executor.apply(settings, candidate.DEVICE, lab.mgmt_ips(settings)[candidate.DEVICE], lines)
+        if applied.output.strip():
+            log(f"  {candidate.DEVICE} computed this diff for the session and committed it:")
+            for line in applied.output.splitlines():
+                log(f"    {line}")
+        else:
+            log(f"  {candidate.DEVICE}: no difference, the router already matches the candidate")
+        readback = executor.show(settings, lab.mgmt_ips(settings)[candidate.DEVICE], "show running-config section router bgp")
         problems = readback_problems(lines, readback)
         record = {
             "evidence": str(evidence), "candidate_sha256": m.candidate_sha256, "baseline_snapshot_id": m.baseline_snapshot_id,
             "predicted_snapshot_id": m.predicted_snapshot_id, "started_at": started.isoformat(timespec="seconds"),
-            "finished_at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(applied.lines), "readback_problems": problems,
+            "finished_at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(applied.lines), "device_diff": applied.output, "readback_problems": problems,
         }
         settings.state("deploy.json").write_text(json.dumps(record, indent=2) + "\n")
         if problems:

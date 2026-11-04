@@ -17,7 +17,7 @@ Your own lab: four routers, a client and a service, and a Forward network that m
 
 
 The goal is written down in `intent.md`. The tests that prove it are in `requirements/`. The step-by-step exercises are in
-[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next. Something not working? See [`docs/exercises/stuck.md`](docs/exercises/stuck.md). Want the story behind each exercise? The slides are on your seat page.
+[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next. Something not working? See [`docs/exercises/stuck.md`](docs/exercises/stuck.md). Want the story behind each exercise? The slides are on your seat page. Wondering where each step fits in the [NAF Framework](https://reference.networkautomation.forum/Framework/Framework/)? See [`docs/exercises/framework.md`](docs/exercises/framework.md).
 
 ## Forward AI advisers (optional)
 

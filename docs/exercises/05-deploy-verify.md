@@ -2,6 +2,8 @@
 
 *About 20 minutes. Goal: the exact predicted change on the routers, and proof that reality matched the prediction.*
 
+**Framework map.** The **Executor** (NAPALM) writes the exact bytes Predict judged. Then the **Collector** and **Observability** run again on the real network, and the result is compared with the prediction. See [the framework map](framework.md).
+
 **Why this matters.** Approval is only worth something if what gets deployed is what was approved. Deploy checks that the pull request is merged, that the candidate and the requirements haven't changed, that your baseline is current and that the routers haven't drifted. Then verify closes the loop: it compares what was predicted with what is really there.
 
 ## Core
@@ -21,7 +23,7 @@ If the confirmation doesn't match, deploy refuses and prints the value it expect
 - your baseline is still the latest in Forward
 - the routers haven't drifted from it
 
-It then sends r4 exactly the lines Predict evaluated, over Netmiko, and reads them back.
+It then sends r4 exactly the lines Predict evaluated, over NAPALM, and reads them back. NAPALM stages them in a configuration session, so the router itself tells you the diff (`-` lines removed, `+` added) before the commit makes it live. A line the router refuses stops the whole session, so a change never half applies.
 
 ### Verify (10 min)
 

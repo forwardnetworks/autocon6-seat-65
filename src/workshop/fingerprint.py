@@ -2,7 +2,7 @@
 network we are about to change".
 
 It is computed from the collector's snapshot (``<device>,configuration.txt`` in the ZIP), from
-Forward's copy of a snapshot, and from the live routers over Netmiko; all three normalize to the
+Forward's copy of a snapshot, and from the live routers over NAPALM; all three normalize to the
 same bytes. Normalizing drops comment and blank lines and trailing spaces, and redacts secret values
 the way the collector does (it stores ``secret sha512 <redacted>``).
 """

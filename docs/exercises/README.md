@@ -15,6 +15,21 @@ Monday, November 16, 2026 · 9:00 AM–1:00 PM · hands-on
 | 12:30–12:50 | Deploy and Verify | [5 · Deploy, collect, compare](05-deploy-verify.md) | `workshop verify` says MATCH |
 | 12:50–1:00 | Wrap-Up and Q&A | [6 · Beyond the lab](06-beyond.md) | |
 
+## Where this fits in the NAF Framework
+
+The [Network Automation Forum framework](https://reference.networkautomation.forum/Framework/Framework/) names six building blocks. Each step of the loop is one or two of them:
+
+| Step | Framework block | What does the work here |
+|---|---|---|
+| Baseline | Collector → Observability | Forward's headless collector, then Forward's model and the requirements |
+| Change | Intent | `candidate/r4-bgp.eos` and the requirements, in Git |
+| Predict | Observability | Forward Predict, judged against the requirements |
+| Approve | Orchestrator (with a person) | The pull request and its forward/predict check |
+| Deploy | Executor | NAPALM, sending the exact bytes Predict judged |
+| Verify | Collector → Observability | The collector again, compared with the prediction |
+
+[The full map](framework.md) says where each block lives in this repository, where the mapping is imperfect, and what to swap when you take this home.
+
 ## Why we're doing this
 
 Pushing a change to the network is easy. Knowing what it will do is the hard part.

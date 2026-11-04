@@ -5,14 +5,19 @@ preview). It shows where the lab is in the loop -- lab, baseline, change, predic
 deploy, verify -- the four-router diamond with the service path, the prediction's requirement table, the
 Forward AI advisers' output, and the sample prompts with an "ask" button.
 
-It is read-mostly on purpose. The only action is asking Forward AI a question (advice). There is no
-deploy button: deploying stays a typed ``workshop deploy ... --confirm`` in the terminal.
+It runs the loop's steps for people who would rather click than type: each button starts the very same
+``workshop`` command a terminal would (one at a time, output streamed to the page), so there is no second
+code path. Deploying still needs the person to type the first 7 characters of the candidate hash, exactly
+as ``workshop deploy --confirm`` does. It can also write the candidate file from a checklist of the prefixes
+on r4, and ask Forward AI a question (advice).
 """
 
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -22,6 +27,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from workshop import ai, candidate, progress
 from workshop.config import Settings
@@ -29,6 +35,17 @@ from workshop.evidence import Manifest
 
 ASSETS = resources.files("workshop") / "ui_assets"
 MAX_QUESTION = 1000
+MAX_LINES = 1500
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+SHA7 = re.compile(r"^[0-9a-f]{7}$")
+# The prefixes r4 advertises; the change builder may only retire these.
+R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
+# What the page may start. Anything else (down, collector, agent...) stays a typed command.
+STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "deploy", "verify", "restore", "status")
+EXIT_WORDS = {0: "PASS", 1: "FAIL", 2: "ERROR", 3: "INCONCLUSIVE", 4: "STALE"}
+
+
+ALLOWED_HOSTS = re.compile(r"^(localhost|127\.0\.0\.1|\[::1\]|[a-z0-9-]+\.app\.github\.dev)(:\d+)?$", re.IGNORECASE)
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -140,6 +157,82 @@ class Chats:
         self.path.write_text(json.dumps({"threads": self.threads[:20]}, indent=1) + "\n")
 
 
+class Jobs:
+    """Runs one ``workshop`` step at a time and keeps its output for the page to poll."""
+
+    def __init__(self, settings: Settings, evidence: Path) -> None:
+        self.settings, self.evidence = settings, evidence
+        self.lock = threading.Lock()
+        self.current: dict[str, Any] | None = None
+
+    def argv(self, step: str, params: dict[str, Any]) -> list[str]:
+        if step not in STEPS:
+            raise ValueError(f"'{step}' is not a step this page can start")
+        out = [step]
+        if step == "predict":
+            out += ["--candidate", "candidate/r4-bgp.eos", "--out", str(self.evidence.parent)]
+        elif step == "verify" or step == "explain":
+            out += ["--evidence", str(self.evidence)]
+        elif step == "deploy":
+            confirm = str(params.get("confirm", "")).strip().lower()
+            if not SHA7.match(confirm):
+                raise ValueError("type the first 7 characters of the candidate hash (letters and digits, no spaces) to confirm")
+            pr = str(params.get("pr", "")).strip()
+            if not pr.isdigit() or not 0 < int(pr) < 100000:
+                raise ValueError("enter the number of your merged pull request: deploy only ships a change that was approved there")
+            out += ["--pr", pr]
+            out += ["--confirm", confirm]
+        return out
+
+    def start(self, step: str, params: dict[str, Any]) -> dict[str, Any]:
+        argv = self.argv(step, params)
+        with self.lock:
+            if self.current and not self.current["done"]:
+                raise RuntimeError(f"'workshop {self.current['step']}' is still running; wait for it to finish")
+            job = {"id": uuid.uuid4().hex[:8], "step": step, "cmd": "workshop " + " ".join(argv), "lines": [],
+                   "done": False, "code": None, "word": "", "started": time.time(), "secs": 0, "dropped": 0}
+            self.current = job
+        threading.Thread(target=self._run, args=(job, argv), daemon=True).start()
+        return job
+
+    def _run(self, job: dict[str, Any], argv: list[str]) -> None:
+        cmd = [sys.executable, "-c", "import sys; from workshop.cli import main; sys.exit(main(sys.argv[1:]))", *argv]
+        try:
+            proc = subprocess.Popen(cmd, cwd=self.settings.repo_root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+            for line in proc.stdout:  # type: ignore[union-attr]
+                job["lines"].append(ANSI.sub("", line.rstrip("\n")))
+                if len(job["lines"]) > MAX_LINES * 2:  # keep the end: the verdict is there
+                    drop = len(job["lines"]) - MAX_LINES
+                    del job["lines"][:drop]
+                    job["dropped"] += drop
+            code = proc.wait()
+        except OSError as exc:
+            job["lines"].append(f"could not start: {exc}")
+            code = 2
+        job["code"], job["word"] = code, EXIT_WORDS.get(code, "ERROR" if code else "")
+        job["secs"] = round(time.time() - job["started"])
+        job["done"] = True
+
+    def view(self, job_id: str, since: int) -> dict[str, Any]:
+        job = self.current
+        if not job or (job_id and job["id"] != job_id):
+            return {"error": "no such job"}
+        lines = list(job["lines"])  # one copy: offsets are absolute, counting lines dropped from the front
+        dropped = job["dropped"]
+        start = max(since - dropped, 0)
+        out = lines[start:]
+        if since < dropped:
+            out = [f"... {dropped - since} earlier lines not shown ..."] + out
+        return {"id": job["id"], "step": job["step"], "cmd": job["cmd"], "done": job["done"], "code": job["code"],
+                "word": job["word"], "secs": job["secs"] or round(time.time() - job["started"]),
+                "lines": out, "next": dropped + len(lines)}
+
+    def summary(self) -> dict[str, Any] | None:
+        job = self.current
+        return {"id": job["id"], "step": job["step"], "done": job["done"], "word": job["word"]} if job else None
+
+
 class Board:
     """Builds the page's state from the same files the CLI writes."""
 
@@ -148,6 +241,7 @@ class Board:
         self.containers = _Cached(_containers, 10)
         self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30)
         self.chats = Chats(settings)
+        self.jobs = Jobs(settings, evidence)
 
     def snapshot_for(self, which: str) -> str:
         if which == "baseline":
@@ -183,7 +277,19 @@ class Board:
             "progress": progress.card(s, prs=prs, threads=self.chats.threads, evidence=self.evidence),
             "prompts": [asdict(p) for p in ai.sample_prompts(s.repo_root).values()],
             "threads": self.chats.threads[:12], "busy": self.chats.busy(), "intent": _intent(s.repo_root),
+            "job": self.jobs.summary(), "r4_prefixes": list(R4_PREFIXES),
         }
+
+    def write_candidate(self, retire: list[str]) -> dict[str, Any]:
+        """Write candidate/r4-bgp.eos from a checklist: ``no network`` for each chosen r4 prefix."""
+        bad = [p for p in retire if p not in R4_PREFIXES]
+        if bad:
+            raise ValueError(f"r4 does not advertise {', '.join(bad)}")
+        path = self.settings.repo_root / "candidate" / "r4-bgp.eos"
+        head = [line for line in path.read_text().splitlines() if line.startswith("!")] if path.is_file() else []
+        lines = [*head, *candidate.HEADER[:1], f"   {candidate.HEADER[1]}", *[f"      no network {p}" for p in R4_PREFIXES if p in retire]]
+        path.write_text("\n".join(lines) + "\n")
+        return self._candidate()
 
     def _candidate(self) -> dict[str, Any]:
         path = self.settings.repo_root / "candidate" / "r4-bgp.eos"
@@ -272,21 +378,55 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
         def _json(self, status: int, data: Any) -> None:
             self._send(status, json.dumps(data).encode(), "application/json")
 
+        def _host_ok(self) -> bool:
+            # A page on another site can point its own name at 127.0.0.1 (DNS rebinding) and then reach this server
+            # as same-origin; refusing any Host that is not ours stops it.
+            if ALLOWED_HOSTS.match(self.headers.get("Host", "")):
+                return True
+            self._json(HTTPStatus.FORBIDDEN, {"error": "forbidden host"})
+            return False
+
         def do_GET(self) -> None:
+            if not self._host_ok():
+                return
             if self.path in ("/", "/index.html"):
                 self._send(HTTPStatus.OK, (ASSETS / "index.html").read_bytes(), "text/html; charset=utf-8")
             elif self.path == "/logo.svg":
                 self._send(HTTPStatus.OK, (ASSETS / "fn-logo.svg").read_bytes(), "image/svg+xml")
             elif self.path == "/api/state":
                 self._json(HTTPStatus.OK, board.state())
+            elif self.path == "/api/guide":
+                self._send(HTTPStatus.OK, (ASSETS / "guide.json").read_bytes(), "application/json")
+            elif self.path.startswith("/api/job"):
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    since = max(int((q.get("since") or ["0"])[0]), 0)
+                except ValueError:
+                    since = 0
+                self._json(HTTPStatus.OK, board.jobs.view((q.get("id") or [""])[0], since))
             else:
                 self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
         def do_POST(self) -> None:
+            if not self._host_ok():
+                return
             # A custom header cannot be sent cross-site without a CORS preflight, which this server never
             # approves -- so only this page can start a question.
-            if self.path != "/api/ask" or self.headers.get("X-Workshop-UI") != "1":
+            if self.path not in ("/api/ask", "/api/run", "/api/candidate") or self.headers.get("X-Workshop-UI") != "1":
                 self._json(HTTPStatus.FORBIDDEN, {"error": "forbidden"})
+                return
+            if self.path in ("/api/run", "/api/candidate"):
+                try:
+                    body = json.loads(self.rfile.read(max(min(int(self.headers.get("Content-Length", 0)), 2048), 0)) or b"{}")
+                    if not isinstance(body, dict):
+                        raise ValueError("expected a JSON object")  # noqa: TRY004 - answered as a 409 like every bad request
+                    if self.path == "/api/run":
+                        job = board.jobs.start(str(body.get("step", "")), body)
+                        self._json(HTTPStatus.ACCEPTED, {"job": job["id"]})
+                    else:
+                        self._json(HTTPStatus.OK, board.write_candidate([str(x) for x in (body.get("retire") if isinstance(body.get("retire"), list) else [])]))
+                except (ValueError, RuntimeError, OSError) as exc:
+                    self._json(HTTPStatus.CONFLICT, {"error": str(exc)})
                 return
             try:
                 body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length", 0)), 8192)) or b"{}")

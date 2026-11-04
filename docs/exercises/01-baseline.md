@@ -2,6 +2,8 @@
 
 *About 30 minutes. Goal: know the network's good behavior before you change anything, and have Forward model it.*
 
+**Framework map.** The **Collector** (Forward's headless collector) reads your routers and **Observability** (Forward's model) checks them against the requirements. The requirements are your **Intent**: what must stay true. See [the framework map](framework.md).
+
 **Why this matters.** A prediction only means something against a known "before". The baseline is a snapshot of the network at a moment you can name, plus tests that say what has to stay true. If nobody writes down what must stay true, no tool can tell you a change broke it. Pipelines usually go straight to the change; this step is what makes a prediction mean something.
 
 ## Core

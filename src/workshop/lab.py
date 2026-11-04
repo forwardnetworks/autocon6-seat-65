@@ -1,13 +1,14 @@
 """The attendee's lab: four cEOS routers and two Linux endpoints, launched by netlab.
 
 netlab defines and launches the topology (``netlab up --no-config``); it never configures the
-routers -- the baseline is applied through Netmiko. Endpoints are reached with ``docker exec``.
+routers -- the baseline is applied through NAPALM. Endpoints are reached with ``docker exec``.
 """
 
 from __future__ import annotations
 
 import json
 import shutil
+import socket
 import subprocess
 import time
 from dataclasses import dataclass
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from workshop import fingerprint, netmiko_ops
+from workshop import executor, fingerprint
 from workshop.config import Settings
 
 CLIENT, SERVICE = "clab-autocon6-client", "clab-autocon6-service"
@@ -94,7 +95,7 @@ def apply_baseline(settings: Settings, log) -> None:
     ips = mgmt_ips(settings)
     for device in fingerprint.ROUTERS:
         lines = baseline_lines(settings, device)
-        netmiko_ops.apply(settings, device, ips[device], lines)
+        executor.apply(settings, device, ips[device], lines)
         log(f"  {device}: baseline applied ({len(lines)} lines)")
 
 
@@ -109,7 +110,8 @@ def wait_ssh(settings: Settings, log, timeout: float = 600) -> None:
     while pending:
         for device in sorted(pending):
             try:
-                netmiko_ops.show(settings, ips[device], "show hostname")
+                executor.show(settings, ips[device], "show hostname")  # eAPI: what the Executor uses
+                socket.create_connection((ips[device], 22), timeout=3).close()  # SSH: what the collector uses
             except Exception as exc:  # noqa: BLE001 - still booting; retried until the deadline
                 last_error[device] = f"{type(exc).__name__}: {str(exc)[:120]}"
             else:
@@ -117,9 +119,9 @@ def wait_ssh(settings: Settings, log, timeout: float = 600) -> None:
         if pending:
             if time.monotonic() > deadline:
                 detail = "; ".join(f"{d}: {last_error.get(d, '?')}" for d in sorted(pending))
-                raise LabError(f"routers not reachable over SSH after {timeout:.0f}s -- {detail}")
+                raise LabError(f"routers not reachable over eAPI and SSH after {timeout:.0f}s -- {detail}")
             time.sleep(5)
-    log("  all four routers answer SSH")
+    log("  all four routers answer eAPI and SSH")
 
 
 def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
@@ -127,7 +129,11 @@ def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
     while True:
         down = {}
         for device in fingerprint.ROUTERS:
-            summary = json.loads(netmiko_ops.show(settings, ips[device], "show ip bgp summary | json") or "{}")
+            try:
+                summary = executor.show_json(settings, ips[device], "show ip bgp summary")
+            except executor.DeployError as exc:  # BGP is not running yet on a router that is still booting
+                down[device] = [str(exc)[:100]]
+                continue
             peers = (summary.get("vrfs", {}).get("default", {}) or {}).get("peers", {}) or {}
             not_up = [peer for peer, info in peers.items() if info.get("peerState") != "Established"]
             if len(peers) < 2 or not_up:
@@ -142,7 +148,7 @@ def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
 
 def live_configs(settings: Settings) -> dict[str, str]:
     ips = mgmt_ips(settings)
-    return {device: netmiko_ops.running_config(settings, ips[device]) for device in fingerprint.ROUTERS}
+    return {device: executor.running_config(settings, ips[device]) for device in fingerprint.ROUTERS}
 
 
 def probe(port: int) -> Probe:

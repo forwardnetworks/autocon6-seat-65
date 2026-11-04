@@ -1,0 +1,321 @@
+{
+ "blocks": {
+  "Intent": "Holds the desired state and what must stay true. Here: intent.md, the requirements and the candidate file, all in Git.",
+  "Collector": "Reads the live network. Here: Forward's headless collector, over SSH, collection mode only.",
+  "Observability": "Keeps the network's actual state and flags what differs from intent. Here: Forward's model and Predict, judged by the requirements.",
+  "Orchestrator": "Sequences the other blocks on events and never touches a device. Here: the pull request and its forward/predict check.",
+  "Executor": "Makes the change on the network. Here: NAPALM, sending the exact bytes Predict judged.",
+  "Network": "The thing being managed. Here: four cEOS routers, a client and a service, built by netlab and containerlab."
+ },
+ "steps": {
+  "lab": {
+   "title": "Start your lab",
+   "blocks": [
+    "Network",
+    "Executor"
+   ],
+   "what": "Nothing starts until you press the button. netlab reads lab/topology.yml (four routers, a client and a service, and their links) and has containerlab start them, without configuring them. Then NAPALM writes each router's baseline configuration over eAPI, so there is exactly one way a change gets onto a router. You can watch the lab in the Containerlab panel in the left bar of VS Code: open a terminal on any router or on the client and the service.",
+   "before": [
+    {
+     "q": "netlab builds the topology. What puts the baseline configuration on the routers?",
+     "options": [
+      "netlab's own config push",
+      "NAPALM, over eAPI",
+      "The Forward collector"
+     ],
+     "answer": 1,
+     "why": "NAPALM. Every change in this workshop, baseline, candidate and restore, takes the same path, which is what lets Deploy check it. The collector only reads."
+    },
+    {
+     "q": "netlab starts your lab with --no-config. What does that mean?",
+     "options": [
+      "It starts nothing",
+      "It builds and links the nodes but leaves them unconfigured",
+      "It skips the network links"
+     ],
+     "answer": 1,
+     "why": "netlab only defines and launches the topology. The configuration comes from the baseline files through NAPALM, which keeps one change path for the whole workshop."
+    }
+   ],
+   "after": [
+    {
+     "q": "How many containers should be running?",
+     "options": [
+      "4: the routers",
+      "6: four routers, a client and a service",
+      "2: client and service"
+     ],
+     "answer": 1,
+     "why": "Six. The client and the service are what the requirements test from: can the client still reach the service?"
+    }
+   ],
+   "run": [
+    {
+     "step": "up",
+     "label": "Start the lab",
+     "note": "Takes 2 to 3 minutes. You will see netlab start the six nodes, then the baseline go on. The machine will be busy; that is normal."
+    },
+    {
+     "step": "doctor",
+     "label": "Check my setup",
+     "note": "Checks tools, your Forward access and the lab."
+    }
+   ]
+  },
+  "baseline": {
+   "title": "Give Forward a baseline",
+   "blocks": [
+    "Collector",
+    "Observability"
+   ],
+   "what": "The headless collector logs in to each router, reads its configuration and state, and writes a snapshot. Forward turns it into a model of your network and checks the baseline requirements on it. That model is the known-good starting point every later prediction is compared with.",
+   "before": [
+    {
+     "q": "What does a baseline give you that logging in and running show commands doesn't?",
+     "options": [
+      "Nothing, it is the same information",
+      "A saved, queryable model to compare a prediction against",
+      "A backup of the router configs"
+     ],
+     "answer": 1,
+     "why": "A frozen model of what is true now. Without it, a prediction has nothing to be 'different from'."
+    }
+   ],
+   "after": [
+    {
+     "q": "The baseline requirements did not all PASS. Should you carry on?",
+     "options": [
+      "Yes, the change might fix them",
+      "No: find out why first",
+      "Yes, but only to the next step"
+     ],
+     "answer": 1,
+     "why": "Stop. Predicting from a broken start tells you nothing about your change. The gate treats it the same way."
+    }
+   ],
+   "run": [
+    {
+     "step": "baseline",
+     "label": "Collect the baseline",
+     "note": "Reads all four routers and uploads the snapshot. About a minute."
+    }
+   ]
+  },
+  "change": {
+   "title": "Write the change",
+   "blocks": [
+    "Intent"
+   ],
+   "what": "r4 advertises three prefixes into BGP. Two are stale leftovers; one carries the live service. You describe the change as lines in a file under version control. That file is the desired state, and nothing reaches a router until later steps approve it.",
+   "before": [
+    {
+     "q": "The service is at 10.20.20.20. Which of r4's three advertisements carries it?",
+     "options": [
+      "10.20.20.0/24",
+      "10.20.30.0/24",
+      "10.20.40.0/24"
+     ],
+     "answer": 0,
+     "why": "10.20.20.0/24 contains 10.20.20.20. The other two are the stale ones. They look identical in the configuration, which is the whole problem."
+    }
+   ],
+   "after": [
+    {
+     "q": "Say you retire 10.20.20.0/24. Which router shows the damage?",
+     "options": [
+      "r4, where you made the change",
+      "r1, two hops away, which loses its route",
+      "None: BGP re-converges"
+     ],
+     "answer": 1,
+     "why": "r1 loses its only route to the service. The change is on r4; the damage is not. That distance is why review of the diff misses it."
+    }
+   ],
+   "run": []
+  },
+  "predict": {
+   "title": "Predict it",
+   "blocks": [
+    "Observability"
+   ],
+   "what": "Predict applies your candidate lines to Forward's model of the baseline and builds the network that would result. Every requirement is evaluated on that predicted network. No router is touched. The verdict, the candidate hash and the baseline id are written to evidence.json.",
+   "before": [
+    {
+     "q": "Does predicting send anything to your routers?",
+     "options": [
+      "Yes, then it rolls back",
+      "No: it only changes the model",
+      "Only the lines that are safe"
+     ],
+     "answer": 1,
+     "why": "Nothing is sent. That is what makes it safe to try a change you suspect is bad."
+    }
+   ],
+   "after": [
+    {
+     "q": "A requirement FAILed. What does that tell you?",
+     "options": [
+      "The syntax is wrong",
+      "The change would break something the requirements protect",
+      "Forward had an error"
+     ],
+     "answer": 1,
+     "why": "FAIL means the predicted network violates a requirement. A syntax error is caught earlier, and a Forward error shows as ERROR, which also blocks."
+    }
+   ],
+   "run": [
+    {
+     "step": "predict",
+     "label": "Predict my change",
+     "note": "Runs the same check as the pull request, locally. A minute or two."
+    },
+    {
+     "step": "explain",
+     "label": "Explain the result",
+     "note": "Asks Forward AI's reviewer what the change alters and what it affects. Advice only."
+    }
+   ]
+  },
+  "approve": {
+   "title": "Review and approve",
+   "blocks": [
+    "Orchestrator"
+   ],
+   "what": "Opening a pull request is the event that makes the pipeline run: it triggers the forward/predict check. The pipeline never writes to a router. Merging a green check is the human approval, and it is bound to this exact change.",
+   "before": [
+    {
+     "q": "Who decides the change is safe to deploy?",
+     "options": [
+      "Forward AI, once it agrees",
+      "The tests, plus a person who read the result",
+      "Whoever merges first"
+     ],
+     "answer": 1,
+     "why": "The requirements decide; a person approves. Forward AI explains and advises, but it never decides."
+    }
+   ],
+   "after": [
+    {
+     "q": "What is your approval tied to?",
+     "options": [
+      "Just the PR number",
+      "The candidate hash, the baseline and the requirements together",
+      "Your GitHub login"
+     ],
+     "answer": 1,
+     "why": "Change any of the three and deploy refuses, so you cannot approve one change and ship another."
+    }
+   ],
+   "run": []
+  },
+  "deploy": {
+   "title": "Deploy exactly what was predicted",
+   "blocks": [
+    "Executor"
+   ],
+   "what": "NAPALM sends the very same lines Predict judged to r4. Before it writes, deploy checks that the PR is merged and green, that the baseline is still current, that no router has drifted since, and that nobody else holds the lab's lock. The router then computes the diff for the change, and deploy prints it before committing. You confirm by typing the start of the candidate's hash.",
+   "before": [
+    {
+     "q": "Why must you type the first 7 characters of the hash yourself?",
+     "options": [
+      "To slow you down",
+      "To prove you reviewed this exact change, not a different one",
+      "It's a password"
+     ],
+     "answer": 1,
+     "why": "A button can be clicked without reading. The hash on screen is the one Predict judged; typing it ties your approval to those bytes."
+    }
+   ],
+   "after": [
+    {
+     "q": "Someone edits a router by hand after your baseline. What does deploy do?",
+     "options": [
+      "Deploys anyway",
+      "Refuses: the live network drifted from what was predicted",
+      "Overwrites their edit silently"
+     ],
+     "answer": 1,
+     "why": "It refuses. The prediction was about a network that no longer exists, which is the STALE outcome."
+    }
+   ],
+   "run": []
+  },
+  "verify": {
+   "title": "Verify on the real network",
+   "blocks": [
+    "Collector",
+    "Observability"
+   ],
+   "what": "Now the same two blocks run again, on the real network. The collector reads it, Forward evaluates every requirement, and the result is compared line by line with what Predict said. Probes also test the real flows from the client.",
+   "before": [
+    {
+     "q": "What should MATCH mean?",
+     "options": [
+      "Deploy finished without an error",
+      "Reality matches the prediction on every requirement",
+      "The change was a good idea"
+     ],
+     "answer": 1,
+     "why": "MATCH is about the model being right. Whether the change was good is what the requirements already said."
+    }
+   ],
+   "after": [
+    {
+     "q": "It says MISMATCH. What does that tell you?",
+     "options": [
+      "Your change is wrong",
+      "The model and the network disagree: investigate, and restore if it matters",
+      "Run verify again until it matches"
+     ],
+     "answer": 1,
+     "why": "The prediction and reality diverge, which is the case the whole method exists to surface. Never retry until green."
+    }
+   ],
+   "run": [
+    {
+     "step": "verify",
+     "label": "Verify the network",
+     "note": "Probes the real flows, collects again and compares."
+    },
+    {
+     "step": "probe",
+     "label": "Just test the flows",
+     "note": "TCP 8080 should work, TCP 2222 must be refused."
+    }
+   ]
+  },
+  "done": {
+   "title": "Loop closed",
+   "blocks": [
+    "Executor",
+    "Collector"
+   ],
+   "what": "You predicted, approved, deployed and verified. To go again, restore r4's baseline advertisements (NAPALM, the same path as everything else) and take a fresh baseline.",
+   "before": [
+    {
+     "q": "Why take a new baseline after a restore?",
+     "options": [
+      "Habit",
+      "The network changed, so the old model is stale",
+      "It runs faster"
+     ],
+     "answer": 1,
+     "why": "Predictions compare with the baseline. After a restore it describes a network that no longer exists."
+    }
+   ],
+   "after": [],
+   "run": [
+    {
+     "step": "restore",
+     "label": "Restore r4",
+     "note": "Puts r4's three advertisements back."
+    },
+    {
+     "step": "baseline",
+     "label": "Take a new baseline",
+     "note": "Do this after every restore."
+    }
+   ]
+  }
+ }
+}

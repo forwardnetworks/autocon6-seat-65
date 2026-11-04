@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from workshop import candidate, lab, netmiko_ops
+from workshop import candidate, executor, lab
 from workshop.config import Settings
 
 _NETWORK = re.compile(r"^\s*network (\S+)\s*$", re.MULTILINE)
@@ -21,13 +21,13 @@ def run(settings: Settings, log) -> None:
     want = [line.split()[-1] for line in lines if line.startswith("network ")]
 
     # A hand edit can leave extra advertisements behind: retire anything the baseline does not advertise.
-    current = _advertised(netmiko_ops.show(settings, host, "show running-config section router bgp"))
+    current = _advertised(executor.show(settings, host, "show running-config section router bgp"))
     extras = [prefix for prefix in current if prefix not in want]
     header = [line for line in lines if not line.startswith("network ")]
     plan = tuple(header + [f"no network {prefix}" for prefix in extras] + [f"network {p}" for p in want])
-    netmiko_ops.apply(settings, candidate.DEVICE, host, plan)
+    executor.apply(settings, candidate.DEVICE, host, plan)
 
-    readback = _advertised(netmiko_ops.show(settings, host, "show running-config section router bgp"))
+    readback = _advertised(executor.show(settings, host, "show running-config section router bgp"))
     missing = [prefix for prefix in want if prefix not in readback]
     if missing:
         raise RuntimeError(f"restore did not take: {missing} missing on r4")

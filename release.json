@@ -1,7 +1,8 @@
 {
   "workshop": "0.1.0",
   "forward_sdk": "0.1.20",
-  "netmiko": "4.7.0",
+  "napalm": "5.2.0",
+  "pyeapi": "1.0.4",
   "collector": {
     "source": "GET /api/software/client?type=HEADLESS_LINUX on the Forward server, as the seat user",
     "version_policy": "not pinned: download at setup and require the collector release to equal the Forward server release",
@@ -13,7 +14,7 @@
   "containerlab": "0.82.0",
   "template_source": {
     "repo": "autocon6-workshop",
-    "commit": "8c3c511b76a5176f4d6b9478df496a67f7040c7b",
+    "commit": "b4778c67378b3a0ad73433566d7c6110cc2e4bdf",
     "dirty": false
   }
 }

@@ -154,6 +154,26 @@ select { font: inherit; padding: 5px; border-radius: var(--radius); border: 1px 
 .chal.flash { animation: flash 2.2s ease-out; } @keyframes flash { 0% { background:var(--ok-bg); } 100% { background:transparent; } }
 details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padding-top:8px; } details#chal-stretch summary { cursor:pointer; color:var(--accent); font-weight:500; }
 @media (prefers-reduced-motion: reduce) { .chal.flash { animation:none; } }
+
+/* Guided step */
+.stage { cursor: pointer; } .stage.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+.nafrow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:2px 0 8px; font-size:12px; color:var(--txt-2); }
+.naf { background:var(--accent-bg); color:var(--accent); border-radius:12px; padding:2px 10px; font-weight:600; cursor:help; }
+.gsec { border-top:1px solid var(--divider); margin-top:14px; padding-top:12px; }
+.gsec h3 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--txt-2); margin:0 0 8px; font-weight:600; }
+.quiz .q { font-weight:500; margin-bottom:6px; }
+.quiz label { display:block; padding:6px 10px; margin:4px 0; border:1px solid var(--divider); border-radius:var(--radius); cursor:pointer; background:var(--raised); }
+.quiz label:hover { border-color:var(--accent); }
+.quiz label.right { background:var(--ok-bg); border-color:var(--ok); } .quiz label.wrong { background:var(--warn-bg); border-color:var(--warn); }
+.quiz .why { font-size:13px; background:var(--group); border-radius:var(--radius); padding:8px 10px; margin-top:6px; }
+.runrow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
+.runrow .note { font-size:12px; color:var(--txt-2); flex-basis:100%; margin-top:-2px; }
+.out { background:#0f1416; color:#d6d6d6; border-radius:var(--radius); padding:10px; max-height:300px; overflow:auto; white-space:pre-wrap; font-size:12px; margin-top:8px; }
+.facts { margin:0; padding-left:18px; } .facts li { margin:3px 0; }
+.builder label { display:flex; gap:8px; align-items:flex-start; padding:6px 0; }
+.builder small { color:var(--txt-2); display:block; }
+input[type=text] { font:inherit; padding:6px 8px; border-radius:var(--radius); border:1px solid var(--divider); background:var(--raised); color:var(--txt); }
+.term { background:var(--group); border-radius:var(--radius); padding:8px 10px; font-size:13px; }
 footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 24px; }
 </style>
 </head>
@@ -167,7 +187,7 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
   <section class="loop" id="loop" aria-label="The change loop"></section>
   <div class="grid">
     <div class="col">
-      <section class="card next-card" id="next"></section>
+      <section class="card next-card" id="next" aria-live="polite"></section>
       <section class="card">
         <h2>Your network</h2>
         <svg class="topo" id="topo" viewBox="0 0 760 270" role="img" aria-label="Lab topology"></svg>
@@ -221,7 +241,7 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
       </section>
     </div>
   </div>
-  <footer>Local to your Codespace. Deploying stays a typed command in the terminal: <code>workshop deploy --pr N --confirm &lt;sha7&gt;</code></footer>
+  <footer>Local to your Codespace. Every button runs the same <code>workshop</code> command you could type, and deploy always needs you to type the hash.</footer>
 </main>
 <script>
 "use strict";
@@ -259,20 +279,10 @@ function md(src) {
   return out.join("");
 }
 
-const NEXT = {
-  lab: { title: "Start your lab", cmd: "workshop up", body: "Four cEOS routers, a client and a service start in your Codespace, then the baseline configuration is applied over SSH with Netmiko. It takes a few minutes; watch BGP come up." },
-  baseline: { title: "Give Forward a baseline", cmd: "workshop baseline", body: "The headless collector reads your routers and Forward builds a model of the network. The baseline requirements are checked on it: this is the known-good starting point every prediction is compared with." },
-  change: { title: "Write the change", cmd: "code candidate/r4-bgp.eos", body: "Retire r4's stale advertisements: add <code>no network &lt;prefix&gt;</code> lines. Not sure which prefixes? Ask Forward AI (right), or let the Author draft it with <code>workshop propose</code>." },
-  predict: { title: "Predict it", cmd: "git switch -c retire-stale && git commit -am 'Retire stale advertisements' && git push -u origin HEAD && gh pr create --fill", body: "Open a pull request: create a branch from the branch name at the bottom-left, commit and <b>Publish Branch</b> in <b>Source Control</b>, then <b>Create Pull Request</b> in the <b>GitHub Pull Requests</b> panel (or use the command below). The <b>forward/predict</b> check asks Forward what the network would do with your change and judges it against the requirements, before anything touches a router." },
-  approve: { title: "Review and approve", cmd: "gh pr view --web", body: "Open your PR in the <b>GitHub Pull Requests</b> panel and read the forward/predict result and the forward/advice summary. Merge (Squash and Merge) only a green check. A red check means a requirement fails on the predicted network: fix the candidate and push again." },
-  deploy: { title: "Deploy exactly what was predicted", cmd: "git switch main && git pull && workshop deploy --pr <N> --confirm <sha7>", body: "The exact deploy command, with your PR number and confirmation, is at the top of the green check's summary. Deploy refuses unless the PR is merged, the check passed, the baseline is still current and the routers have not drifted. You type the first 7 characters of the candidate hash to confirm." },
-  verify: { title: "Verify on the real network", cmd: "workshop verify", body: "Probe the real flows, collect the network again, and compare every requirement with what Predict said. MATCH closes the loop." },
-  done: { title: "Loop closed", cmd: "workshop agent", body: "Predicted, approved, deployed and verified. Try the stretch: reset with <code>workshop restore && workshop baseline</code>, then let <code>workshop agent</code> run the loop with the Forward AI advisers, stopping before approval." },
-};
 const TIPS = [
   "<b>PASS is the only green.</b> FAIL, ERROR, INCONCLUSIVE and STALE all block deployment. An empty result is never a pass.",
   "<b>Forward AI advises, Predict decides.</b> Ask a chat why a prediction failed with no context and it may blame the wrong router. The requirements, evaluated on the predicted network, are the judge.",
-  "<b>Same bytes, start to finish.</b> The exact candidate lines Predict evaluated are the ones Netmiko sends to r4. Deploy checks the hash.",
+  "<b>Same bytes, start to finish.</b> The exact candidate lines Predict evaluated are the ones NAPALM sends to r4. Deploy checks the hash.",
   "<b>STALE is a feature.</b> If anything changed since the baseline — a newer snapshot, or someone edited a router — deploy refuses. Take a new baseline and predict again.",
   "<b>MGMT-DENY is a requirement too.</b> Safe changes keep what must stay blocked. TCP 2222 must be refused by r1's ACL, not merely unreachable.",
   "<b>Forward AI answers one question at a time for you.</b> While it thinks, read the evidence: the prediction table shows every requirement and what Forward observed.",
@@ -282,23 +292,166 @@ const TIPS = [
 
 let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
+let guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
+
+async function loadGuide() { try { guide = await (await fetch("/api/guide")).json(); } catch { guide = null; } }
+
 function renderLoop(stages) {
-  const nextKey = (stages.find((s) => s.state !== "done") || {}).key;
+  const nextKey = (stages.find((s) => s.state !== "done") || {}).key || "done";
+  const key = selected || nextKey;
   $("loop").innerHTML = stages.map((s, i) => `
-    <div class="stage ${s.state}${s.key === nextKey ? " next" : ""}" title="${esc(s.hint)}">
+    <div class="stage ${s.state}${s.key === nextKey ? " next" : ""}${s.key === key ? " sel" : ""}" data-k="${esc(s.key)}" title="${esc(s.hint)}" tabindex="0" role="button">
       <div class="n">${i + 1}</div>
       <div class="label"><span class="icon"></span>${esc(s.label)}</div>
       <div class="detail">${esc(s.detail)}</div>
     </div>`).join("");
-  const n = NEXT[nextKey || "done"];
-  const failed = stages.find((s) => s.key === nextKey && s.state === "failed");
+  document.querySelectorAll(".stage").forEach((el) => {
+    el.onclick = () => { selected = el.dataset.k === nextKey ? null : el.dataset.k; guideSig = ""; renderLoop(state.stages); renderGuide(state, key === el.dataset.k ? key : el.dataset.k); };
+    el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
+  });
+  renderGuide(state, key);
+}
+
+/* What the page can say about the evidence in front of the person, from the state files the CLI wrote. */
+function facts(key, s) {
+  const f = [], m = s.prediction, v = s.verify, b = s.baseline, rs = (m?.results || []);
+  if (key === "lab") {
+    const l = s.lab || {}, names = Object.keys(l.states || {}).map((n) => n.replace(/^clab-[^-]+-/, "")).sort();
+    f.push(`${l.running ?? 0} of 6 containers are running${names.length ? `: ${names.map((n) => `<code>${esc(n)}</code>`).join(", ")}` : ""}.`);
+    if ((l.running ?? 0) === 6) f.push("Open the Containerlab panel in VS Code to see the same six nodes, open a terminal on any of them, or draw the topology.");
+  }
+  if (key === "baseline" && b) {
+    f.push(`Snapshot <code>${esc(b.snapshot)}</code> is your baseline; its requirements: <span class="pill ${esc(b.report?.status)}">${esc(b.report?.status || "?")}</span>.`);
+    f.push("This is the model every prediction will be compared with.");
+  }
+  if (key === "change") {
+    const c = s.candidate || {};
+    if (c.ok && c.changes?.length) {
+      const live = c.changes.filter((l) => l.includes("10.20.20.0/24")).length;
+      f.push(`The candidate retires ${c.changes.length} prefix(es): ${c.changes.map((l) => `<code>${esc(l.replace("no network ", ""))}</code>`).join(", ")}.`);
+      f.push(live ? `<b>One of them is the live service prefix.</b> Expect a FAIL when you predict.` : "None of them carries the service. Expect a PASS when you predict.");
+    } else f.push("No lines yet. Tick the prefixes to retire, or edit <code>candidate/r4-bgp.eos</code>.");
+    if (c.sha256) f.push(`Candidate hash: <code>${esc(c.sha256.slice(0, 7))}</code> (this is what you will confirm at deploy).`);
+  }
+  if (key === "predict" && m) {
+    const bad = rs.filter((r) => r.status !== "PASS");
+    f.push(`Verdict <span class="pill ${esc(m.status)}">${esc(m.status)}</span> on ${rs.length} requirements, ${bad.length} not passing.`);
+    bad.slice(0, 4).forEach((r) => f.push(`<b>${esc(r.id)}</b> (${esc(r.title)}) is <span class="pill ${esc(r.status)}">${esc(r.status)}</span>. Forward saw: ${esc((r.observed || "").slice(0, 120))}`));
+    if (!s.prediction_current) f.push("The candidate has changed since this prediction, so it no longer applies.");
+  }
+  if (key === "approve") {
+    const pr = (s.prs || [])[0];
+    f.push(pr ? `PR #${pr.number} is ${esc(pr.state.toLowerCase())}; forward/predict is ${esc((pr.predict || "pending").toLowerCase())}.` : "No pull request yet.");
+  }
+  if (key === "deploy" && s.deploy) f.push(`Deployed ${Math.max((s.deploy.lines || []).length - 2, 0)} change line(s) to r4.`);
+  if (key === "verify" && v) {
+    f.push(`Outcome <span class="pill ${esc(v.outcome)}">${esc(v.outcome)}</span> across ${(v.rows || []).length} requirements.`);
+    (v.rows || []).filter((r) => r.predicted !== r.collected).forEach((r) => f.push(`<b>${esc(r.id)}</b>: predicted ${esc(r.predicted)} but collected ${esc(r.collected)}.`));
+  }
+  return f;
+}
+
+let guideSig = "";
+function renderGuide(s, key) {
+  if (!guide) { $("next").innerHTML = ""; return; }
+  const g = guide.steps[key] || guide.steps.done;
+  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered]);
+  if (sig === guideSig) return;
+  const a = document.activeElement;
+  if (a && $("next").contains(a) && a.tagName === "INPUT" && a.type === "text" && a.value) return;  // never rebuild the card under someone's typing
+  guideSig = sig;
+  const stage = s.stages.find((x) => x.key === key);
+  const failed = stage && stage.state === "failed";
+  const naf = g.blocks.map((b) => `<span class="naf" title="${esc(guide.blocks[b] || "")}">${esc(b)}</span>`).join(" → ");
+  const quiz = (items, tag) => (items || []).map((q, qi) => {
+    const id = `${key}.${tag}.${qi}`, a = answered[id];
+    return `<div class="quiz"><div class="q">${esc(q.q)}</div>${q.options.map((o, oi) =>
+      `<label class="${a === undefined ? "" : oi === q.answer ? "right" : oi === a ? "wrong" : ""}"><input type="radio" name="${id}" value="${oi}" ${a === oi ? "checked" : ""} ${a !== undefined ? "disabled" : ""}> ${esc(o)}</label>`).join("")}
+      ${a !== undefined ? `<div class="why"><b>${a === q.answer ? "Yes." : "Not quite."}</b> ${esc(q.why)}</div>` : ""}</div>`;
+  }).join("");
+  const fl = facts(key, s);
+  const runs = (g.run || []).map((r) => `<button data-step="${esc(r.step)}" ${s.job && !s.job.done ? "disabled" : ""}>${esc(r.label)}</button>`).join("");
+  const notes = (g.run || []).map((r) => `<div class="note"><b>${esc(r.label)}:</b> ${esc(r.note)}</div>`).join("");
+  let extra = "";
+  if (key === "change") {
+    const sel = builderSel || new Set((s.candidate?.changes || []).map((l) => l.replace("no network ", "")));
+    const label = { "10.20.20.0/24": "r4's service prefix", "10.20.30.0/24": "a leftover", "10.20.40.0/24": "a leftover" };
+    extra = `<div class="gsec builder"><h3>Choose what to retire</h3>${(s.r4_prefixes || []).map((p) => `<label><input type="checkbox" value="${p}" ${sel.has(p) ? "checked" : ""}><span><code>${p}</code><small>${label[p]}: you decide, the next steps will tell you whether you were right</small></span></label>`).join("")}
+      <div class="runrow"><button id="write-cand">Write candidate/r4-bgp.eos</button><span class="muted" id="cand-note"></span></div>
+      <div class="note muted">This only edits the file. Nothing reaches a router. To go through a pull request instead, commit it as the exercise shows.</div></div>`;
+  }
+  if (key === "deploy") {
+    extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
+      <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false"> <button id="dep-go" ${s.job && !s.job.done ? "disabled" : ""}>Deploy</button></div>
+      <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
+  }
+  if (key === "approve") {
+    extra = `<div class="gsec"><div class="term">Approving happens on GitHub: open your pull request in the <b>GitHub Pull Requests</b> panel, read the forward/predict result, and <b>Squash and Merge</b> only a green check.</div></div>`;
+  }
   $("next").innerHTML = `
-    <h2>Next step${failed ? " — something needs attention" : ""}</h2>
-    <div class="title">${n.title}</div>
-    ${failed ? `<div class="banner bad">${esc(failed.detail)}</div>` : ""}
-    <div>${n.body}</div>
-    <div class="cmd"><code id="cmd">${esc(n.cmd)}</code><button class="ghost" id="copy">Copy</button></div>`;
-  $("copy").onclick = () => navigator.clipboard?.writeText(n.cmd).then(() => { $("copy").textContent = "Copied"; });
+    <h2>${esc(g.title)}${failed ? " — something needs attention" : ""}</h2>
+    <div class="nafrow">Framework block: ${naf}</div>
+    ${failed ? `<div class="banner bad">${esc(stage.detail)}</div>` : ""}
+    <div>${esc(g.what)}</div>
+    ${(g.before || []).length ? `<div class="gsec"><h3>Before you run it: what do you expect?</h3>${quiz(g.before, "b")}</div>` : ""}
+    ${runs ? `<div class="gsec"><h3>Run it</h3><div class="runrow">${runs}</div>${notes}</div>` : ""}
+    ${extra}
+    <div id="outbox"></div>
+    ${fl.length ? `<div class="gsec"><h3>What you're seeing</h3><ul class="facts">${fl.map((x) => `<li>${x}</li>`).join("")}</ul></div>` : ""}
+    ${(g.after || []).length && fl.length ? `<div class="gsec"><h3>Check yourself</h3>${quiz(g.after, "a")}</div>` : ""}`;
+  document.querySelectorAll("#next input[type=radio]").forEach((r) => r.onchange = () => { answered[r.name] = Number(r.value); guideSig = ""; renderGuide(state, key); });
+  document.querySelectorAll("#next button[data-step]").forEach((b) => b.onclick = () => runStep({ step: b.dataset.step }));
+  const w = $("write-cand");
+  if (w) {
+    document.querySelectorAll(".builder input").forEach((c) => c.onchange = () => { builderSel = new Set([...document.querySelectorAll(".builder input:checked")].map((x) => x.value)); });
+    w.onclick = async () => {
+      const retire = [...document.querySelectorAll(".builder input:checked")].map((x) => x.value);
+      const r = await post("/api/candidate", { retire }); builderSel = null;
+      $("cand-note").textContent = r.ok === false ? r.problems[0] : r.error ? r.error : `Written: ${retire.length} line(s), hash ${(r.sha256 || "").slice(0, 7) || "none"}.`;
+      guideSig = ""; refresh();
+    };
+  }
+  const d = $("dep-go");
+  if (d) d.onclick = () => runStep({ step: "deploy", pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() });
+  showOut();
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", "X-Workshop-UI": "1" }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+async function runStep(body) {
+  const r = await post("/api/run", body);
+  if (r.error) { const keep = job; showMsg(r.error); if (keep && !keep.done) job = keep; return; }
+  job = { id: r.job, done: false, cmd: "workshop " + body.step, next: 0 }; outLines = [];
+  guideSig = ""; pollJob();
+}
+
+function pollJob() {
+  clearTimeout(jobPoll);
+  jobPoll = setTimeout(async () => {
+    try {
+      const v = await (await fetch(`/api/job?id=${job.id}&since=${job.next}`)).json();
+      if (v.error) { job = { ...job, done: true }; outLines.push("The page lost track of that step. Reload and check Status."); }
+      else { outLines.push(...v.lines); job = { ...job, ...v }; }
+    } catch { /* retry */ }
+    showOut();
+    if (job && !job.done) pollJob(); else { guideSig = ""; refresh(); }
+  }, 1000);
+}
+
+function showMsg(text) {
+  const box = $("outbox");
+  if (box) box.innerHTML = `<div class="gsec"><div class="banner warn">${esc(text)}</div></div>`;
+}
+
+function showOut() {
+  const box = $("outbox");
+  if (!box || !job) return;
+  const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : '<span class="spinner"></span>running…';
+  box.innerHTML = `<div class="gsec"><h3>Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3><pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
+  const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }
 
 function renderTopo(s) {
@@ -461,10 +614,11 @@ async function refresh() {
     state = await (await fetch("/api/state")).json();
   } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
   $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
+  if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
   renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state);
   $("intent").innerHTML = md(state.intent);
 }
-refresh(); rotateTip();
+loadGuide().then(refresh); rotateTip();
 setInterval(refresh, 3000); setInterval(rotateTip, 15000);
 </script>
 </body>
