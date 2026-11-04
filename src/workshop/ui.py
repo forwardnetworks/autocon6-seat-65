@@ -212,7 +212,9 @@ class Jobs:
                 if not (self.settings.repo_root / "requirements" / "mine.yml").is_file():
                     raise ValueError("write your requirement first: there is no requirements/mine.yml yet")
                 out += ["--requirements", "requirements/mine.yml"]
-        elif step == "verify" or step == "explain":
+        elif step == "verify":
+            pass  # verify compares with the evidence the last deploy used (what was really sent), never a local prediction lying around
+        elif step == "explain":
             out += ["--evidence", str(self.evidence)]
         elif step == "deploy":
             confirm = str(params.get("confirm", "")).strip().lower()
