@@ -122,7 +122,7 @@
     {
      "topic": "vulns",
      "title": "What Forward knows about this software",
-     "why": "Published CVEs for this OS, from Forward's CVE index. The same data exists for a real network.",
+     "why": "Forward matches the OS version against its CVE index, then reads each device's configuration to see which ones really affect it. Matching a version is not being exposed.",
      "snapshot": "baseline",
      "limit": 5
     }

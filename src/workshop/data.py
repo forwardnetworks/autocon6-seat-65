@@ -32,7 +32,7 @@ TOPICS = {
     "inventory": "Devices: what Forward found, and what it runs",
     "routes": "Routes: every IPv4 route, per device",
     "diff": "Route changes: what the change did to the routing tables",
-    "vulns": "CVEs: published vulnerabilities that apply to this OS",
+    "vulns": "CVEs: which published vulnerabilities actually affect your devices",
 }
 
 
@@ -169,25 +169,35 @@ def _how(rows: list[dict[str, Any]]) -> str:
 
 
 def vulns(client, snapshot_id: str) -> Table:
-    data = _dump(client.vulnerability_analysis.get_vulnerabilities(snapshot_id=snapshot_id), alias=True)
-    found = data.get("vulnerabilities") or []
-    found = [{**v, "os_infos": v.get("os_infos") or v.get("osInfos")} for v in found]  # either spelling of the field
+    """CVEs that match the OS version, and which of them Forward's configuration analysis finds actually affecting each device."""
+    response = client.vulnerability_analysis.get_os_vulnerabilities(snapshot_id=snapshot_id)
+    found = _dump(response).get("vulnerabilities") or []
     rows = []
     for v in found:
-        info = (v.get("os_infos") or [{}])[0]
-        rows.append({"cve": v.get("id", ""), "severity": info.get("severity") or "", "cvss v3": info.get("v3_score") or "",
-                     "exploited (CISA KEV)": "yes" if v.get("has_cisa_kev_entry") else "",
-                     "depends on config": "yes" if info.get("config_dependent") else "no", "advisory": info.get("url") or ""})
+        hit = sorted(r.get("device", "") for r in v.get("device_results") or [] if r.get("vulnerable"))
+        config = v.get("depends_on_config")
+        rows.append({"cve": v.get("id", ""), "severity": v.get("severity") or "", "cvss v3": v.get("v3_score") or "",
+                     "affects": ", ".join(hit) if hit else ("could not be checked" if config is None else "none: configuration not affected"),
+                     "published": v.get("published_date") or "", "advisory": v.get("url") or ""})
+        rows[-1]["_hit"] = bool(hit)
     order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
-    rows.sort(key=lambda r: (order.get(str(r["severity"]).upper(), 9), str(r["cve"])))
-    crit = sum(1 for r in rows if str(r["severity"]).upper() in ("CRITICAL", "HIGH"))
-    kev = sum(1 for r in rows if r["exploited (CISA KEV)"])
-    cfg = sum(1 for r in rows if r["depends on config"] == "yes")
-    summary = (f"{plural(len(rows), 'published CVE')} apply to the OS on these devices: {crit} critical or high, {kev} on CISA's exploited list, "
-               f"{cfg} that only matter with certain configuration." if rows else "Forward's CVE index lists nothing for the OS on these devices.")
-    note = f"From Forward's CVE index, built {str(data.get('index_created_at') or data.get('indexCreatedAt') or '')[:10]}. A real network would show affected devices per CVE."
-    return Table("vulns", TOPICS["vulns"], summary, ["cve", "severity", "cvss v3", "exploited (CISA KEV)", "depends on config", "advisory"],
-                 rows[:MAX_ROWS], note, truncated=len(rows) > MAX_ROWS, raw=found)
+    rows.sort(key=lambda r: (not r["_hit"], order.get(str(r["severity"]).upper(), 9), str(r["cve"])))
+    affecting = [r for r in rows if r.pop("_hit")]
+    devices = sorted({d.strip() for r in affecting for d in r["affects"].split(",")})
+    unknown = sum(1 for r in rows if r["affects"] == "could not be checked")
+    if not rows:
+        summary = "Forward's CVE index lists nothing for the OS on these devices."
+    else:
+        one = len(rows) == 1
+        summary = (f"{plural(len(rows), 'published CVE')} {'matches' if one else 'match'} the OS version; Forward's configuration check finds "
+                   f"{len(affecting)} that actually {'affects' if len(affecting) == 1 else 'affect'} these devices")
+        summary += f" ({', '.join(devices)})." if affecting else "."
+        if unknown:
+            summary += f" For {unknown} it could not tell from the configuration."
+    note = (f"From Forward's CVE index, built {str(_dump(response, alias=True).get('indexCreatedAt') or _dump(response).get('index_created_at') or '')[:10]}. "
+            "Matching the version is not the same as being exposed: Forward reads each device's configuration to decide.")
+    return Table("vulns", TOPICS["vulns"], summary, ["cve", "severity", "cvss v3", "affects", "published", "advisory"], rows[:MAX_ROWS], note,
+                 truncated=len(rows) > MAX_ROWS, raw=_dump(response, alias=True))
 
 
 # ---- the before/after question --------------------------------------------------------------
