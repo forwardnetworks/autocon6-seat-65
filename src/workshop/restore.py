@@ -26,6 +26,9 @@ def run(settings: Settings, log) -> None:
     header = [line for line in lines if not line.startswith("network ")]
     plan = tuple(header + [f"no network {prefix}" for prefix in extras] + [f"network {p}" for p in want])
     executor.apply(settings, candidate.DEVICE, host, plan)
+    # r4 is back at the baseline: an earlier deploy and its verify no longer describe the network, so the page must stop saying so.
+    for name in ("deploy.json", "verify.json"):
+        settings.state(name).unlink(missing_ok=True)
 
     readback = _advertised(executor.show(settings, host, "show running-config section router bgp"))
     missing = [prefix for prefix in want if prefix not in readback]

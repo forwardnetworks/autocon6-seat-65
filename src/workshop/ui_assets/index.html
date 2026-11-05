@@ -76,6 +76,12 @@ svg.topo { width: 100%; height: auto; display: block; }
 .topo .node rect { fill: var(--raised); stroke: var(--accent); stroke-width: 2; }
 .topo .node.host rect { stroke: var(--txt-3); }
 .topo .node.bad rect { stroke: var(--bad); fill: var(--bad-bg); }
+.topo .node.cause rect { stroke: var(--warn); fill: var(--warn-bg); stroke-width: 3; }
+.topo .edge.flow { stroke: var(--live-edge); stroke-width: 5; stroke-dasharray: 10 8; animation: flow 1.2s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -18; } }
+.topo text.note { font-size: 11.5px; font-weight: 600; }
+.topo text.caption { font-size: 12.5px; font-weight: 500; fill: var(--txt-2); }
+@media (prefers-reduced-motion: reduce) { .topo .edge.flow { animation: none; } }
 .topo text { fill: var(--txt); font-size: 13px; font-weight: 600; text-anchor: middle; }
 .topo text.sub { font-size: 11px; font-weight: 400; fill: var(--txt-2); }
 .topo .adv { font-size: 11px; font-weight: 500; text-anchor: start; }
@@ -715,17 +721,23 @@ function renderTopo(s) {
   const onPath = pathTxt.includes("->") ? pathTxt.split("->").map((x) => x.trim()) : ["r1", "r2", "r4"];
   const broken = m && current && results["APP-EXISTING"]?.status === "FAIL";
   const noRoute = m && current && results["ROUTE-SERVICE"]?.status === "FAIL";
+  const passed = m && current && m.status === "PASS";
+  // An earlier MATCH is not shown next to a newer prediction that did not pass: the two would describe different changes.
+  const matched = s.verify?.outcome === "MATCH" && !(m && current && m.status !== "PASS");
+  // The cause is named on r4 only when the change really retires the live prefix: the line is on r4, the damage shows on r1.
+  const retiresLive = (s.candidate?.changes || []).some((l) => l.trim() === "no network 10.20.20.0/24");
+  const cause = (broken || noRoute) && retiresLive;
   const P = { client: [60, 135], r1: [210, 135], r2: [380, 55], r3: [380, 215], r4: [550, 135], service: [700, 135] };
   const edges = [["client", "r1"], ["r1", "r2"], ["r1", "r3"], ["r2", "r4"], ["r3", "r4"], ["r4", "service"]];
   const hops = ["client", ...onPath, "service"];
   const pathEdge = (a, b) => hops.some((h, i) => (hops[i] === a && hops[i + 1] === b) || (hops[i] === b && hops[i + 1] === a));
   let svg = edges.map(([a, b]) => {
-    const cls = pathEdge(a, b) ? (broken ? "edge broken" : "edge path") : "edge";
+    const cls = pathEdge(a, b) ? (broken ? "edge broken" : (passed || matched) ? "edge flow" : "edge path") : "edge";
     return `<line class="${cls}" x1="${P[a][0]}" y1="${P[a][1]}" x2="${P[b][0]}" y2="${P[b][1]}"/>`;
   }).join("");
   const node = (id, sub, host) => {
-    const [x, y] = P[id], bad = id === "r1" && noRoute;
-    return `<g class="node${host ? " host" : ""}${bad ? " bad" : ""}"><rect x="${x - 46}" y="${y - 22}" width="92" height="44" rx="8"/>
+    const [x, y] = P[id], bad = (id === "r1" && noRoute) || (id === "service" && broken), isCause = id === "r4" && cause;
+    return `<g class="node${host ? " host" : ""}${bad ? " bad" : ""}${isCause ? " cause" : ""}"><rect x="${x - 46}" y="${y - 22}" width="92" height="44" rx="8"/>
       <text x="${x}" y="${y - 2}">${id}</text><text class="sub" x="${x}" y="${y + 13}">${sub}</text></g>`;
   };
   svg += node("client", "10.10.10.10", true) + node("r1", "AS 65001") + node("r2", "AS 65002") + node("r3", "AS 65003") + node("r4", "AS 65004") + node("service", "10.20.20.20", true);
@@ -738,6 +750,16 @@ function renderTopo(s) {
     return `<text class="adv ${cls}" x="${P.r4[0] - 50}" y="${P.r4[1] + 44 + i * 15}">${label}</text>`;
   }).join("");
   if (noRoute) svg += `<text class="sub" x="${P.r1[0]}" y="${P.r1[1] + 40}" style="fill:var(--bad)">no route to 10.20.20.0/24</text>`;
+  if (cause) svg += `<text class="note" x="${P.r4[0]}" y="${P.r4[1] - 32}" style="fill:var(--warn)">the change is here</text>` +
+    (noRoute ? `<text class="note" x="${P.r1[0]}" y="${P.r1[1] - 32}" style="fill:var(--bad)">the damage shows here</text>` : "");
+  if (broken) svg += `<text class="note" x="${P.service[0]}" y="${P.service[1] - 32}" style="fill:var(--bad)">unreachable</text>`;
+  const caption = cause && noRoute ? "Predicted: r4 stops advertising the service prefix, so the whole diamond loses the route. This change was not deployed."
+    : cause ? "Predicted: r4 stops advertising the service prefix and the service path breaks. This change was not deployed."
+    : (broken || noRoute) ? "Predicted: the service path breaks. This change was not deployed."
+    : matched ? "Verified: the real network matches the prediction, and traffic to the service flows."
+    : passed ? "Predicted: every requirement holds, and traffic to the service still flows."
+    : "";
+  if (caption) svg += `<text class="caption" x="380" y="262">${esc(caption)}</text>`;
   $("topo").innerHTML = svg;
 }
 
@@ -869,7 +891,7 @@ async function refresh() {
   } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
   $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
   if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, step: state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
-  renderBadges(state); renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
+  renderBadges(state); renderLoop(state.stages); try { renderTopo(state); } catch (e) { /* the picture is an extra: never stop the cards below it */ } renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
   $("intent").innerHTML = md(state.intent);
 }
 loadGuide().then(refresh); rotateTip();
