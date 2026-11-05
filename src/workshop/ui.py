@@ -131,6 +131,49 @@ def check_words(check: str) -> str:
     return f"forward/predict {c.lower()}"
 
 
+BADGES = (
+    ("baseline", "Baseline set", "Forward has a model of your network, and every requirement holds on it."),
+    ("caught", "Caught one", "The gate said no to a change of yours, so it could not go any further."),
+    ("fixed", "Fixed it", "The gate said no to a change of yours, and later one went green."),
+    ("shipped", "Shipped", "You deployed exactly what Predict approved."),
+    ("match", "No surprises", "Verify: the real network matched the prediction."),
+)
+
+
+def _verdict_times(prediction: dict[str, Any] | None, prs: list[dict[str, Any]], pr_result: str, local: str) -> list[str]:
+    """When each red (or green) verdict was reached, to the second: PR check start times and the local prediction's creation time."""
+    times = [p.get("predict_since", "") for p in prs if p.get("predict") == pr_result]
+    if (prediction or {}).get("status") == local:
+        times.append(prediction.get("created_at", ""))
+    return sorted(t[:19] for t in times if t)
+
+
+def badges(base: dict[str, Any] | None, prediction: dict[str, Any] | None, prs: list[dict[str, Any]],
+           deployed: dict[str, Any] | None, verified: dict[str, Any] | None) -> list[dict[str, str]]:
+    """What this attendee has really done, from the same records the page shows. Display only: a badge never gates anything.
+
+    "caught" carries when the first red happened, so the page can keep it after the fix is pushed onto the same pull request
+    (the red check is then gone from GitHub's list) and still award "fixed" only for a green that came after it."""
+    reds, greens = _verdict_times(prediction, prs, "FAILURE", "FAIL"), _verdict_times(prediction, prs, "SUCCESS", "PASS")
+    earned = {
+        "baseline": ((base or {}).get("report") or {}).get("status") == "PASS",
+        "caught": bool(reds),
+        "fixed": bool(reds and greens and greens[-1] > reds[0]),
+        "shipped": bool(deployed) and not (deployed or {}).get("readback_problems"),  # a refused readback is NOT DEPLOYED
+        "match": (verified or {}).get("outcome") == "MATCH",
+    }
+    out = [{"key": k, "label": label, "why": why} for k, label, why in BADGES if earned[k]]
+    for b in out:
+        if b["key"] == "caught":
+            b["at"] = reds[0]
+    return out
+
+
+def green_at(prediction: dict[str, Any] | None, prs: list[dict[str, Any]]) -> str:
+    greens = _verdict_times(prediction, prs, "SUCCESS", "PASS")
+    return greens[-1] if greens else ""
+
+
 def _pull_requests(root: Path) -> list[dict[str, Any]]:
     out = subprocess.run(
         ["gh", "pr", "list", "--state", "all", "--limit", "10", "--json", "number,title,state,headRefOid,statusCheckRollup,url,author"],
@@ -391,6 +434,8 @@ class Board:
             "prompts": [asdict(p) for p in ai.sample_prompts(s.repo_root).values()],
             "threads": self.chats.threads[:12], "busy": self.chats.busy(), "intent": _intent(s.repo_root),
             "job": self.jobs.summary(), "r4_prefixes": list(R4_PREFIXES),
+            "badges": badges(base, asdict(m) if m else None, prs, deployed, verified),
+            "green_at": green_at(asdict(m) if m else None, prs),
         }
 
     def data(self, topic: str, snapshot: str, against: str = "", device: str = "", prefix: str = "") -> dict[str, Any]:

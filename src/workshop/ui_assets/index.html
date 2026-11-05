@@ -41,6 +41,7 @@ code { background: var(--group); padding: 1px 5px; border-radius: 4px; }
 .muted { color: var(--txt-2); }
 
 /* The loop strip */
+.badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; } .badge { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--ok); color: var(--ok); }
 .loop { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
 .stage { background: var(--raised); box-shadow: var(--elev); border-radius: var(--radius); padding: 10px 12px; border-top: 4px solid var(--divider); min-width: 0; }
 .stage .n { font-size: 11px; color: var(--txt-3); }
@@ -204,6 +205,7 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
   <span class="seat"><span class="dot"></span><span id="seat">…</span></span>
 </header>
 <main>
+  <div class="badges" id="badges" aria-label="What you have done" hidden></div>
   <section class="loop" id="loop" aria-label="The change loop"></section>
   <div class="grid">
     <div class="col">
@@ -324,6 +326,27 @@ const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) |
 let catchAsk = null, guide = null, selected = null, job = null, jobPoll = null, answered = {}, outLines = [], builderSel = null;
 
 async function loadGuide() { try { guide = await (await fetch("/api/guide")).json(); } catch { guide = null; } }
+
+/* Badges: earned from the same records the page shows, never a gate. Once earned they stay on this browser, so a restore
+   (which starts the loop again) does not take them away. */
+function renderBadges(s) {
+  try { drawBadges(s); } catch (e) { $("badges").hidden = true; }  // a display extra must never stop the rest of the page
+}
+function drawBadges(s) {
+  const key = `ac6-badges:${s.lab_id || ""}`;
+  let kept = {};
+  try { kept = JSON.parse(localStorage.getItem(key) || "{}"); } catch (e) { kept = {}; }
+  if (!kept || typeof kept !== "object" || Array.isArray(kept)) kept = {};
+  for (const b of s.badges || []) if (!(b.key === "caught" && kept.caught)) kept[b.key] = b;  // keep the first red's time
+  // The fix is often pushed onto the red pull request, which then drops the red from GitHub's list: a green after the kept red still counts.
+  if (!kept.fixed && kept.caught && kept.caught.at && s.green_at && s.green_at > kept.caught.at)
+    kept.fixed = { key: "fixed", label: "Fixed it", why: "The gate said no to a change of yours, and later one went green." };
+  try { localStorage.setItem(key, JSON.stringify(kept)); } catch (e) { /* private window: show this load's only */ }
+  const order = ["baseline", "caught", "fixed", "shipped", "match"], list = order.filter((k) => kept[k]).map((k) => kept[k]);
+  const box = $("badges");
+  box.hidden = list.length === 0;
+  box.innerHTML = list.map((b) => `<span class="badge" title="${esc(b.why)}">✓ ${esc(b.label)}</span>`).join("");
+}
 
 function renderLoop(stages) {
   const nextKey = (stages.find((s) => s.state !== "done") || {}).key || "done";
@@ -846,7 +869,7 @@ async function refresh() {
   } catch { $("seat").textContent = "disconnected — is workshop ui still running?"; return; }
   $("seat").textContent = `${state.lab_id} · Forward network ${state.network_id}`;
   if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, step: state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
-  renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
+  renderBadges(state); renderLoop(state.stages); renderTopo(state); renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
   $("intent").innerHTML = md(state.intent);
 }
 loadGuide().then(refresh); rotateTip();
