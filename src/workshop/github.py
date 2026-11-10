@@ -97,18 +97,30 @@ def merged_pr(number: int) -> MergedPR:
     return MergedPR(number, pr.head.sha, pr.merge_commit_sha or "")
 
 
-_FINAL: dict[str, dict[str, dict[str, str]]] = {}  # head sha -> check name -> {conclusion, started}: a finished check never changes
+# head sha -> (when, check name -> {state, started}). A finished set is kept for FINAL_TTL seconds, not forever: someone can
+# press "Re-run jobs" on the same commit, and a check that waits on another (forward/advice) appears after the first finishes.
+_FINAL: dict[str, tuple[float, dict[str, dict[str, str]]]] = {}
+FINAL_TTL = 120.0
 
 
 def checks(sha: str) -> dict[str, dict[str, str]]:
     """Each check run on a commit: name -> {state (SUCCESS, FAILURE, IN_PROGRESS ...), started}. Finished sets are kept, so the
-    lab page's polling asks GitHub again only while something is still running."""
-    if sha in _FINAL:
-        return _FINAL[sha]
+    lab page's polling asks GitHub at most every couple of minutes once everything has finished."""
+    import time
+
+    kept = _FINAL.get(sha)
+    if kept and time.monotonic() - kept[0] < FINAL_TTL:
+        return kept[1]
     runs = _call(f"reading the checks on {sha[:7]}", lambda: list(repo().get_commit(sha).get_check_runs()))
-    out = {r.name: {"state": (r.conclusion or r.status or "").upper(), "started": r.started_at.isoformat() if r.started_at else ""} for r in runs}
-    if out and all(r.status == "completed" for r in runs):
-        _FINAL[sha] = out
+    # a re-run leaves the old run in the list too: the newest run of each name is the one that counts
+    newest: dict[str, object] = {}
+    for r in runs:
+        if r.name not in newest or (r.started_at or 0) > (newest[r.name].started_at or 0):  # type: ignore[attr-defined]
+            newest[r.name] = r
+    out = {name: {"state": (r.conclusion or r.status or "").upper(), "started": r.started_at.isoformat() if r.started_at else ""}  # type: ignore[attr-defined]
+           for name, r in newest.items()}
+    if out and all(r.status == "completed" for r in newest.values()):  # type: ignore[attr-defined]
+        _FINAL[sha] = (time.monotonic(), out)
     return out
 
 

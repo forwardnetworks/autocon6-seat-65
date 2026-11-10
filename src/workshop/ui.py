@@ -409,7 +409,8 @@ class Board:
         for pr in self.prs.get() or []:
             if (pr.get("predict") or "").upper() not in ("SUCCESS", "FAILURE") or not pr.get("sha"):
                 continue
-            dest = self.settings.state(f"pr-evidence/{pr['sha']}")
+            run = "".join(ch for ch in str(pr.get("predict_since") or "") if ch.isdigit())  # a re-run of the same commit is a new run
+            dest = self.settings.state(f"pr-evidence/{pr['sha']}{'-' + run if run else ''}")
             evidence = dest / "evidence.json"
             if not evidence.is_file():
                 try:
