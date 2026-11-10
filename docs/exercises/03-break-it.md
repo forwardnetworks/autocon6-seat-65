@@ -65,7 +65,7 @@ The baseline table shows r1 → r2 → r4 with the route each router used. The p
 names the router whose route disappeared and what it uses instead. Then try `workshop path --snapshot predicted --port 2222`:
 is the management port still blocked when the service is gone?
 
-### Investigate (20 min)
+### Investigate (15 min)
 
 Work out what changed and why, using as many of these as you like:
 
@@ -79,7 +79,7 @@ Work out what changed and why, using as many of these as you like:
 **Find the line responsible.** Why does removing a `network` statement on r4 take a route away from r2, r3 and r1 (two hops away)? Check the routing changes Forward lists.
 Which of the three statements carried the service, and how could you have known before writing the change?
 
-### Discuss (10 min)
+### Discuss (5 min)
 
 Forward AI helped, but did it get everything right? Asked with no context, a chat may blame the router where traffic
 drops rather than the change that caused it:

@@ -376,15 +376,15 @@ wheels = [
 
 [[package]]
 name = "forward-sdk"
-version = "0.1.33"
+version = "0.1.36"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e0/af/b47c8f94640db51b190311fc72434fde1e7a678c45465f686c1a823d5a39/forward_sdk-0.1.33.tar.gz", hash = "sha256:5bb0993acfcdf8e63371b85a5df3376678d42b3941da05b356098f9a28b2aaa7", size = 1164127, upload-time = "2026-11-04T13:58:53.927Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fb/83/b74abed6ae0751e3406314bee050b223753f7f7e05a03552075ad254fb70/forward_sdk-0.1.36.tar.gz", hash = "sha256:59b800cdc6d6977f1d50d32a26d423eac2acdd6dc6a354dd3f99ae02dd7cef17", size = 1242299, upload-time = "2026-11-07T20:27:35.031Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/5e/6c83a7a12033e26ead149f9fe85197ef13756bffdd88c26ec514a6be360c/forward_sdk-0.1.33-py3-none-any.whl", hash = "sha256:42b7ce525491497a184d804523b430db3af7d5297d09019c4163f0ff9aeeeb54", size = 587342, upload-time = "2026-11-04T13:58:52.229Z" },
+    { url = "https://files.pythonhosted.org/packages/b3/66/7b87f9cd9dd8ecde964324c628f94c170cb35834e759abe17f5d1e91f5a2/forward_sdk-0.1.36-py3-none-any.whl", hash = "sha256:20ec4b64222256f4368da0cbc54bc511f50388b2d626b340c0a502b0c30f22e3", size = 611332, upload-time = "2026-11-07T20:27:33.28Z" },
 ]
 
 [[package]]
@@ -1281,7 +1281,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "forward-sdk", specifier = "==0.1.33" },
+    { name = "forward-sdk", specifier = "==0.1.36" },
     { name = "napalm", specifier = "==5.2.0" },
     { name = "pyeapi", specifier = "==1.0.4" },
     { name = "python-dotenv", specifier = ">=1.0" },

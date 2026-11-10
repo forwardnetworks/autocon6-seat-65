@@ -18,7 +18,7 @@ from forward_sdk import ForwardTimeoutError
 from workshop import collect, executor, fingerprint, lab, requirements, show
 from workshop.config import Settings
 from workshop.evaluate import Report, evaluate
-from workshop.forward import Forward, SnapshotTag
+from workshop.forward import PENDING, Forward, SnapshotTag, state_of
 
 
 class BaselineError(RuntimeError):
@@ -64,16 +64,23 @@ def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> 
     with Forward(settings) as fwd:
         binary = collect.ensure(settings, fwd, log)
         zip_path, zip_fp = collect_clean(settings, binary, kind, log)
-        log("uploading to Forward and waiting for the model ...")
         tag = SnapshotTag(kind, settings.lab_id, zip_fp)
-        show.sdk(log, f'snapshots.upload("{zip_path.name}", note="{tag.note()}", process=True)')
-        snap_id = fwd.submit(zip_path, tag, f"collected {datetime.now(UTC).isoformat(timespec='seconds')}", log=log)
-        log(f"  uploaded: snapshot {snap_id}")
+        extra = extra or f"collected {datetime.now(UTC).isoformat(timespec='seconds')}"
+        waiting = fwd.tagged(kind, settings.lab_id, fp=zip_fp, minutes=30)
+        if waiting is not None and state_of(waiting) in PENDING:
+            # an earlier run uploaded this very network and Forward is still on it: wait for that one, don't queue a second
+            snap_id = str(waiting.id)
+            log(f"Forward is still processing snapshot {snap_id}, an earlier upload of exactly this network: waiting for it, not uploading again")
+        else:
+            log("uploading to Forward and waiting for the model ...")
+            show.sdk(log, f'snapshots.upload("{zip_path.name}", note="{tag.note(extra)}", process=True)')
+            snap_id = fwd.submit(zip_path, tag, extra, log=log)
+            log(f"  uploaded: snapshot {snap_id}")
         show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of every route, ACL and path')
         try:
             snap = fwd.wait(snap_id, log=log)
         except ForwardTimeoutError as exc:
-            again = "`workshop baseline judge`" if kind == "baseline" else "`workshop verify` again"
+            again = "`workshop baseline judge`" if kind == "baseline" else "`workshop verify` again (it waits for this upload rather than sending another)"
             raise BaselineError(f"snapshot {snap_id} is uploaded and Forward is still processing it (its queue is busy). Don't collect "
                                 f"again: that only adds to the queue. In a minute or two, run {again}.") from exc
         devices = fwd.device_names(str(snap.id))
@@ -110,15 +117,25 @@ def prepare(settings: Settings, log) -> dict[str, str]:
 
 
 def judge(settings: Settings, log) -> tuple[str, str, Report]:
-    """Check the newest snapshot in Forward is a baseline of this lab, taken of the network as it is now, then judge it.
+    """Check the newest baseline of this lab in Forward (the one you just uploaded; waited for if Forward is still processing
+    it) was taken of the network as it is now, then judge it.
 
     Three checks before any requirement: the note says baseline and this lab; Forward's copy of the configs hashes to the
     note's fingerprint (the ZIP really is what the note claims); and the live routers still hash to it (nothing changed since)."""
     with Forward(settings) as fwd:
-        show.sdk(log, "snapshots.latest_processed(include_predicted=False)   the newest snapshot that is not a prediction")
-        snap = fwd.latest_baseline()
+        show.sdk(log, 'snapshots.list(exclude_triggers=("PREDICT",))   your uploads, newest first: the newest note saying baseline and this lab')
+        snap = fwd.tagged("baseline", settings.lab_id, minutes=24 * 60) or fwd.latest_baseline()
         if snap is None:
-            raise BaselineError("Forward has no processed snapshot for this network yet: upload yours first")
+            raise BaselineError("Forward has no snapshot for this network yet: upload yours first")
+        if state_of(snap) not in PENDING | {"PROCESSED"}:
+            raise BaselineError(f"Forward could not process snapshot {snap.id} ({state_of(snap)}): collect and upload it again")
+        if state_of(snap) in PENDING:
+            log(f"  snapshot {snap.id} is still processing in Forward: waiting for it")
+            show.sdk(log, f'snapshots.wait_until_processed("{snap.id}")')
+            try:
+                snap = fwd.wait(str(snap.id), log=log)
+            except ForwardTimeoutError as exc:
+                raise BaselineError(f"Forward is still processing snapshot {snap.id}: don't upload again; run `workshop baseline judge` in a minute or two") from exc
         tag = SnapshotTag.parse(snap.note)
         log(f"  snapshot {snap.id}, note: {snap.note!r}")
         if tag is None or tag.kind != "baseline" or tag.lab != settings.lab_id:

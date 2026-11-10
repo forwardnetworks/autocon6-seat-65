@@ -52,6 +52,9 @@ Every exercise has a core part (everyone) and **Finished early?** extras. You ne
 You never need to leave the editor: the file Explorer, **Source Control** and **GitHub Pull Requests** panels on the
 left, and the terminal at the bottom. Each Git step also has the equivalent terminal commands, folded away.
 
+**What does a `workshop` command actually do?** [Every command, in its pieces](commands.md): each one is a few calls
+to netlab, NAPALM, the Forward collector, the Forward SDK and Git, and it prints each of them as it runs.
+
 The **Your lab** tab (port 8765) always shows where you are and the next command. Stuck? Look in
 [If something goes wrong](stuck.md). In the room, raise a hand. On your own, you can also ask Forward AI in that tab.
 

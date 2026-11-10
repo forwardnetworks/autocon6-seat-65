@@ -100,7 +100,7 @@ def _updates(root: Path) -> dict[str, Any]:
     """Has the workshop team pushed an update to main that this Codespace doesn't have yet? Only the workshop's own files
     count: the attendee's candidate and branches are never part of it. Display only; a failed fetch just shows nothing."""
     if subprocess.run(["git", "fetch", "-q", "origin", "main"], cwd=root, capture_output=True, timeout=20, check=False).returncode != 0:
-        return {"available": False}
+        raise RuntimeError("git fetch failed")  # keep what was last known rather than flicker the banner
     out = subprocess.run(["git", "diff", "--name-only", "HEAD", "origin/main", "--", *WORKSHOP_PATHS], cwd=root,
                          capture_output=True, text=True, timeout=10, check=False)
     files = [f for f in out.stdout.split() if f]
@@ -108,19 +108,32 @@ def _updates(root: Path) -> dict[str, Any]:
 
 
 class _Cached:
-    """A value refreshed at most every ``ttl`` seconds (docker and gh calls are slow)."""
+    """A value refreshed at most every ``ttl`` seconds (docker and gh calls are slow).
 
-    def __init__(self, fn, ttl: float) -> None:
+    With ``fallback`` set, a failed refresh keeps the last good value (or ``fallback`` if there never was one) and tries
+    again in a few seconds: one slow or rate-limited ``gh`` call must not make a merged pull request vanish from the page
+    for 30 seconds and then come back."""
+
+    def __init__(self, fn, ttl: float, fallback: Any = None) -> None:
         self.fn, self.ttl, self.at, self.value, self.lock = fn, ttl, 0.0, None, threading.Lock()
+        self.fallback, self.good, self.failures = fallback, False, 0
 
     def get(self):
         with self.lock:
             if time.monotonic() - self.at > self.ttl:
                 try:
-                    self.value = self.fn()
+                    self.value, self.good, self.failures = self.fn(), True, 0
+                    self.at = time.monotonic()
                 except Exception as exc:  # noqa: BLE001 - shown on the page, never fatal
-                    self.value = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
-                self.at = time.monotonic()
+                    if self.fallback is None:
+                        self.value = {"error": f"{type(exc).__name__}: {str(exc)[:160]}"}
+                        self.at = time.monotonic()
+                    else:
+                        if not self.good:
+                            self.value = self.fallback
+                        # try again soon, backing off (5, 10, 20 s ... up to ttl) so an outage never ties up every page poll
+                        self.failures += 1
+                        self.at = time.monotonic() - max(self.ttl - 5 * 2 ** (self.failures - 1), 0)
             return self.value
 
 
@@ -193,8 +206,8 @@ def _pull_requests(root: Path) -> list[dict[str, Any]]:
         ["gh", "pr", "list", "--state", "all", "--limit", "10", "--json", "number,title,state,headRefOid,statusCheckRollup,url,author"],
         cwd=root, capture_output=True, text=True, timeout=20, check=False,
     )
-    if out.returncode != 0:
-        return []
+    if out.returncode != 0:  # not "no pull requests": the caller keeps what it last knew
+        raise RuntimeError(f"gh pr list failed: {(out.stderr or '').strip()[:160]}")
     me = os.environ.get("GITHUB_USER", "") if os.environ.get("CODESPACES") else ""
     prs = []
     for pr in json.loads(out.stdout or "[]"):
@@ -376,8 +389,8 @@ class Board:
     def __init__(self, settings: Settings, evidence: Path) -> None:
         self.settings, self.evidence = settings, evidence
         self.containers = _Cached(_containers, 10)
-        self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30)
-        self.updates = _Cached(lambda: _updates(settings.repo_root), 60)
+        self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30, fallback=[])
+        self.updates = _Cached(lambda: _updates(settings.repo_root), 60, fallback={})
         self.pr_evidence = _Cached(self._pr_evidence, 20)
         self.chats = Chats(settings)
         self.jobs = Jobs(settings, evidence)

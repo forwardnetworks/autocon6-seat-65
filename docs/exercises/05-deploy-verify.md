@@ -28,7 +28,7 @@ configuration session, asks the router for the session's diff (`-` lines removed
 A line the router refuses aborts the whole session, so a change never half applies. Deploy prints the router's diff
 after the commit. Nobody approves it there: the approval was the merged pull request, bound to these exact bytes.
 
-**Open the box first (3 min, before you deploy).** Do by hand what NAPALM is about to do, and throw it away:
+**Open the box first (optional, 3 min, before you deploy).** Do by hand what NAPALM is about to do, and throw it away:
 ```
 docker exec -it clab-autocon6-r4 Cli
 enable
@@ -62,7 +62,7 @@ prediction` line is the thing to look for.
 
 **MATCH** closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
 
-**Open the box: the records.** Deploy and verify each leave a file:
+**Open the box: the records (optional).** Deploy and verify each leave a file:
 ```
 S=$WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID
 jq '{lines, device_diff, readback_problems}' $S/deploy.json      # what was sent, and the router's own diff

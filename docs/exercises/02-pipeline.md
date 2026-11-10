@@ -44,7 +44,7 @@ gh pr create --fill
 ```
 </details>
 
-### Follow it through the pipeline (25 min)
+### Follow it through the pipeline (20 min)
 
 The **forward/predict** check starts on your PR. While it runs, read how it works:
 
@@ -87,7 +87,7 @@ python examples/predict_by_hand.py
 Read the script first: create a change set on your baseline, `set_commands` for r4, `commit`, `predict`, wait, then trace
 the application flow on both the baseline and the predicted network. It's for learning: the PR check is still the gate.
 
-### Open the box: the evidence (5 min)
+### Open the box: the evidence (optional, if your check is still running)
 
 The verdict is a file, and everything after this step trusts it. Read it:
 ```

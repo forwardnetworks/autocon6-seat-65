@@ -46,7 +46,7 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
    ```
    Two neighbors should be **Established**. `netlab status` (from the `lab/` folder) lists the lab too.
 
-### Open the box: what `workshop up` actually did (while it runs)
+### Open the box: what `workshop up` actually did (optional, while it runs)
 
 `workshop up` is a wrapper. Everything it does leaves files you can read, in a second terminal (the **+** in the terminal panel):
 
@@ -58,6 +58,7 @@ grep -B3 ansible_host lab/hosts.yml  # the management addresses: NAPALM and the 
 
 `lab/topology.yml` is about 40 lines you could write by hand. netlab turned it into `clab.yml` (what containerlab runs) and
 `hosts.yml` (an inventory). With `--no-config`, netlab stopped there: no router configuration came from netlab.
+[Every `workshop` command, in its pieces](commands.md) lists what each of the others does in the same way.
 
 Once `workshop up` finishes, compare what is **on** r4 with what is **in Git**:
 ```

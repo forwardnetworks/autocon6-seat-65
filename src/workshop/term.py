@@ -15,7 +15,7 @@ from typing import Any
 GOOD = {"PASS", "DELIVERED", "PERMIT", "PERMITTED", "MATCH", "OPEN", "ACL_PERMIT", "as predicted"}
 BAD = {"FAIL", "BLACKHOLE", "DROPPED", "DENY", "DENIED", "ACL_DENY", "MISMATCH", "INADMISSIBLE", "UNREACHABLE", "LOOP", "removed"}
 WARN = {"STALE", "ERROR", "INCONCLUSIVE", "changed", "added"}
-_WORD = re.compile(r"[A-Za-z_]+|as predicted")
+_WORD = re.compile(r"as predicted|[A-Za-z_]+")  # the phrase first, or "as" alone would win
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 

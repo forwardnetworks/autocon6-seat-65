@@ -29,3 +29,5 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 | Forward AI says "I wasn't able to produce a complete answer" | The model gave up on that turn | In the browser chat start a **New conversation** and ask again, or ask a narrower question. The `workshop` commands retry once by themselves |
 | Forward AI is "still answering" | One question at a time per person | Wait a minute, or skip it. Nothing in the core loop needs AI |
 | Nothing here matches | | Send Craig your seat number, what you ran, and what it printed. Everything you ran is already logged, so a short description is enough |
+
+Want to know exactly what a command did before you trust it? [Every `workshop` command, in its pieces](commands.md).

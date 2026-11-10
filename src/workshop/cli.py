@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from workshop import config
@@ -262,19 +263,30 @@ def _baseline(settings: config.Settings, args) -> int:
         for line in report_.service_routes(fwd.c, snapshot_id):
             log(line)
     rows = [r.to_json() for r in report.results]
-    log("")
-    log("Requirements checked on that model:")
-    for line in report_.requirement_table(rows, on=f"your baseline (snapshot {snapshot_id})"):
-        log(line)
-    log("")
-    log("Each requirement in detail:")
-    for line in report_.requirement_lines(rows):
-        log(line)
+    with _display_only():
+        log("")
+        log("Requirements checked on that model:")
+        for line in report_.requirement_table(rows, on=f"your baseline (snapshot {snapshot_id})"):
+            log(line)
+        log("")
+        log("Each requirement in detail:")
+        for line in report_.requirement_lines(rows):
+            log(line)
     log("")
     log(f"baseline: {report.status.value}")
-    for line in report_.baseline_close(report.status.value) + report_.tagline("baseline", report.status.value):
-        log(line)
+    with _display_only():
+        for line in report_.baseline_close(report.status.value) + report_.tagline("baseline", report.status.value):
+            log(line)
     return EXIT[report.status.value]
+
+
+@contextmanager
+def _display_only():
+    """Tables and explanations: a bug drawing them is reported in one line and never changes the verdict or exit code."""
+    try:
+        yield
+    except Exception as exc:  # noqa: BLE001
+        log(f"  (could not draw this part: {type(exc).__name__}: {str(exc)[:120]}; the verdict below is unaffected)")
 
 
 def _predict(settings: config.Settings, args) -> int:
@@ -374,18 +386,24 @@ def _verify(settings: config.Settings, args) -> int:
             log("nothing deployed yet: run workshop deploy first (or pass --evidence)")
             return EXIT["ERROR"]
         evidence = json.loads(deployed.read_text())["evidence"]
-    result = verify.run(settings, Path(evidence), log)
+    try:
+        result = verify.run(settings, Path(evidence), log)
+    except Exception as exc:  # noqa: BLE001 - a Forward or file error is ERROR, never a FAIL of the change
+        log(f"workshop verify: {exc}")
+        log("The change is applied; only the check did not finish. Run `workshop verify` again.")
+        return EXIT["ERROR"]
     if result["outcome"] == "INCOMPLETE":
         log(result["reason"])
         return EXIT["INCONCLUSIVE"]
-    log("")
-    log("Requirements on the real network, compared with what Predict said:")
-    for line in report_.requirement_table(result["rows"], compare=True):
-        log(line)
-    log("")
-    log("Each requirement in detail:")
-    for line in report_.requirement_lines(result["rows"], compare=True):
-        log(line)
+    with _display_only():
+        log("")
+        log("Requirements on the real network, compared with what Predict said:")
+        for line in report_.requirement_table(result["rows"], compare=True):
+            log(line)
+        log("")
+        log("Each requirement in detail:")
+        for line in report_.requirement_lines(result["rows"], compare=True):
+            log(line)
     with contextlib.suppress(Exception):  # display only: the verdict above never depends on this
         before = Manifest.read(Path(evidence)).baseline_snapshot_id
         with Forward(settings, quick=True) as fwd:
@@ -396,8 +414,9 @@ def _verify(settings: config.Settings, args) -> int:
             log(line)
     log("")
     log(f"verify: {result['outcome']} (post-change snapshot {result['post_snapshot_id']})")
-    for line in report_.verify_close(result["outcome"], result["rows"]) + report_.tagline("verify", result["outcome"]):
-        log(line)
+    with _display_only():
+        for line in report_.verify_close(result["outcome"], result["rows"]) + report_.tagline("verify", result["outcome"]):
+            log(line)
     return 0 if result["outcome"] == "MATCH" else EXIT["FAIL"]
 
 

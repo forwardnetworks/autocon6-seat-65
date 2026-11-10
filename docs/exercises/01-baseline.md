@@ -26,7 +26,7 @@ workshop probe
 ```
 From the client, **8080 is open** (the application), and **8443 and 2222 are blocked** by r1's `CLIENT-IN` ACL.
 
-### The behavioral tests (10 min)
+### The behavioral tests (5 min)
 
 Those behaviors are written as tests. Read them: each one has an id, a kind (flow, route, path, nqe), what it
 expects, and why it matters.
@@ -102,7 +102,7 @@ Read the baseline output top to bottom. It starts with what Forward modelled (ho
 is a block: its **name and meaning**, **must be** (what had to be true), and **Forward saw** (what Forward's model shows,
 with the path traffic takes where there is one). It ends with **What this means** and the next step.
 
-### Open the box: the snapshot (5 min, best done while the upload waits)
+### Open the box: the snapshot (optional, while the upload waits)
 
 ```
 S=$WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID      # your lab's working folder

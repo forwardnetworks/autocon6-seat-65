@@ -40,4 +40,4 @@ def note(log: Log, text: str) -> None:
         log(f"      {text}")
 
 
-NAPALM_APPLY = "open a config session · load_merge_candidate · compare_config (the router's diff) · commit_config"
+NAPALM_APPLY = "open a config session · load_merge_candidate · compare_config (the router's diff) · commit_config (discard_config instead if the diff is empty or the router refuses)"

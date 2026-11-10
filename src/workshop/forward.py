@@ -15,6 +15,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Self
 
@@ -56,6 +57,13 @@ class SnapshotTag:
 class AiUnavailable(RuntimeError):
     """Forward AI could not answer (not enabled, busy, timed out, or an error). Advisory only: callers
     report it and carry on -- AI never decides a gate."""
+
+
+PENDING = {"UNPACKING", "UNPROCESSED", "PROCESSING"}
+
+
+def state_of(snap) -> str:
+    return str(getattr(snap.state, "value", snap.state) or "").upper()
 
 
 @dataclass(frozen=True)
@@ -197,6 +205,26 @@ class Forward:
     def latest_baseline(self):
         """The newest processed snapshot that is not a prediction (a collection, import or reprocess)."""
         return self.c.snapshots.latest_processed(include_predicted=False)
+
+    def tagged(self, kind: str, lab: str, *, fp: str = "", minutes: float = 60):
+        """The newest snapshot of ours tagged ``kind`` for ``lab`` (and ``fp``, if given), processed or still in Forward's
+        queue (or failed: the caller says so), created in the last ``minutes``. None if there is none.
+
+        This is how a second run finds the upload a first run left processing, instead of uploading the same network again."""
+        cutoff = datetime.now(UTC) - timedelta(minutes=minutes)
+        for snap in sorted(self.c.snapshots.list(include_archived=False, exclude_triggers=("PREDICT",)),
+                           key=lambda s: s.created_at or "", reverse=True):
+            tag = SnapshotTag.parse(snap.note)
+            if tag is None or tag.kind != kind or tag.lab != lab or (fp and tag.fp != fp):
+                continue
+            try:
+                created = datetime.fromisoformat(str(snap.created_at))
+            except ValueError:
+                continue
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            return snap if created >= cutoff else None
+        return None
 
     def snapshot(self, snapshot_id: str):
         for snap in self.c.snapshots.list(include_archived=True):

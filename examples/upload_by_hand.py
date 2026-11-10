@@ -12,7 +12,7 @@ import os
 from forward_sdk import ForwardClient
 
 c = ForwardClient.from_env(network_id=os.environ["FORWARD_NETWORK_ID"])
-zip_path = sorted(glob.glob(os.environ["SNAPDIR"] + "/baseline_*.zip"))[-1]  # the newest ZIP the collector wrote
+zip_path = max(glob.glob(os.environ["SNAPDIR"] + "/baseline_*.zip"))  # the newest ZIP the collector wrote
 
 # 1. Upload. process=True: Forward starts building its model straight away. The note is how later steps find your baseline.
 snap = c.snapshots.upload(zip_path, note=os.environ["NOTE"], process=True, wait=False)
