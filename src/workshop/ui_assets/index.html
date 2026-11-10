@@ -326,6 +326,7 @@ let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
 let prMsg = "Retire r4's stale advertisements", prNote = "";
+let depPr = "", depSha = "";  // what was typed in the deploy form: kept when the page redraws after each step
 let lastLineAt = Date.now();
 const WAITING = ["Good time to refill your coffee.", "Somewhere a very patient computer is doing real work. Hang tight.", "Slow here is the point: a minute of checking beats an outage.", "Routers, models and CI all take a moment. That is the job.", "Predict never guesses. It computes, and computing takes a moment."];
 const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
@@ -442,7 +443,7 @@ function renderLane(s) {
     } else if (it.kind === "own") {
       body = `<div class="runrow"><input type="text" id="rq-id" size="12" placeholder="NAME" value="HTTPS-DENY"> <input type="text" id="rq-port" size="6" placeholder="port" value="8443" inputmode="numeric"> <select id="rq-expect"><option value="deny">must be blocked</option><option value="permit">must work</option></select> <input type="text" id="rq-title" size="26" placeholder="title" value="HTTPS stays blocked at r1"></div>
         <div class="runrow"><button id="rq-write" ${busy ? "disabled" : ""}>Write my requirement</button><button class="ghost" id="rq-predict" ${busy ? "disabled" : ""}>Predict with my requirements</button></div>
-        <div class="termline">In the terminal: copy <code>requirements/candidate.yml</code> to <code>requirements/mine.yml</code>, add it, then <code>workshop predict --requirements requirements/mine.yml</code></div><div id="rq-note" class="muted"></div>`;
+        <div class="termline">In the terminal: copy <code>requirements/candidate.yml</code> to <code>requirements/mine.yml</code>, add it, then the predict steps with <code>--requirements requirements/mine.yml</code> (on <code>changeset</code> and <code>check</code>)</div><div id="rq-note" class="muted"></div>`;
     } else if (it.kind === "chat") {
       body = `<div class="runrow"><button class="ghost" data-lane-chat ${""}>Open the chat</button></div>`;
     } else {
@@ -552,7 +553,7 @@ function renderGuide(s, key) {
   }
   if (key === "deploy") {
     extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
-      <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false"> </div>
+      <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric" value="${esc(depPr)}"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(depSha)}"> </div>
       <div class="runrow">${[["deploy gates", "1. Gates"], ["deploy render", "2. Render"], ["deploy apply", "3. Apply"], ["deploy readback", "4. Read back"]].map(([st, lb]) => `<button class="dep-step" data-step="${st}" ${s.job && !s.job.done ? "disabled" : ""}>${lb}</button>`).join(" ")}</div>
       <div class="muted">Gates checks everything and sends nothing. Render shows the change in Forward and on r4, side by side (a dry run). Apply sends it. Read back confirms it on r4.</div>
       <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
@@ -621,7 +622,8 @@ function renderGuide(s, key) {
       : `Updated <b>PR #${esc(r.number)}</b> (branch <code>${esc(r.branch)}</code>)${r.pushed ? " with your new commit" : ": nothing new to push"}: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`;
     guideSig = ""; renderGuide(state, key); refresh();
   };
-  document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => runStep({ step: b.dataset.step, pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() }); });
+  if ($("dep-pr")) { $("dep-pr").oninput = (e) => { depPr = e.target.value; }; $("dep-sha").oninput = (e) => { depSha = e.target.value; }; }
+  document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => { depPr = $("dep-pr").value.trim(); depSha = $("dep-sha").value.trim(); runStep({ step: b.dataset.step, pr: depPr, confirm: depSha }); }; });
   showOut();
   loadArts(key);
   loadData(key, g);

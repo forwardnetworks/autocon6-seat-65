@@ -67,7 +67,7 @@ CHALLENGES: tuple[Challenge, ...] = (
     Challenge("own-test", "Write your own behavioral test", "stretch", 10, (
         "r1's ACL also blocks HTTPS (TCP 8443), but no requirement says it must stay blocked.",
         "Copy `requirements/candidate.yml` to `requirements/mine.yml` and add a flow requirement for port 8443 that expects `deny` at r1.",
-        "Then `workshop predict --requirements requirements/mine.yml`. See exercise 2 for the full test.")),
+        "Then the predict steps with `--requirements requirements/mine.yml` (on `changeset` and `check`). See exercise 2 for the full test.")),
     Challenge("matrix", "Predict every way of retiring r4's statements", "stretch", 10, (
         "A regression suite runs the same tests against several changes.",
         "Guess first: which combination passes every test?",

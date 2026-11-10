@@ -48,6 +48,7 @@ STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "
          "predict changeset", "predict run", "predict check",
          "deploy gates", "deploy render", "deploy apply", "deploy readback",
          "verify probe", "verify collect", "verify upload", "verify wait", "verify compare")
+VERDICT_STEPS = ("baseline check", "predict check", "verify compare", "deploy gates")  # the steps whose exit 0 is a verdict
 MAX_ARTIFACT = 60_000
 # What each step uses and produces, shown on the page so people see exactly what they are deploying. Paths are
 # repo-relative; "state:" paths live in the seat's state folder; "forward:<which>" is Forward's raw answers.
@@ -352,7 +353,10 @@ class Jobs:
             job["lines"].append(f"the step stopped unexpectedly: {type(exc).__name__}: {exc}")
             code = 2
         finally:
-            job["code"], job["word"] = code, EXIT_WORDS.get(code, "ERROR" if code else "")
+            word = EXIT_WORDS.get(code, "ERROR" if code else "")
+            if code == 0 and job["step"] in STEPS and " " in job["step"] and job["step"] not in VERDICT_STEPS:
+                word = ""  # a step that only does something (collect, upload, render ...) is "done", not PASS: nothing was judged
+            job["code"], job["word"] = code, word
             job["secs"] = round(time.time() - job["started"])
             job["done"] = True
 
@@ -646,22 +650,22 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
                      f"{running}/6 containers running" if running else "not started", "workshop up"))
     if base:
         ok = (base.get("report") or {}).get("status") == "PASS"
-        out.append(stage("baseline", "Baseline", "done" if ok else "failed", f"snapshot {base['snapshot']}", "workshop baseline"))
+        out.append(stage("baseline", "Baseline", "done" if ok else "failed", f"snapshot {base['snapshot']}", "workshop baseline collect, upload, wait, check"))
     else:
-        out.append(stage("baseline", "Baseline", "todo", "no baseline yet", "workshop baseline"))
+        out.append(stage("baseline", "Baseline", "todo", "no baseline yet", "workshop baseline collect, upload, wait, check"))
     if cand.get("ok"):
         out.append(stage("change", "Change", "done", f"{len(cand['changes'])} line(s) in candidate/r4-bgp.eos", "edit, commit, open a PR"))
     else:
         out.append(stage("change", "Change", "active", (cand.get("problems") or ["edit the candidate"])[0], "edit candidate/r4-bgp.eos"))
     if m and base and m.baseline_snapshot_id and str(base.get("snapshot")) != str(m.baseline_snapshot_id):
-        out.append(stage("predict", "Predict", "todo", "that prediction was against an earlier baseline", "workshop predict, or the PR check"))
+        out.append(stage("predict", "Predict", "todo", "that prediction was against an earlier baseline", "workshop predict changeset, run, check, or the PR check"))
     elif m and cand.get("sha256") != m.candidate_sha256:
-        out.append(stage("predict", "Predict", "todo", f"last prediction ({m.status}) was of a different candidate", "open a PR, or workshop predict"))
+        out.append(stage("predict", "Predict", "todo", f"last prediction ({m.status}) was of a different candidate", "open a PR, or workshop predict changeset"))
     elif m:
         state = {"PASS": "done", "FAIL": "failed"}.get(m.status, "failed")
-        out.append(stage("predict", "Predict", state, f"{m.status}: {m.reason[:90]}", "workshop predict, or the PR check"))
+        out.append(stage("predict", "Predict", state, f"{m.status}: {m.reason.replace('**', '')[:90]}", "workshop predict changeset, run, check, or the PR check"))
     else:
-        out.append(stage("predict", "Predict", "todo", "not predicted yet", "open a PR, or workshop predict"))
+        out.append(stage("predict", "Predict", "todo", "not predicted yet", "open a PR, or workshop predict changeset"))
     pr = prs[0] if prs else None
     if pr and pr["state"] == "MERGED":
         out.append(stage("approve", "Approve", "done", f"PR #{pr['number']} merged", ""))
@@ -670,13 +674,21 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
         out.append(stage("approve", "Approve", "active" if check != "FAILURE" else "failed", f"PR #{pr['number']} open: {check_words(check)}", "merge only a green check"))
     else:
         out.append(stage("approve", "Approve", "todo", "no pull request yet", "open a pull request"))
-    out.append(stage("deploy", "Deploy", "done" if deployed else "todo",
-                     f"applied {len(deployed.get('lines', [])) - 2} change(s)" if deployed else "not deployed", "workshop deploy gates --pr N --confirm <sha7>"))
+    hint = "workshop deploy gates, render, apply, readback --pr N --confirm <sha7>"
+    if not deployed:
+        out.append(stage("deploy", "Deploy", "todo", "not deployed", hint))
+    elif deployed.get("readback_problems") is None and "readback_problems" in deployed:
+        # applied, not read back yet: the deploy isn't finished until r4 has been checked (an older record has no such key)
+        out.append(stage("deploy", "Deploy", "active", f"applied {len(deployed.get('lines', [])) - 2} change(s); next: read it back", "workshop deploy readback"))
+    elif deployed.get("readback_problems"):
+        out.append(stage("deploy", "Deploy", "failed", "r4 does not show the change as sent: " + "; ".join(deployed["readback_problems"])[:80], "workshop deploy readback"))
+    else:
+        out.append(stage("deploy", "Deploy", "done", f"applied {len(deployed.get('lines', [])) - 2} change(s) and read back", hint))
     if verified:
         outcome = verified.get("outcome", "")
-        out.append(stage("verify", "Verify", "done" if outcome == "MATCH" else "failed", outcome, "workshop verify"))
+        out.append(stage("verify", "Verify", "done" if outcome == "MATCH" else "failed", outcome, "workshop verify probe, collect, upload, wait, compare"))
     else:
-        out.append(stage("verify", "Verify", "todo", "not verified", "workshop verify"))
+        out.append(stage("verify", "Verify", "todo", "not verified", "workshop verify probe, collect, upload, wait, compare"))
     # A step only counts once every step before it is done: a deploy or verify left over from an earlier
     # loop is history, not progress.
     for i, s in enumerate(out):
