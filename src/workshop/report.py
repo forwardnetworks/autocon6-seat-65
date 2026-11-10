@@ -130,12 +130,12 @@ def inventory_line(client, snapshot_id: str) -> str:
 def baseline_close(status: str) -> list[str]:
     if status == "PASS":
         return ["", "What this means: every requirement holds on the network today. This snapshot is the starting point every",
-                "prediction is compared with. Next: change candidate/r4-bgp.eos, then `workshop predict` (or open a pull request)."]
+                "prediction is compared with. Next: change candidate/r4-bgp.eos, then the predict steps (`workshop predict changeset`, `run`, `check`), or open a pull request."]
     if status == "FAIL":
         return ["", "What this means: the network does not meet its own baseline requirements, so a prediction would prove nothing.",
-                "Fix what is listed above (or `workshop restore`, then `workshop baseline`) before you predict."]
+                "Fix what is listed above (or `workshop restore`, then the baseline steps from `workshop baseline collect`) before you predict."]
     return ["", f"What this means: the baseline ended {status}, so Forward could not fully judge the network (see the lines above).",
-            "That is not the same as a failure: run `workshop baseline` again, and ask a proctor if it repeats."]
+            "That is not the same as a failure: run the step that failed again, and ask a proctor if it repeats."]
 
 
 def predict_close(status: str, failing: list[str]) -> list[str]:
@@ -145,7 +145,7 @@ def predict_close(status: str, failing: list[str]) -> list[str]:
     if status == "FAIL" and failing:
         return ["", f"What this means: on the network that would result, {len(failing)} requirement(s) break ({', '.join(failing)}).",
                 "Nothing was deployed and no router was touched. Read the routing changes above, fix candidate/r4-bgp.eos and predict again."]
-    again = {"STALE": "The network or the baseline moved on since the prediction was made: run `workshop baseline`, then predict again.",
+    again = {"STALE": "The network or the baseline moved on since the prediction was made: run the baseline steps (`workshop baseline collect` first), then predict again.",
              "INCONCLUSIVE": "Forward could not finish judging in time. That is not a failure of your change: predict again.",
              "ERROR": "Something stopped the prediction before it could judge your change (the reason is on the first line): fix that, then predict again."}
     return ["", f"What this means: the prediction ended {status}, so nothing was judged about your change and deployment is blocked.",
@@ -208,7 +208,7 @@ def matrix_notes(rows, titles: dict[str, str]) -> list[str]:
         elif broke:
             out.append(f"  retire {r.label}: {r.status}: breaks {', '.join(broke)}")
         else:
-            out.append(f"  retire {r.label}: not judged ({r.status}): Forward did not get as far as the requirements; run `workshop baseline` and try again")
+            out.append(f"  retire {r.label}: not judged ({r.status}): Forward did not get as far as the requirements; run the baseline steps (`workshop baseline collect` first) and try again")
     safe = [r.label for r in rows if r.status == "PASS"]
     out += ["", ("Safe to propose: " + "; ".join(safe)) if safe else "No combination passes every requirement.",
             "Change nothing yet: each line is a prediction only. Take one that passes into candidate/r4-bgp.eos."]
@@ -244,7 +244,7 @@ def status_lines(baseline: dict[str, Any] | None, deploy: dict[str, Any] | None,
         report = (baseline.get("report") or {}).get("status", "?")
         out.append(f"  Baseline  done      snapshot {baseline.get('snapshot')}, requirements {report}   [Collector + Observability]")
     else:
-        out.append("  Baseline  not yet   run `workshop baseline`   [Collector + Observability]")
+        out.append("  Baseline  not yet   run `workshop baseline collect`   [Collector + Observability]")
     out.append(f"  Change    {'written' if candidate_changes else 'empty':<9} candidate/r4-bgp.eos has {candidate_changes} change line(s)   [Intent]")
     if deploy:
         out.append(f"  Deploy    done      {max(len(deploy.get('lines', [])) - 2, 0)} change(s) applied to r4 at {str(deploy.get('finished_at', ''))[11:19]} UTC   [Executor]")
@@ -253,9 +253,9 @@ def status_lines(baseline: dict[str, Any] | None, deploy: dict[str, Any] | None,
     if verify:
         out.append(f"  Verify    {verify.get('outcome', '?'):<9} post-change snapshot {verify.get('post_snapshot_id', '-')}   [Collector + Observability]")
     else:
-        out.append("  Verify    not yet   run `workshop verify` after a deploy   [Collector + Observability]")
-    nxt = ("workshop baseline" if not baseline else "edit candidate/r4-bgp.eos, then `workshop predict` or open a pull request" if not candidate_changes
-           else "predict it (a pull request, or `workshop predict`)" if not deploy else "workshop verify" if not verify or verify.get("outcome") == "INCOMPLETE"
+        out.append("  Verify    not yet   run `workshop verify probe` after a deploy   [Collector + Observability]")
+    nxt = ("workshop baseline collect" if not baseline else "edit candidate/r4-bgp.eos, then `workshop predict changeset` or open a pull request" if not candidate_changes
+           else "predict it (a pull request, or `workshop predict changeset`)" if not deploy else "workshop verify probe" if not verify or verify.get("outcome") == "INCOMPLETE"
            else "restore and go again: `workshop restore && workshop baseline`")
     return out + ["", f"Next: {nxt}", "(the bracketed names are NAF Framework blocks: docs/exercises/framework.md)"]
 
@@ -275,10 +275,10 @@ def by_hand_lines(env: dict[str, str]) -> list[str]:
             "  3. Judge it:  workshop baseline judge",
             "     It checks the snapshot is a baseline of this lab, that Forward's copy of the four configs matches the note, and that the",
             "     routers haven't changed since; then it judges the requirements. A wrong note or a stale ZIP is refused, with the reason.", "",
-            "Stuck? `workshop baseline` does all three in one go."]
+            "Stuck? `workshop baseline collect`, `upload`, `wait`, `check` do the same, one step at a time."]
 
 
 def up_close() -> list[str]:
-    return ["", "What this means: netlab built the six nodes (four cEOS routers, a client and a service) and NAPALM wrote each router's",
-            "baseline configuration. Look at it: `containerlab inspect --all`, or `docker exec -it clab-autocon6-r1 Cli` (then `enable`,",
-            "`show ip bgp summary`). Next: `workshop baseline` gives Forward a model of this network."]
+    return ["", "What this means: netlab built the six nodes (four cEOS routers, a client and a service) and configured each router",
+            "(Netmiko, from lab/topology.yml and lab/*.j2). Look at it: `netlab status` (in lab/), `containerlab inspect --all`, or `docker exec -it clab-autocon6-r1 Cli` (then `enable`,",
+            "`show ip bgp summary`). Next: `workshop baseline collect` starts giving Forward a model of this network."]

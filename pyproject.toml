@@ -9,6 +9,11 @@ dependencies = [
     "pyeapi==1.0.4",
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
+    "networklab==26.10",
+    "netmiko[par4]>=4.7.0",
+    "docker>=7.1",
+    "gitpython>=3.1.45",
+    "pygithub>=2.8",
 ]
 
 [project.scripts]

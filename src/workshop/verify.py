@@ -18,8 +18,8 @@ from workshop.evidence import Manifest
 from workshop.forward import Forward
 
 
-def run(settings: Settings, evidence: Path, log) -> dict:
-    m = Manifest.read(evidence)
+def probe(settings: Settings, evidence: Path, log) -> list[dict]:
+    """``workshop verify probe``: real packets from the real client, for every flow requirement. Saved for ``compare``."""
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
     lab.wait_bgp(settings, log)
     log("probing the real flows from the client ...")
@@ -27,19 +27,24 @@ def run(settings: Settings, evidence: Path, log) -> dict:
     for req in reqs.requirements:
         if req.kind != "flow":
             continue
-        show.shell(log, ["docker", "exec", lab.CLIENT, "nc", "-z", "-w", "3", lab.SERVICE_IP, str(req.port)])
+        show.docker(log, lab.CLIENT, f"exec_run(['nc', '-z', '-w', '3', '{lab.SERVICE_IP}', '{req.port}'])   real packets from the client")
         p = lab.probe(req.port)
         want = req.expect == "permit"
         ok = p.reachable == want and p.trustworthy
         probes.append({"id": req.id, "port": req.port, "expected": "open" if want else "blocked",
                        "observed": "open" if p.reachable else ("blocked" if p.listener_up else "service down"), "ok": ok})
-        log(f"  TCP {req.port}: {probes[-1]['observed']} (expected {probes[-1]['expected']})")
-    try:
-        snapshot_id, fp, _ = baseline.run(settings, log, kind="post", extra=f"after {m.candidate_sha256[:12]}")
-    except Exception as exc:  # noqa: BLE001 - any collection failure: applied, not verified
-        result = {"outcome": "INCOMPLETE", "reason": f"applied, verification incomplete: {exc}", "probes": probes}
-        settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")
-        return result
+        log(f"  {'✓' if ok else '✗'} TCP {req.port}: {probes[-1]['observed']} (expected {probes[-1]['expected']})")
+    settings.state("steps").mkdir(exist_ok=True)
+    settings.state("steps/probes.json").write_text(json.dumps({"evidence": str(evidence), "probes": probes}, indent=2) + "\n")
+    return probes
+
+
+def compare(settings: Settings, evidence: Path, snapshot_id: str, fp: str, probes: list[dict], log) -> dict:
+    """``workshop verify compare``: the candidate requirements on the post-change snapshot, verdict by verdict against the
+    prediction, and the probes. MATCH only if every one agrees."""
+    m = Manifest.read(evidence)
+    reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
+    show.note(log, f"judging {len(reqs.requirements)} requirements on post-change snapshot {snapshot_id}, the same way Predict's were judged")
     with Forward(settings) as fwd:
         report = evaluate(reqs, fwd.observer(snapshot_id), snapshot_id, root=settings.repo_root)
     predicted = {r["id"]: r["status"] for r in m.results}
@@ -49,3 +54,16 @@ def run(settings: Settings, evidence: Path, log) -> dict:
     result = {"outcome": "MATCH" if match else "MISMATCH", "post_snapshot_id": snapshot_id, "fingerprint": fp, "rows": rows, "probes": probes}
     settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
+
+
+def run(settings: Settings, evidence: Path, log) -> dict:
+    """probe, collect, upload, wait, compare in a row (the lab page's catch-up); the exercises run them one at a time."""
+    m = Manifest.read(evidence)
+    probes = probe(settings, evidence, log)
+    try:
+        snapshot_id, fp, _ = baseline.run(settings, log, kind="post", extra=f"after {m.candidate_sha256[:12]}")
+    except Exception as exc:  # noqa: BLE001 - any collection failure: applied, not verified
+        result = {"outcome": "INCOMPLETE", "reason": f"applied, verification incomplete: {exc}", "probes": probes}
+        settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")
+        return result
+    return compare(settings, evidence, snapshot_id, fp, probes, log)

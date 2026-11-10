@@ -43,4 +43,4 @@ def run(settings: Settings, log) -> None:
         log(f"  removed hand-added advertisements: {', '.join(extras)}")
     log(f"  r4 was advertising: {', '.join(current) or 'nothing'}")
     log(f"  r4 now advertises:  {', '.join(readback)}  (the baseline: the live service prefix and the two stale ones)")
-    log("  r4 advertisements restored; the old baseline no longer matches the network, so run `workshop baseline` before predicting again")
+    log("  r4 advertisements restored; the old baseline no longer matches the network, so run the baseline steps (`workshop baseline collect` first) before predicting again")

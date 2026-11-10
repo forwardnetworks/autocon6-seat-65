@@ -4,16 +4,19 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONTAINERLAB_VERSION=0.82.0
-NETLAB_VERSION=26.9
 CEOS_IMAGE="${AUTOCON6_CEOS_IMAGE:-ghcr.io/forwardnetworks/autocon6-ceos:4.36.0.1F}"
 
 step() { printf '\n== %s\n' "$*"; }
 
-step "Python tools (uv, workshop CLI, netlab ${NETLAB_VERSION})"
+step "Python tools (uv; the workshop CLI, netlab, NAPALM and the Forward SDK from uv.lock)"
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.local/bin:$PATH"
 uv sync --frozen
-uv tool install --quiet "networklab==${NETLAB_VERSION}"
+# netlab (pinned in pyproject.toml, with the Netmiko it configures the routers with) is installed by uv sync above, into the
+# same environment as the workshop: `workshop up` calls it in-process, and `netlab status` / `netlab connect r1` work in the terminal.
+
+step "sshpass (netlab checks the routers' SSH with it before it configures them)"
+command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass >/dev/null; }
 
 step "containerlab ${CONTAINERLAB_VERSION}"
 if ! containerlab version 2>/dev/null | grep -q "version: ${CONTAINERLAB_VERSION}"; then

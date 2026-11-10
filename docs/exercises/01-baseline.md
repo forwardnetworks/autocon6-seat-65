@@ -1,6 +1,6 @@
-# 1 · What must remain true (9:20–9:50)
+# 1 · Meet Forward, and write down what must remain true (9:20–10:05)
 
-*About 30 minutes. Goal: know the network's good behavior before you change anything, and have Forward model it.*
+*About 45 minutes. Goal: get Forward a model of your network, find your way around it, then turn the network's good behavior into tests.*
 
 **Framework map.** The **Collector** (Forward's headless collector) reads your routers and **Observability** (Forward's model) checks them against the requirements. The requirements are your **Intent**: what must stay true. See [the framework map](framework.md).
 
@@ -28,7 +28,7 @@ From the client, **8080 is open** (the application), and **8443 and 2222 are blo
 
 ### The behavioral tests (5 min)
 
-Those behaviors are written as tests. Read them: each one has an id, a kind (flow, route, path, nqe), what it
+Those behaviors are written as tests. You'll run them against Forward's model at the end of this exercise. Read them: each one has an id, a kind (flow, route, path, nqe), what it
 expects, and why it matters.
 ```
 cat requirements/baseline.yml
@@ -38,69 +38,98 @@ cat nqe/stale_bgp_advertisements.nqe
 Which test would catch the service becoming unreachable? Which would catch 2222 becoming reachable? Which one checks
 that the change request is actually done?
 
-### Take the baseline by hand (15 min)
+### Take the baseline, one step at a time (10 min)
 
-You'll do the three steps yourself: collect, upload, judge. (`workshop baseline` does all three in one go, if you're behind.)
+Four commands. Each does one thing, shows you the real call it makes, and leaves evidence the next one picks up.
 
-**Prepare.** The collector normally came with your Codespace (if not, this downloads it); it writes the collector's device file,
-fingerprints the live routers, and prints the note your snapshot must carry:
+**1. Collect.** Forward's headless collector (a program in this Codespace, the same one a customer runs on a jump host)
+logs in to r1-r4 over SSH, runs `show` commands, and writes one snapshot ZIP:
 ```
-workshop baseline prepare
-source $WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID/by-hand.sh
+workshop baseline collect
+```
+It also hashes the four running configs over NAPALM before it collects, and the configs in the ZIP after, so a router
+that changed mid-collection is caught. The evidence: the ZIP's path and size, and the fingerprint.
+
+**2. Upload** the ZIP to your Forward network with the Python SDK (`snapshots.upload`). The note it carries,
+`autocon6:baseline lab=… fp=…`, is how every later step knows which snapshot is your baseline and what it holds:
+```
+workshop baseline upload
 ```
 
-**1. Collect** with Forward's headless collector, the same program a customer runs on a jump host:
+**3. Wait** while Forward turns the ZIP into a model: every route, every ACL, every path a packet could take.
 ```
-(cd $S && INSTALL4J_ADD_VM_PARAMS=-Xmx1g $COLLECTOR createsnapshot --data-sources "$SOURCES" --snapshot-generated-dir "$SNAPDIR" --snapshot-base-name baseline --threads 4 > $S/collect-by-hand.log 2>&1)
-grep -E "finished with|Collected devices|Saved snapshot zip|ERROR" $S/collect-by-hand.log
-ls -la $SNAPDIR
+workshop baseline wait
 ```
-The collector logs every detail (about 1,600 lines: Java, SSH, each command): the full log is in `$S/collect-by-hand.log`. The
-`grep` picks out the story: each router's `Pipeline execution finished with SUCCESS`, `Collected devices: [r1, r2, r3, r4]`,
-and where it saved the ZIP. Open the log and search for `show` to see the commands it ran.
+It shows Forward's own progress (its queue, then each processing stage) and a line every 20 seconds or so. A minute is normal.
 
-**2. Upload** the ZIP to your Forward network with the Python SDK, and wait while Forward builds its model. Open
-`examples/upload_by_hand.py` first: it is two SDK calls, `snapshots.upload` (with your note) and `wait_until_processed`.
-```
-python examples/upload_by_hand.py
-```
-If the wait runs out, Forward is still working on it: don't upload again, just go to step 3 in a minute.
+Want to run the collector and the upload yourself? `workshop baseline prepare`, then the commands it prints (the
+collector, then `python examples/upload_by_hand.py`), then `workshop baseline judge`.
 
-**3. Judge** it:
-```
-workshop baseline judge
-```
-Before any requirement it checks three things, and prints each: the snapshot's note says *baseline* and *your lab*;
-Forward's copy of the configs hashes to the note's fingerprint (the ZIP is what the note claims); and the live routers still
-hash to it (nothing changed since you collected). Then it judges the requirements.
-Three different things happen, in order, and the output shows each one:
+### Meet Forward (15 min)
 
-1. **Collect.** Forward's headless collector (a program in this Codespace, not on Forward's servers) logs in to the four
-   routers over SSH, runs `show` commands and writes everything into one snapshot ZIP. `workshop` also fingerprints the
-   running configs over NAPALM and refuses the snapshot if they differ from what the collector read.
-2. **Model.** The ZIP is uploaded to your Forward network with the Python SDK (`snapshots.upload`, then
-   `wait_until_processed`). Forward turns it into a model: every route, ACL and forwarding decision. The upload carries a
-   note like `autocon6:baseline lab=… fp=…`; later steps read it to know which snapshot is your baseline.
-3. **Judge.** Forward doesn't know your requirements. `workshop` asks Forward questions about the model (a path search for
-   each flow, an NQE query for the rest) and `src/workshop/evaluate.py` compares each answer with what the YAML says it must be.
+Before you test anything, look around. Forward now holds a model of your network, and most of you haven't used one
+before. Everything here is a question to Forward through the Python SDK; each command prints the call it makes.
+
+**What did Forward find?**
+```
+workshop data inventory
+```
+Four routers and their OS. The client and service are small Linux containers the collector doesn't log in to: Forward
+knows them as the subnets on r1's and r4's client- and service-facing interfaces.
+
+**What does each router know?**
+```
+workshop data routes --prefix 10.20.20.0/24     # the service's prefix, on every router
+workshop data routes --device r1                 # everything r1 knows
+```
+Each row is a route as Forward modelled it: the prefix, the protocol, the next hop and interface. r4 has it connected;
+r2 and r3 learned it from r4 over BGP; r1 learned it over BGP too and uses r2 as the next hop (local preference 200
+makes the r2 path the primary one).
+
+**Where does a packet actually go?**
+```
+workshop path                # client → service, TCP 8080
+workshop path --port 2222    # the management port
+```
+That's Forward's path search (`path_search.get_paths`): every hop, what each router did with the packet, and the ACL and
+the route behind each decision. For 2222 Forward gives two answers: routing *would* deliver it, and r1's `CLIENT-IN` ACL
+*denies* it. It traces the full route anyway, so you can see where it would have gone.
+
+**Ask it anything: NQE.** NQE is Forward's query language over the model: every device, interface, route and line of
+config is data you can query.
+```
+cat nqe/stale_bgp_advertisements.nqe
+workshop nqe nqe/stale_bgp_advertisements.nqe
+```
+That query looks at r4's BGP `network` statements and r4's routes, and lists the statements with no route behind them.
+Two come back: `10.20.30.0/24` and `10.20.40.0/24`. They advertise nothing, they look exactly like the live
+`10.20.20.0/24` line, and nobody would spot them by reading configs. Retiring them is today's change request.
+
+Write your own. One that lists every interface and whether it is up:
+```
+workshop nqe 'foreach d in network.devices foreach i in d.interfaces select {device: d.name, interface: i.name, admin: i.adminStatus, oper: i.operStatus}'
+```
+Change it: only `oper` not up, only r1, add `i.description`. It answers in a second, for four routers or four thousand.
+
+**The one idea to take away:** none of this touched a router. It is all Forward's model, built from the ZIP you
+collected. That model is what Predict will change, in exercise 2, to show you a network that doesn't exist yet.
+
+### Check it: the baseline requirements (5 min)
+
+```
+workshop baseline check
+```
+Before any requirement it checks three things and prints each: the snapshot's note says *baseline* and *your lab*;
+Forward's copy of the configs hashes to the note's fingerprint (the ZIP is what the note claims); and the live routers
+still hash to it (nothing changed since you collected). Then, for each requirement, it asks Forward a question (the same
+path searches and NQE you just ran) and `src/workshop/evaluate.py` compares the answer with what the YAML says it must be.
+Forward answers questions; `evaluate.py` judges.
 
 Every line should say **PASS**.
 
-**Drill down into one path.** A requirement says PASS; this shows you why, hop by hop, with the ACL and the route each
-router used:
-```
-workshop path               # the application, TCP 8080
-workshop path --port 2222   # the blocked port: Forward says DELIVERED but DENIED. Read the r1 row to see why
-```
-For TCP 2222 Forward reports two separate answers: routing would deliver the packet, and security denies it at r1. Forward
-traces the whole route anyway, so you can see where it would have gone. That's why `MGMT-DENY` checks for a deny *at r1*,
-not just "no path".
-
-And run the hygiene query yourself, as a table: `workshop nqe nqe/stale_bgp_advertisements.nqe`.
-
-Read the baseline output top to bottom. It starts with what Forward modelled (how many devices, running what). Then each requirement
-is a block: its **name and meaning**, **must be** (what had to be true), and **Forward saw** (what Forward's model shows,
-with the path traffic takes where there is one). It ends with **What this means** and the next step.
+Read the output top to bottom. It starts with what Forward modelled. Then each requirement is a block: its **name and
+meaning**, **must be** (what had to be true), and **Forward saw** (what the model shows, with the path where there is
+one). It ends with **What this means** and the next step.
 
 ### Open the box: the snapshot (optional, while the upload waits)
 
@@ -139,7 +168,7 @@ You know the network's good behavior in a form a machine can check, and Forward 
 
 **At work:** pick a service you care about and write down three things that must stay true after any change: what must be reachable, what must stay blocked, and the path it should take.
 
-**Behind?** The one must-do is `workshop baseline` with every line **PASS**. Skip the router tour and the AI prompts.
+**Behind?** The one must-do is `workshop baseline check` with every line **PASS** (after collect, upload, wait). Do two of the Meet Forward commands (`workshop path` and the NQE query) and skip the rest.
 
 ## Finished early?
 

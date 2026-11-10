@@ -1,6 +1,6 @@
-# 2 · Your first change through the pipeline (9:50–10:45)
+# 2 · Your first change through the pipeline (10:05–10:45)
 
-*About 55 minutes. Goal: see how a change travels from Git to Forward Predict and back to the pull request, and be
+*About 40 minutes. Goal: see how a change travels from Git to Forward Predict and back to the pull request, and be
 able to explain every line of the result.*
 
 **Framework map.** Your candidate file is **Intent**. Opening the pull request is the event the **Orchestrator** reacts to, and the forward/predict check is **Observability** judging a network that doesn't exist yet. Nothing here touches a router. See [the framework map](framework.md).
@@ -44,13 +44,14 @@ gh pr create --fill
 ```
 </details>
 
-### Follow it through the pipeline (20 min)
+### Follow it through the pipeline (15 min)
 
 The **forward/predict** check starts on your PR. While it runs, read how it works:
 
 1. `.github/workflows/forward-predict.yml`: the CI job. It checks out `main`, takes **only** `candidate/r4-bgp.eos`
-   from your PR (a PR that changes any other file ends in ERROR), and runs `workshop predict`. Code and requirements come from
-   `main`, so a PR can't weaken its own test.
+   from your PR (a PR that changes any other file ends in ERROR), and runs the three predict steps you'll run yourself in a
+   minute: `workshop predict changeset`, `run`, `check`, one job step each. Open the check's log on GitHub and you see all three. Code
+   and requirements come from `main`, so a PR can't weaken its own test.
 2. `src/workshop/predict.py`: the gate, step by step:
    - the candidate must be in scope
    - the baseline must be this lab's, and unchanged
@@ -66,26 +67,38 @@ The **forward/predict** check starts on your PR. While it runs, read how it work
 5. `src/workshop/evidence.py`: the evidence manifest. It records what was predicted, against which baseline, with which
    result, and it's kept as the check's artifact. Deploy will insist on it later.
 
-### Read the result (10 min)
+### Read the result (5 min)
 
 Open the PR (in the **GitHub Pull Requests** panel, or its link) and the **forward/predict** check's details. Every behavioral test should **PASS**, and `STALE-CLEARED` should **FAIL**,
 because one stale advertisement is still there. A FAIL here means "not done yet", not "broken", and the gate doesn't
 care which: only PASS gets through. Leave this PR open; you'll come back to it.
 
-The same judgement runs locally, too:
+### Predict it yourself, one step at a time (10 min)
+
+The check is three steps in a CI job. Run the same three here, and read what each one leaves behind:
 ```
-workshop predict
-cat evidence/evidence.json
+workshop predict changeset
+```
+Checks your baseline (this lab's, unchanged, still passing its requirements), then creates a **change set** in Forward on
+that baseline holding r4's lines from `candidate/r4-bgp.eos`. The evidence: the change set's id. Nothing is predicted yet.
+```
+workshop predict run
+```
+Forward applies the change set to its model and builds the network that *would* result, as a new **predicted snapshot**.
+The evidence: its id, and what the change does to the routing tables. Nothing is judged yet.
+```
+workshop predict check
+```
+Every requirement in `requirements/candidate.yml`, asked of the predicted network, judged by `evaluate.py`. This writes
+`evidence/evidence.json`, the file deploy will insist on later. Same answer as the PR check: `STALE-CLEARED` FAILs.
+
+Now look at the predicted network the way you looked at the baseline:
+```
+workshop path --compare predicted       # the application's path, before and after
+workshop data diff                      # every route the change adds or removes
 ```
 
-### Predict by hand (5 min)
-
-The check is a CI job calling the SDK. Make the same calls yourself, one at a time, and watch each one:
-```
-python examples/predict_by_hand.py
-```
-Read the script first: create a change set on your baseline, `set_commands` for r4, `commit`, `predict`, wait, then trace
-the application flow on both the baseline and the predicted network. It's for learning: the PR check is still the gate.
+The raw SDK calls behind those steps are in `examples/predict_by_hand.py`, if you want to read or run them bare.
 
 ### Open the box: the evidence (optional, if your check is still running)
 
@@ -110,7 +123,7 @@ Each flow requirement is a `path_search.get_paths` from the client to the servic
 hygiene requirement is an `nqe.query`. Find `MGMT-DENY` and look at the path's hops: "blocked" means a hop on r1
 says the `CLIENT-IN` ACL denied it, not just "no path".
 
-### Discuss (10 min)
+### Discuss (with your neighbor, if there's time)
 
 Why do the code and requirements come from `main` and not from the PR? What would a PR author gain if they didn't?
 
@@ -136,7 +149,7 @@ A change went from a branch to a verdict without anyone reading router configs b
       title: HTTPS stays blocked at r1
       why: Only the application port may cross r1.
   ```
-  Then `workshop predict --requirements requirements/mine.yml`. Your test runs against the predicted network like the
+  Then the predict steps with your file: `workshop predict changeset --requirements requirements/mine.yml`, then `run` and `check --requirements requirements/mine.yml`. Your test runs against the predicted network like the
   others. (The PR check keeps using `main`'s requirements, which is the point of discussion above.)
 - **Try to cheat the gate.** On a scratch branch, change your candidate *and* delete `APP-EXISTING` from
   `requirements/candidate.yml`, then open a PR. The check ends in ERROR before Forward is asked anything. Then look at the

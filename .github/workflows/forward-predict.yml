@@ -53,7 +53,8 @@ jobs:
       - name: Install the workshop tools
         run: uv sync --frozen --no-dev
 
-      - name: Predict with Forward
+      # The same three steps you can run one at a time in your Codespace. A step that stops writes the evidence saying why.
+      - name: "1. Change set: check the baseline, put the candidate's lines in a Forward change set"
         env:
           FORWARD_URL: ${{ secrets.FORWARD_URL }}
           FORWARD_USERNAME: ${{ secrets.FORWARD_USERNAME }}
@@ -61,7 +62,27 @@ jobs:
           FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
           WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
           WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
-        run: uv run --frozen workshop predict --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
+        run: uv run --frozen workshop predict changeset --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
+
+      - name: "2. Predict: Forward builds the network that would result"
+        env:
+          FORWARD_URL: ${{ secrets.FORWARD_URL }}
+          FORWARD_USERNAME: ${{ secrets.FORWARD_USERNAME }}
+          FORWARD_PASSWORD: ${{ secrets.FORWARD_PASSWORD }}
+          FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
+          WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
+          WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
+        run: uv run --frozen workshop predict run --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
+
+      - name: "3. Check: the requirements on the predicted network, and the evidence"
+        env:
+          FORWARD_URL: ${{ secrets.FORWARD_URL }}
+          FORWARD_USERNAME: ${{ secrets.FORWARD_USERNAME }}
+          FORWARD_PASSWORD: ${{ secrets.FORWARD_PASSWORD }}
+          FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
+          WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
+          WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
+        run: uv run --frozen workshop predict check --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
 
       - name: Keep the evidence (workshop deploy reads it)
         if: always()

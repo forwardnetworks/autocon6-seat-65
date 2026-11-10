@@ -1,0 +1,10 @@
+{# r1: the workshop policy. TCP 8080 to the service is allowed, TCP 2222 (management) is not. Sequence numbers are the
+   contract candidates build on. Ethernet3 is r1's client-facing link (the fifth link in topology.yml). #}
+ip access-list CLIENT-IN
+   10 permit tcp host 10.10.10.10 host 10.20.20.20 eq 8080
+   20 deny tcp host 10.10.10.10 host 10.20.20.20 eq 2222
+   30 permit icmp any any
+   40 deny ip any any
+!
+interface Ethernet3
+   ip access-group CLIENT-IN in

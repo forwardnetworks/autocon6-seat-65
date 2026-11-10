@@ -1,14 +1,21 @@
-"""The ``workshop`` command: one short command per step of the change loop.
+"""The ``workshop`` command: one step at a time through the change loop. Each step does one thing, prints the real call it
+makes, and ends with its evidence and the next step.
 
-    workshop doctor      is everything ready?
-    workshop up          start the lab and apply the baseline
-    workshop baseline    collect the network and give Forward a baseline
-    workshop predict     (the PR check runs this) predict a candidate and judge it
-    workshop deploy      deploy the approved, predicted change
-    workshop verify      collect again and compare with the prediction
-    workshop restore     put r4 back to the baseline (instructor recovery)
-    workshop status      where this lab is in the loop
-    workshop probe       test the real flows from the client (8080, 8443, 2222) right now
+    workshop doctor                                      is everything ready?
+    workshop up                                          netlab builds and configures the lab
+    workshop baseline collect | upload | wait | check    Forward gets a model of the network, then the requirements are checked
+    workshop predict changeset | run | check             (the PR check runs these three) predict a change and judge it
+    workshop deploy gates | render | apply | readback    send exactly what was predicted, with NAPALM
+    workshop verify probe | collect | upload | wait | compare    did the network do what Forward predicted?
+
+Looking inside Forward's model:
+
+    workshop data inventory | routes | vulns | diff      what Forward knows
+    workshop path [--port N] [--compare predicted]        one flow, hop by hop
+    workshop nqe <file or query>                         ask Forward anything
+    workshop probe                                       real packets from the client, right now
+
+Recovery: workshop restore (r4 back to its baseline, over NAPALM) · workshop reset --to N (a netlab redeploy) · workshop status
 
 Forward AI advisers (optional; they advise, Predict and the requirements decide):
 
@@ -27,7 +34,6 @@ import importlib.metadata
 import json
 import os
 import shutil
-import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -42,20 +48,43 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
+STEPS = {
+    "baseline": ["collect", "upload", "wait", "check"],
+    "predict": ["changeset", "run", "check"],
+    "deploy": ["gates", "render", "apply", "readback"],
+    "verify": ["probe", "collect", "upload", "wait", "compare"],
+}
+
+
+def step_line(stage: str, step: str) -> str:
+    """Where this step sits in its stage: 'Baseline · step 2 of 4:  collect ✓ → upload ◀ → wait → check'."""
+    order = STEPS[stage]
+    i = order.index(step)
+    chain = " → ".join(f"{s} ✓" if n < i else f"{s} ◀" if n == i else s for n, s in enumerate(order))
+    return f"{stage.capitalize()} · step {i + 1} of {len(order)}:  {chain}"
+
+
 def banner(settings: config.Settings, action: str) -> None:
     log(f"== workshop {action} -- lab {settings.lab_id}, Forward network {settings.network_id}")
+    stage, _, step = action.partition(" ")
+    if step in STEPS.get(stage, []):
+        log(step_line(stage, step))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="workshop", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
     sub.add_parser("doctor", help="check tools, Forward access and the lab")
-    sub.add_parser("up", help="start the lab and apply the baseline")
+    sub.add_parser("up", help="build the lab: netlab creates and configures it")
     sub.add_parser("down", help="stop and remove the lab")
-    bl = sub.add_parser("baseline", help="collect the network and upload a tagged baseline (or: prepare, then judge, to do it by hand)")
-    bl.add_argument("step", nargs="?", choices=["prepare", "judge"],
-                    help="by hand: 'prepare' sets up the collector and prints the commands; you collect and upload; 'judge' checks and judges it")
-    p = sub.add_parser("predict", help="predict a candidate change and judge it")
+    bl = sub.add_parser("baseline", help="one step at a time: collect, upload, wait, check (or prepare/judge to run the collector yourself)")
+    bl.add_argument("step", nargs="?", choices=["collect", "upload", "wait", "check", "prepare", "judge"],
+                    help="collect: run the collector · upload: send the ZIP to Forward · wait: Forward builds its model · check: integrity "
+                         "checks and the baseline requirements. prepare/judge: you run the collector and upload yourself. No step: all of them")
+    p = sub.add_parser("predict", help="one step at a time: changeset, run, check")
+    p.add_argument("step", nargs="?", choices=["changeset", "run", "check"],
+                   help="changeset: check the baseline, create the change set in Forward · run: Forward builds the predicted network · "
+                        "check: the requirements on it, and the evidence. No step: all three (the PR check runs that)")
     p.add_argument("--candidate", default="candidate/r4-bgp.eos")
     p.add_argument("--requirements", default="requirements/candidate.yml")
     p.add_argument("--baseline-requirements", default="requirements/baseline.yml")
@@ -63,13 +92,19 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--head-sha")
     p.add_argument("--base-sha")
     p.add_argument("--out", default="evidence", help="directory for evidence.json and summary.md")
-    d = sub.add_parser("deploy", help="deploy the approved, predicted change")
-    target = d.add_mutually_exclusive_group(required=True)
+    d = sub.add_parser("deploy", help="one step at a time: gates, render, apply, readback")
+    d.add_argument("step", nargs="?", choices=["gates", "render", "apply", "readback"],
+                   help="gates: every check, nothing sent · render: the change in Forward and on r4, side by side (a dry run) · "
+                        "apply: send it with NAPALM · readback: read it back from r4. No step: apply and readback")
+    target = d.add_mutually_exclusive_group()
     target.add_argument("--pr", type=int, help="the merged pull request whose forward/predict evidence to deploy")
     target.add_argument("--evidence", help="an evidence.json from a local predict (rehearsal)")
-    d.add_argument("--confirm", required=True, help="the first 7 characters of the candidate sha256 you reviewed")
+    d.add_argument("--confirm", help="the first 7 characters of the candidate sha256 you reviewed (gates, apply)")
     d.add_argument("--no-github", action="store_true", help="skip the merged-PR check (local rehearsal only)")
-    v = sub.add_parser("verify", help="collect again and compare with the prediction")
+    v = sub.add_parser("verify", help="one step at a time: probe, collect, upload, wait, compare")
+    v.add_argument("step", nargs="?", choices=["probe", "collect", "upload", "wait", "compare"],
+                   help="probe: real packets from the client · collect/upload/wait: the network after the change, into Forward · "
+                        "compare: each requirement against the prediction. No step: all of them")
     v.add_argument("--evidence", help="default: the evidence the last deploy used")
     sub.add_parser("restore", help="restore r4's baseline advertisements")
     a = sub.add_parser("ask", help="ask Forward AI about a snapshot")
@@ -107,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     dt.add_argument("--json", action="store_true", help="the structured answer as JSON, including Forward's raw response")
     rs = sub.add_parser("reset", help="start an exercise again from a known point (keeps your work in git stash)")
     rs.add_argument("--to", type=int, required=True, choices=[1, 2, 3, 4, 5], help="the exercise to start again")
-    rs.add_argument("--rebuild", action="store_true", help="also remove the lab and build it from scratch (3 to 10 minutes)")
+    rs.add_argument("--rebuild", action="store_true", help=argparse.SUPPRESS)  # every reset rebuilds now; kept so old notes still work
     rs.add_argument("--yes", action="store_true", help="don't ask first")
     pa = sub.add_parser("path", help="trace one flow through Forward's model, hop by hop, with the ACL and route behind each hop")
     pa.add_argument("--port", type=int, default=8080, help="destination TCP port (8080 the app, 2222 and 8443 blocked)")
@@ -188,22 +223,27 @@ def _doctor(settings: config.Settings, args) -> int:
         row(networks == [settings.network_id], "seat token sees exactly its own network", f"{networks}")
     except Exception as exc:  # noqa: BLE001 - doctor reports, it does not crash
         row(False, "Forward reachable", f"{type(exc).__name__}: {str(exc)[:160]}")
-    for tool in ("docker", "netlab", "containerlab"):
-        row(shutil.which(tool) is not None, f"{tool} installed")
+    for tool, why in (("docker", ""), ("containerlab", ""), ("sshpass", "netlab checks the routers' SSH with it before configuring them")):
+        row(shutil.which(tool) is not None, f"{tool} installed", "" if shutil.which(tool) else why)
+    row(lab.netlab_has_netmiko(), "netlab can configure the routers (Netmiko installed beside it)",
+        "" if lab.netlab_has_netmiko() else "run: uv sync --frozen")
     collector = sorted(settings.collector_home.glob("*/fwd/bin/fwd-headless")) if settings.collector_home.exists() else []
     row(True, "headless collector", str(collector[-1].parent.parent.parent.name) if collector else "not downloaded yet (workshop collector)")
-    if shutil.which("docker"):
+    try:  # the Docker SDK reports a missing or stopped docker daemon itself
+        states = lab.containers()
+        running = sum(1 for s in states.values() if s == "running")
+        row(running == 6 or not states, "lab containers", f"{running}/6 running" if states else "lab not started (workshop up)")
+    except Exception as exc:  # noqa: BLE001
+        row(False, "docker", str(exc)[:160])
+    if os.environ.get("CODESPACES"):
+        from workshop import github
+
         try:
-            states = lab.containers()
-            running = sum(1 for s in states.values() if s == "running")
-            row(running == 6 or not states, "lab containers", f"{running}/6 running" if states else "lab not started (workshop up)")
-        except Exception as exc:  # noqa: BLE001
-            row(False, "docker", str(exc)[:160])
-    if os.environ.get("CODESPACES") and shutil.which("gh"):
-        result = subprocess.run(["gh", "repo", "view", "--json", "viewerPermission", "--jq", ".viewerPermission"], capture_output=True, text=True, check=False)
-        permission = result.stdout.strip()
+            permission = github.can_push(settings.repo_root)
+        except github.GitHubError as exc:
+            permission = f"NONE ({exc})"
         row(permission in ("WRITE", "MAINTAIN", "ADMIN"), "you can push to this seat repository",
-            permission or "no access -- accept your seat invitation, then reopen this Codespace from the seat repository")
+            permission if permission in ("WRITE", "MAINTAIN", "ADMIN") else f"{permission} -- accept your seat invitation, then reopen this Codespace from the seat repository")
     log("READY" if ok else "NOT READY -- fix the FAIL lines above")
     return 0 if ok else EXIT["ERROR"]
 
@@ -224,11 +264,16 @@ def _up(settings: config.Settings, args) -> int:
 
 
 def _down(settings: config.Settings, args) -> int:
+    from workshop import lab
+
     banner(settings, "down")
-    result = subprocess.run(["netlab", "down", "--cleanup"], cwd=settings.repo_root / "lab", check=False)
-    if result.returncode == 0:
-        log("lab removed: the six containers and their links are gone. `workshop up` builds it again (your Forward snapshots stay).")
-    return 0 if result.returncode == 0 else EXIT["ERROR"]
+    try:
+        lab.netlab(settings, log, "down", "--cleanup")
+    except lab.LabError as exc:
+        log(f"workshop down: {exc}")
+        return EXIT["ERROR"]
+    log("lab removed: the six containers and their links are gone. `workshop up` builds it again (your Forward snapshots stay).")
+    return 0
 
 
 def _baseline(settings: config.Settings, args) -> int:
@@ -247,13 +292,27 @@ def _baseline(settings: config.Settings, args) -> int:
         for line in report_.by_hand_lines(env):
             log(line)
         return 0
+    from workshop import steps
+
+    step = getattr(args, "step", None)
     try:
-        if getattr(args, "step", None) == "judge":
+        if step == "collect":
+            steps.collect_step(settings, "baseline", log)
+            return 0
+        if step == "upload":
+            steps.upload_step(settings, "baseline", log)
+            return 0
+        if step == "wait":
+            steps.wait_step(settings, "baseline", log)
+            return 0
+        if step == "check":
+            snapshot_id, fp, report = baseline.judge(settings, log, steps.processed_snapshot(settings, "baseline")["snapshot"])
+        elif step == "judge":
             snapshot_id, fp, report = baseline.judge(settings, log)
         else:
             snapshot_id, fp, report = baseline.run(settings, log)
     except Exception as exc:  # noqa: BLE001
-        log(f"workshop baseline: {exc}")
+        log(f"workshop baseline{' ' + step if step else ''}: {exc}")
         return EXIT["ERROR"]
     log(f"baseline snapshot {snapshot_id} (fingerprint {fp[:12]}): Forward's model of your network as it is now")
     with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only
@@ -295,12 +354,50 @@ def _predict(settings: config.Settings, args) -> int:
     from workshop import evidence, predict
     from workshop.forward import Forward
 
-    banner(settings, "predict")
+    banner(settings, "predict" + (f" {args.step}" if getattr(args, "step", None) else ""))
     root = settings.repo_root
     git = {k: v for k, v in {"pr": args.pr, "head_sha": args.head_sha, "base_sha": args.base_sha,
                              "repo": os.environ.get("GITHUB_REPOSITORY"), "run_id": os.environ.get("GITHUB_RUN_ID"),
                              "actor": os.environ.get("GITHUB_ACTOR")}.items() if v}
-    m = predict.run(settings, predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git), log=log)
+    inputs = predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git)
+    step = getattr(args, "step", None)
+    state = settings.state("steps/predict.json")
+    if step == "changeset":
+        settings.state("steps").mkdir(exist_ok=True)
+        m = predict.prepare(settings, inputs, log=log)
+        m.write(state)
+    if step == "changeset" and m.status == predict.PENDING:
+        log("")
+        log(f"Evidence: change set {m.change_set_id} in your Forward network, on baseline {m.baseline_snapshot_id}, holding r4's {len(m.candidate_text.splitlines())} lines")
+        log(f"  (sha256 {m.candidate_sha256[:12]}). Nothing is predicted yet. Next: workshop predict run")
+        return 0
+    if step in ("run", "check"):
+        if not state.is_file():
+            log("nothing to work on yet: run `workshop predict changeset` first")
+            return EXIT["ERROR"]
+        m = evidence.Manifest.read(state)
+        if step == "run":
+            m = predict.predict(settings, m, log=log)
+            m.write(state)
+        if step == "run" and m.status == predict.PENDING:
+            log("")
+            log(f"Evidence: predicted snapshot {m.predicted_snapshot_id}, the network as it would be with your change (baseline {m.baseline_snapshot_id} untouched)")
+            with _display_only(), Forward(settings, quick=True) as fwd:
+                log("What the change does to the routing tables, in Forward's model:")
+                for line in report_.routing_lines(report_.routing_table(fwd.c, str(m.baseline_snapshot_id), str(m.predicted_snapshot_id))):
+                    log(line)
+            log("Nothing is judged yet. Next: workshop predict check")
+            return 0
+        if step == "check":
+            if not m.predicted_snapshot_id:
+                log("not predicted yet: run `workshop predict run` first")
+                return EXIT["ERROR"]
+            m = predict.judge(settings, m, inputs.requirements, log=log)
+        state.unlink(missing_ok=True)  # finished (judged, or stopped): the evidence below is the result
+    elif step != "changeset":
+        m = predict.run(settings, inputs, log=log)
+    else:
+        state.unlink(missing_ok=True)  # the change set step stopped: write that as the evidence, so the PR says why
     out = Path(args.out)
     m.write(out / "evidence.json")
     routing = None
@@ -346,20 +443,52 @@ def _predict(settings: config.Settings, args) -> int:
             log(line)
     if m.deployable:
         target = f"--pr {args.pr}" if args.pr else f"--evidence {out / 'evidence.json'}"
-        log(f"to deploy after merging: workshop deploy {target} --confirm {m.candidate_sha256[:7]}")
+        log(f"to deploy after merging, one step at a time: workshop deploy gates {target} --confirm {m.candidate_sha256[:7]}, then render, apply, readback")
     return EXIT.get(m.status, EXIT["ERROR"])
 
 
 def _deploy(settings: config.Settings, args) -> int:
-    from workshop import deploy, github
+    from workshop import deploy, github, render
 
-    banner(settings, "deploy")
+    step = getattr(args, "step", None)
+    banner(settings, "deploy" + (f" {step}" if step else ""))
+    if step == "readback":
+        try:
+            deploy.readback(settings, log)
+        except deploy.Refused as exc:
+            log(f"READBACK FAILED ({exc.status}): {exc}")
+            return EXIT[exc.status]
+        log("Next: workshop verify probe")
+        return 0
+    if not (args.pr or args.evidence):
+        log("say which change: --pr N (a merged pull request) or --evidence evidence/evidence.json (a local prediction)")
+        return EXIT["ERROR"]
+    if step != "render" and not args.confirm:
+        log("say which candidate you reviewed: --confirm <the first 7 characters of its sha256> (predict printed it)")
+        return EXIT["ERROR"]
     try:
         if args.pr:
-            log(f"fetching the forward/predict evidence for PR #{args.pr} ...")
+            log(f"fetching the forward/predict evidence for PR #{args.pr} from GitHub ...")
             evidence = github.download_evidence(github.merged_pr(args.pr), settings.state(f"evidence-pr{args.pr}"))
+            log(f"  {evidence}")
         else:
             evidence = Path(args.evidence)
+        if step == "gates":
+            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github)
+            log("Every gate holds; nothing was sent. Next: workshop deploy render (the same flags), then apply")
+            return 0
+        if step == "render":
+            from workshop.evidence import Manifest
+
+            with deploy.lab_lock(settings):  # its dry run opens a config session on r4: never alongside an apply
+                rendered = render.build(settings, Manifest.read(evidence), log)
+            for line in render.lines_for(rendered):
+                log(line)
+            return 0
+        if step == "apply":
+            deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github)
+            log("Sent and committed on r4. Next: workshop deploy readback")
+            return 0
         deploy.run(settings, evidence, args.confirm, log, check_github=not args.no_github)
     except github.GitHubError as exc:
         log(f"NOT DEPLOYED (ERROR): {exc}")
@@ -367,6 +496,9 @@ def _deploy(settings: config.Settings, args) -> int:
     except deploy.Refused as exc:
         log(f"NOT DEPLOYED ({exc.status}): {exc}")
         return EXIT[exc.status]
+    except Exception as exc:  # noqa: BLE001 - render's dry run or Forward: a sentence, not a traceback
+        log(f"workshop deploy {step or ''}: {type(exc).__name__}: {exc}")
+        return EXIT["ERROR"]
     log("deployed. Next: workshop verify")
     return 0
 
@@ -378,7 +510,7 @@ def _verify(settings: config.Settings, args) -> int:
     from workshop.evidence import Manifest
     from workshop.forward import Forward
 
-    banner(settings, "verify")
+    banner(settings, "verify" + (f" {args.step}" if getattr(args, "step", None) else ""))
     evidence = args.evidence
     if not evidence:
         deployed = settings.state_dir / "deploy.json"
@@ -386,11 +518,42 @@ def _verify(settings: config.Settings, args) -> int:
             log("nothing deployed yet: run workshop deploy first (or pass --evidence)")
             return EXIT["ERROR"]
         evidence = json.loads(deployed.read_text())["evidence"]
+    from workshop import show, steps
+
+    step = getattr(args, "step", None)
     try:
-        result = verify.run(settings, Path(evidence), log)
+        if step == "probe":
+            probes = verify.probe(settings, Path(evidence), log)
+            log("")
+            log(f"Evidence: {sum(p['ok'] for p in probes)} of {len(probes)} flows behave as the requirements say, on the real network. Next: workshop verify collect")
+            return 0
+        if step == "collect":
+            steps.collect_step(settings, "post", log)
+            return 0
+        if step == "upload":
+            steps.upload_step(settings, "post", log, extra=f"after {Manifest.read(Path(evidence)).candidate_sha256[:12]}")
+            return 0
+        if step == "wait":
+            steps.wait_step(settings, "post", log)
+            return 0
+        if step == "compare":
+            got = steps.processed_snapshot(settings, "post")
+            probed = steps.load(settings, "probes", "workshop verify probe")
+            if probed.get("evidence") != str(evidence):
+                log("those probes were for a different deploy: run `workshop verify probe` again")
+                return EXIT["ERROR"]
+            log("checking the collection is of the network as it is now ...")
+            show.napalm(log, "r1-4", "cli('show running-config')   hashed and compared with the post-change collection's fingerprint")
+            if steps.live_fingerprint(settings) != got["fingerprint"]:
+                log("the routers changed after `workshop verify collect`: run `workshop verify probe`, `collect`, `upload` and `wait` again, then compare")
+                return EXIT["ERROR"]
+            probes = probed["probes"]
+            result = verify.compare(settings, Path(evidence), got["snapshot"], got["fingerprint"], probes, log)
+        else:
+            result = verify.run(settings, Path(evidence), log)
     except Exception as exc:  # noqa: BLE001 - a Forward or file error is ERROR, never a FAIL of the change
-        log(f"workshop verify: {exc}")
-        log("The change is applied; only the check did not finish. Run `workshop verify` again.")
+        log(f"workshop verify{' ' + step if step else ''}: {exc}")
+        log(f"The change is applied; only the check did not finish. Run `workshop verify{' ' + step if step else ''}` again.")
         return EXIT["ERROR"]
     if result["outcome"] == "INCOMPLETE":
         log(result["reason"])
@@ -426,10 +589,12 @@ def _snapshot_for(settings: config.Settings, which: str, evidence: str) -> str:
     if which.isdigit():
         return which
     if which == "baseline":
-        path = settings.state_dir / "baseline.json"
-        if path.is_file():
-            return str(json.loads(path.read_text())["snapshot"])
-        raise LookupError("no baseline yet: run workshop baseline")
+        from workshop import steps
+
+        found = steps.baseline_snapshot(settings)
+        if found:
+            return found
+        raise LookupError("no baseline in Forward yet: run `workshop baseline collect`, `upload` and `wait` first")
     if which == "predicted":
         path = Path(evidence)
         if path.is_file() and Manifest.read(path).predicted_snapshot_id:
@@ -607,7 +772,7 @@ def _agent(settings: config.Settings, args) -> int:
         log(f"{args.candidate} now holds a change Predict passed. The agent stops here -- a person decides:")
         log(f"  git diff {args.candidate}      # read it")
         log("  commit it on a branch and open a pull request; the forward/predict check judges it again")
-        log("  after review and merge: workshop deploy --pr <N> --confirm <sha7>")
+        log("  after review and merge: workshop deploy gates --pr <N> --confirm <sha7>, then render, apply, readback")
     else:
         log("no passing change within the budget. Read evidence/agent/agent.json, then take it from here yourself.")
     return EXIT.get(outcome.status, EXIT["ERROR"])
@@ -673,7 +838,7 @@ def _reset(settings: config.Settings, args) -> int:
 
     banner(settings, "reset")
     log(f"This puts you at the start of {reset.STARTS[args.to]['what']}.")
-    log("Your uncommitted work is kept in `git stash`; each router gets its baseline config merged back" + (" after the lab is rebuilt" if args.rebuild else " (--rebuild also clears lines added by hand)") + ".")
+    log("Your uncommitted work is kept in `git stash`; the lab is removed and netlab builds and configures it again (3 to 10 minutes).")
     if not args.yes:
         if not sys.stdin.isatty():
             log("Add --yes to run it without a question.")
@@ -682,7 +847,7 @@ def _reset(settings: config.Settings, args) -> int:
             log("Nothing changed.")
             return 0
     try:
-        reset.run(settings, args.to, log, rebuild=args.rebuild)
+        reset.run(settings, args.to, log)
     except Exception as exc:  # noqa: BLE001 - say what stopped it; every step before it is already done and safe to repeat
         log(f"workshop reset: {exc}")
         log("Every step is safe to run again: `workshop reset --to N` once more, or ask a proctor.")

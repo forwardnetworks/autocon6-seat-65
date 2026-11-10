@@ -85,9 +85,11 @@ def snapshot_for(settings, evidence_path, which: str) -> str:
             return {}
 
     if which == "baseline":
-        data = read(settings.state_dir / "baseline.json")
-        if data.get("snapshot"):
-            return str(data["snapshot"])
+        from workshop import steps
+
+        found = steps.baseline_snapshot(settings)
+        if found:
+            return found
     elif which == "predicted":
         data = read(Path(evidence_path))
         if data.get("predicted_snapshot_id"):

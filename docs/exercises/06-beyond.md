@@ -19,7 +19,7 @@ report-only at first, and make the check required once you trust it. Keep AI as 
 
 ## Take it further (stretch, or after the workshop)
 
-Reset first: `workshop restore && workshop baseline`.
+Reset first: `workshop reset --to 5` (a netlab redeploy and a fresh baseline).
 
 | Adviser | Try | What it is |
 |---|---|---|

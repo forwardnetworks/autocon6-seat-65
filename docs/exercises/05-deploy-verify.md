@@ -8,27 +8,49 @@
 
 ## Core
 
-### Deploy what was predicted (8 min)
+### Deploy what was predicted, one step at a time (10 min)
 
-Make sure you are on `main` (bottom-left; deleting the local branch in the last exercise already switched you), then pull the merge: click the circular-arrows icon next to the branch name in the status bar and press **OK**. In the terminal:
+Make sure you are on `main` (bottom-left; deleting the local branch in the last exercise already switched you), then pull the merge: click the circular-arrows icon next to the branch name in the status bar and press **OK**.
+
+The green **forward/predict** check's summary has your PR number and the `--confirm` value (the first 7 characters of
+the candidate's sha256). Four steps:
+
+**1. Gates.** Every check, and nothing sent:
 ```
-workshop deploy --pr <number> --confirm <first 7 characters of the candidate sha256>
+workshop deploy gates --pr <number> --confirm <sha7>
 ```
-The exact command, with your PR number and `--confirm` value filled in, is at the top of the green **forward/predict**
-check's summary: copy it from there.
-If the confirmation doesn't match, deploy refuses and prints the value it expects. Before writing anything, it checks that:
+It fetches the check's evidence from GitHub, then confirms, one line each: the evidence is a PASS for this lab; the
+candidate and requirements are the ones predicted; the PR is merged with its check green on that commit; your baseline is
+still the newest in Forward; and the four routers still match it (nobody changed one by hand). Try `--confirm 0000000`:
+it refuses and prints the value it expects.
 
-- the PR is merged and its check passed
-- the candidate and requirements are unchanged since the prediction
-- your baseline is still the latest in Forward
-- the routers haven't drifted from it
+**2. Render: one change, two applications.**
+```
+workshop deploy render --pr <number>
+```
+The same lines, applied two ways, side by side:
+- **inside Forward**: the commands the change set holds for r4, and r4's configuration in Forward's model before and after;
+- **on the router**: NAPALM stages the lines in an EOS configuration session, asks r4 for its own diff
+  (`compare_config`), and throws the session away (`discard_config`). Nothing on r4 changes.
 
-It then sends r4 exactly the lines Predict evaluated, over NAPALM, and reads them back. NAPALM stages them in an EOS
-configuration session, asks the router for the session's diff (`-` lines removed, `+` added), and commits the session.
-A line the router refuses aborts the whole session, so a change never half applies. Deploy prints the router's diff
-after the commit. Nobody approves it there: the approval was the merged pull request, bound to these exact bytes.
+Then it checks the two agree. They should: Forward's model and the router read the same lines the same way. If they
+didn't, that's the moment to stop: what Predict judged would not be what the router does.
 
-**Open the box first (optional, 3 min, before you deploy).** Do by hand what NAPALM is about to do, and throw it away:
+**3. Apply.**
+```
+workshop deploy apply --pr <number> --confirm <sha7>
+```
+The gates once more (they must hold at the moment of the write), then the same session for real: load, compare, and
+`commit_config`. A line the router refuses aborts the whole session, so a change never half applies. Nobody approves it
+here: the approval was the merged pull request, bound to these exact bytes.
+
+**4. Read it back.**
+```
+workshop deploy readback
+```
+`show running-config section router bgp` on r4, checked line by line against what was sent.
+
+**Open the box first (optional, 3 min, before you apply).** Do by hand what NAPALM does, and throw it away:
 ```
 docker exec -it clab-autocon6-r4 Cli
 enable
@@ -40,25 +62,20 @@ show session-config diffs
 abort
 ```
 `show session-config diffs` is the router's own diff of a change that isn't live yet; `abort` discards it. NAPALM's
-`compare_config` is that command, and `commit_config` is `commit` instead of `abort`.
+`compare_config` is that command, `discard_config` is `abort`, and `commit_config` is `commit`.
 
-Also try the guard: `workshop deploy --pr <number> --confirm 0000000` refuses and prints the value it expects.
-
-### Verify (10 min)
+### Verify, one step at a time (10 min)
 
 ```
-workshop verify
+workshop verify probe       # real packets from the client container: 8080 open, 2222 blocked
+workshop verify collect     # the headless collector again, on the network as it is now
+workshop verify upload      # into Forward, noted as a post-change snapshot
+workshop verify wait        # Forward builds its model of the real, changed network
+workshop verify compare     # every requirement on that model, verdict by verdict against the prediction
 ```
-Verify does four things:
-1. probes the real flows (8080 open, 2222 blocked)
-2. collects the network again with the headless collector
-3. reruns every test on the new snapshot
-4. compares each result with its prediction
-
-The output is laid out so you can read it as evidence, top to bottom: the probes first, then every requirement as a block
-(what it must be, what Forward saw on the real network, and "predicted PASS, collected PASS: as predicted"), then **what
-really changed in the routing tables** between the baseline and now, then **What this means**. A `DIFFERENT from the
-prediction` line is the thing to look for.
+`compare` lays it out as evidence: every requirement as a block (what it must be, what Forward saw on the real
+network, and "predicted PASS, collected PASS: as predicted"), then **what really changed in the routing tables** between
+the baseline and now, then **What this means**. A `DIFFERENT from the prediction` line is the thing to look for.
 
 **MATCH** closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
 
@@ -67,7 +84,7 @@ prediction` line is the thing to look for.
 S=$WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID
 jq '{lines, device_diff, readback_problems}' $S/deploy.json      # what was sent, and the router's own diff
 jq '.rows[] | {id, predicted, collected}' $S/verify.json          # each requirement: predicted against collected
-docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 8080; echo "exit $?"   # the probe verify ran: 0 means open
+docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 8080; echo "exit $?"   # what verify probe ran (through the Docker SDK): 0 means open
 docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 2222; echo "exit $?"   # non-zero: blocked
 ```
 
@@ -77,16 +94,16 @@ The model said which tests would pass, and the real network, collected again, ag
 
 **At work:** this is the part you can keep even if you change every tool: write down what you expect, deploy, and compare.
 
-**What really changed.** After `workshop verify`, run `workshop data diff --against post`: the routing changes between the baseline and the network as it is now, from Forward's model of the collected result. Compare it with the prediction's `workshop data diff`. For the fixed change, both say the same thing: no route changed, because the two stale advertisements were never in anyone's routing table.
+**What really changed.** After `workshop verify compare`, run `workshop data diff --against post`: the routing changes between the baseline and the network as it is now, from Forward's model of the collected result. Compare it with the prediction's `workshop data diff`. For the fixed change, both say the same thing: no route changed, because the two stale advertisements were never in anyone's routing table.
 
-**Behind?** Deploy is three steps: switch to `main` and sync, run the command from the green check's summary, then `workshop verify`.
+**Behind?** Switch to `main` and sync, then `workshop deploy gates`, `apply` and `readback` with the values from the green check's summary, then the five verify steps.
 
 ## Finished early?
 
 - **Make it drift.** Change r4 by hand (`docker exec -it clab-autocon6-r4 Cli`, then `enable`, `configure`,
-  `router bgp 65004`, `address-family ipv4`, `network 10.20.50.0/24`), then run `workshop verify` again. What does it
+  `router bgp 65004`, `address-family ipv4`, `network 10.20.50.0/24`), then run the verify steps again. What does it
   say, and which test catches the hand edit? Note what *didn't* catch it: the PR check never touches your routers, so it
   only sees what was collected. Verify and deploy are the steps that read the live network. Put things back with
-  `workshop restore && workshop baseline` (restore is the one change path with no prediction: it is the break-glass step,
+  `workshop restore`, then the baseline steps (restore is the one change path with no prediction: it is the break-glass step,
   and that's why a new baseline must follow).
 - `workshop ask --prompt post-still-stale`: ask Forward AI about the network after the change.

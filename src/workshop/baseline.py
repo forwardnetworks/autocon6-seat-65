@@ -12,6 +12,7 @@ import json
 import time
 import zipfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 from forward_sdk import ForwardTimeoutError
 
@@ -27,7 +28,7 @@ class BaselineError(RuntimeError):
 
 def forget_previous_loop(settings: Settings) -> None:
     """A fresh baseline starts a new loop: the last deploy and verify results no longer describe the lab."""
-    for name in ("deploy.json", "verify.json"):
+    for name in ("deploy.json", "verify.json", "steps/collect-post.json", "steps/upload-post.json", "steps/probes.json"):
         settings.state(name).unlink(missing_ok=True)
 
 
@@ -59,41 +60,56 @@ def collect_clean(settings: Settings, binary, kind: str, log, *, sleep=time.slee
     raise BaselineError(f"three collections did not come out clean (last: {problem}). Is the lab up? `workshop up`, then try again")
 
 
+def upload(settings: Settings, fwd: Forward, zip_path: Path, zip_fp: str, kind: str, extra: str, log) -> str:
+    """Upload the ZIP with its note (or find the identical upload Forward is still processing). Returns the snapshot id."""
+    tag = SnapshotTag(kind, settings.lab_id, zip_fp)
+    extra = extra or f"collected {datetime.now(UTC).isoformat(timespec='seconds')}"
+    waiting = fwd.tagged(kind, settings.lab_id, fp=zip_fp, minutes=30)
+    if waiting is not None and state_of(waiting) in PENDING:
+        # an earlier run uploaded this very network and Forward is still on it: wait for that one, don't queue a second
+        log(f"Forward is still processing snapshot {waiting.id}, an earlier upload of exactly this network: waiting for it, not uploading again")
+        return str(waiting.id)
+    log("uploading to Forward ...")
+    show.sdk(log, f'snapshots.upload("{zip_path.name}", note="{tag.note(extra)}", process=True)')
+    snap_id = fwd.submit(zip_path, tag, extra, log=log)
+    log(f"  uploaded: snapshot {snap_id}")
+    return snap_id
+
+
+def wait(settings: Settings, fwd: Forward, snap_id: str, kind: str, log):
+    """Wait while Forward turns the ZIP into a model; check all four routers are in it."""
+    show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of every route, ACL and path')
+    try:
+        snap = fwd.wait(snap_id, log=log)
+    except ForwardTimeoutError as exc:
+        again = "`workshop baseline wait` (or `judge`)" if kind == "baseline" else "`workshop verify wait`"
+        raise BaselineError(f"snapshot {snap_id} is uploaded and Forward is still processing it (its queue is busy). Don't collect "
+                            f"again: that only adds to the queue. In a minute or two, run {again}: it waits for this upload rather than sending another.") from exc
+    devices = fwd.device_names(str(snap.id))
+    if not set(fingerprint.ROUTERS) <= devices:
+        raise BaselineError(f"snapshot {snap.id} is missing {sorted(set(fingerprint.ROUTERS) - devices)}")
+    log(f"  snapshot {snap.id} processed ({len(devices)} devices)")
+    return snap
+
+
+def evaluate_baseline(settings: Settings, fwd: Forward, snap_id: str, fp: str, log) -> Report:
+    reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
+    show.note(log, f"judging {len(reqs.requirements)} requirements: each is a path search or an NQE query to Forward, compared with the YAML by evaluate.py")
+    report = evaluate(reqs, fwd.observer(snap_id), snap_id, root=settings.repo_root)
+    settings.state("baseline.json").write_text(json.dumps({"snapshot": snap_id, "fingerprint": fp, "report": report.to_json()}, indent=2) + "\n")
+    forget_previous_loop(settings)
+    return report
+
+
 def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> tuple[str, str, Report | None]:
-    """Collect, upload and (for a baseline) evaluate. Returns (snapshot id, fingerprint, report)."""
+    """Collect, upload, wait and (for a baseline) evaluate, in a row: the steps `workshop baseline collect|upload|wait|check`
+    run one at a time. Returns (snapshot id, fingerprint, report)."""
     with Forward(settings) as fwd:
         binary = collect.ensure(settings, fwd, log)
         zip_path, zip_fp = collect_clean(settings, binary, kind, log)
-        tag = SnapshotTag(kind, settings.lab_id, zip_fp)
-        extra = extra or f"collected {datetime.now(UTC).isoformat(timespec='seconds')}"
-        waiting = fwd.tagged(kind, settings.lab_id, fp=zip_fp, minutes=30)
-        if waiting is not None and state_of(waiting) in PENDING:
-            # an earlier run uploaded this very network and Forward is still on it: wait for that one, don't queue a second
-            snap_id = str(waiting.id)
-            log(f"Forward is still processing snapshot {snap_id}, an earlier upload of exactly this network: waiting for it, not uploading again")
-        else:
-            log("uploading to Forward and waiting for the model ...")
-            show.sdk(log, f'snapshots.upload("{zip_path.name}", note="{tag.note(extra)}", process=True)')
-            snap_id = fwd.submit(zip_path, tag, extra, log=log)
-            log(f"  uploaded: snapshot {snap_id}")
-        show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of every route, ACL and path')
-        try:
-            snap = fwd.wait(snap_id, log=log)
-        except ForwardTimeoutError as exc:
-            again = "`workshop baseline judge`" if kind == "baseline" else "`workshop verify` again (it waits for this upload rather than sending another)"
-            raise BaselineError(f"snapshot {snap_id} is uploaded and Forward is still processing it (its queue is busy). Don't collect "
-                                f"again: that only adds to the queue. In a minute or two, run {again}.") from exc
-        devices = fwd.device_names(str(snap.id))
-        if not set(fingerprint.ROUTERS) <= devices:
-            raise BaselineError(f"snapshot {snap.id} is missing {sorted(set(fingerprint.ROUTERS) - devices)}")
-        log(f"  snapshot {snap.id} processed ({len(devices)} devices)")
-        report = None
-        if kind == "baseline":
-            reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
-            show.note(log, f"judging {len(reqs.requirements)} requirements: each is a path search or an NQE query to Forward, compared with the YAML by evaluate.py")
-            report = evaluate(reqs, fwd.observer(str(snap.id)), str(snap.id), root=settings.repo_root)
-            settings.state("baseline.json").write_text(json.dumps({"snapshot": str(snap.id), "fingerprint": zip_fp, "report": report.to_json()}, indent=2) + "\n")
-            forget_previous_loop(settings)
+        snap_id = upload(settings, fwd, zip_path, zip_fp, kind, extra, log)
+        snap = wait(settings, fwd, snap_id, kind, log)
+        report = evaluate_baseline(settings, fwd, str(snap.id), zip_fp, log) if kind == "baseline" else None
     return str(snap.id), zip_fp, report
 
 
@@ -116,15 +132,19 @@ def prepare(settings: Settings, log) -> dict[str, str]:
     return env
 
 
-def judge(settings: Settings, log) -> tuple[str, str, Report]:
+def judge(settings: Settings, log, snapshot_id: str = "") -> tuple[str, str, Report]:
     """Check the newest baseline of this lab in Forward (the one you just uploaded; waited for if Forward is still processing
     it) was taken of the network as it is now, then judge it.
 
     Three checks before any requirement: the note says baseline and this lab; Forward's copy of the configs hashes to the
     note's fingerprint (the ZIP really is what the note claims); and the live routers still hash to it (nothing changed since)."""
     with Forward(settings) as fwd:
-        show.sdk(log, 'snapshots.list(exclude_triggers=("PREDICT",))   your uploads, newest first: the newest note saying baseline and this lab')
-        snap = fwd.tagged("baseline", settings.lab_id, minutes=24 * 60) or fwd.latest_baseline()
+        if snapshot_id:
+            show.sdk(log, f'snapshots.list()   snapshot {snapshot_id}, the one you uploaded')
+            snap = fwd.snapshot(snapshot_id)
+        else:
+            show.sdk(log, 'snapshots.list(exclude_triggers=("PREDICT",))   your uploads, newest first: the newest note saying baseline and this lab')
+            snap = fwd.tagged("baseline", settings.lab_id, minutes=24 * 60) or fwd.latest_baseline()
         if snap is None:
             raise BaselineError("Forward has no snapshot for this network yet: upload yours first")
         if state_of(snap) not in PENDING | {"PROCESSED"}:
@@ -147,9 +167,5 @@ def judge(settings: Settings, log) -> tuple[str, str, Report]:
         if fingerprint.of(lab.live_configs(settings)) != tag.fp:
             raise BaselineError("the routers changed after that snapshot was taken: run `workshop baseline prepare` and collect again")
         log("  ✓ a baseline of this lab  ✓ Forward's copy of the four configs matches the note  ✓ the live routers match it too")
-        reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
-        show.note(log, f"judging {len(reqs.requirements)} requirements: each is a path search or an NQE query to Forward, compared with the YAML by evaluate.py")
-        report = evaluate(reqs, fwd.observer(str(snap.id)), str(snap.id), root=settings.repo_root)
-        settings.state("baseline.json").write_text(json.dumps({"snapshot": str(snap.id), "fingerprint": tag.fp, "report": report.to_json()}, indent=2) + "\n")
-        forget_previous_loop(settings)
+        report = evaluate_baseline(settings, fwd, str(snap.id), tag.fp, log)
     return str(snap.id), tag.fp, report

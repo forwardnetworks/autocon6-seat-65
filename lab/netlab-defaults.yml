@@ -4,8 +4,17 @@ provider: clab
 device: eos
 devices:
   eos:
+    # netlab 26.10 "normalizes" a fresh cEOS (shut every interface, set MACs) with an Ansible playbook even when Netmiko
+    # deploys everything else, and Ansible is not installed. The lab never needed it: the initial config sets what it uses.
+    features:
+      initial:
+        normalize: false
     clab:
       image: ceos:4.36.0.1F
+      group_vars:
+        # Push the configuration with Netmiko. netlab 26.10 sets no default for cEOS and then uses Ansible, which the
+        # Codespace does not have (netlab's own docs name Netmiko as the EOS default in later releases).
+        netlab_config_mode: netmiko
       # netlab's default puts Management0 in a "management" VRF (CLAB_MGMT_VRF). On this host
       # (cEOS 4.36 + containerlab dev build) that fails with ETH-4-VRF_ASSIGNMENT_FAILED and the
       # management address is unreachable. Keep Management0 in the default VRF, like the

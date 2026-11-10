@@ -1,15 +1,14 @@
 """The attendee's lab: four cEOS routers and two Linux endpoints, launched by netlab.
 
-netlab defines and launches the topology (``netlab up --no-config``); it never configures the
-routers -- the baseline is applied through NAPALM. Endpoints are reached with ``docker exec``.
+netlab builds the lab and configures it (``netlab up``: its modules plus the custom templates in lab/*.j2, pushed with
+Netmiko). After that, every change to a router -- a deploy, a restore, a reset -- goes through NAPALM (executor.py).
+Endpoints are reached with ``docker exec``.
 """
 
 from __future__ import annotations
 
-import json
-import shutil
 import socket
-import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,53 +60,105 @@ def mgmt_ips(settings: Settings) -> dict[str, str]:
     return out
 
 
+def _docker():
+    import docker  # the Docker SDK for Python: the same API the docker CLI uses, without parsing its output
+
+    return docker.from_env(timeout=20)
+
+
 def containers() -> dict[str, str]:
     """Container name -> docker state for this lab."""
-    result = subprocess.run(
-        ["docker", "ps", "-a", "--filter", "label=containerlab=autocon6", "--format", "{{json .}}"],
-        capture_output=True, text=True, check=True,
-    )
-    rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-    return {row["Names"]: row["State"] for row in rows}
+    found = _docker().containers.list(all=True, filters={"label": "containerlab=autocon6"})
+    return {c.name: c.status for c in found}
+
+
+def netlab(settings: Settings, log, *args: str) -> None:
+    """Run a netlab command in this process through netlab's own Python entry point (``netsim.cli.<command>.run``), the code
+    behind ``netlab <command>`` in a terminal. netlab prints its own progress; a failure ends in SystemExit, turned into LabError."""
+    import contextlib
+    import io
+    import sys
+
+    from netsim.cli import down, initial
+    from netsim.cli import up as up_
+
+    command = {"up": up_.run, "down": down.run, "initial": initial.run}[args[0]]
+    show.netlab(log, list(args))
+    beat = show.Heartbeat(log, f"netlab {args[0]}: it is quiet while the routers boot", every=30, usual=300, give_up=720)
+
+    class Tee(io.TextIOBase):  # pass netlab's output straight through, and note that something was said
+        def __init__(self, out):
+            self.out = out
+
+        def write(self, text: str) -> int:
+            if text.strip():
+                beat.heard()
+            return self.out.write(text)
+
+        def flush(self) -> None:
+            self.out.flush()
+
+    stop = threading.Event()
+
+    def ticker() -> None:
+        while not stop.wait(5):
+            beat.beat()
+
+    threading.Thread(target=ticker, daemon=True).start()
+    try:
+        with contextlib.chdir(lab_dir(settings)), contextlib.redirect_stdout(Tee(sys.stdout)):
+            command(list(args[1:]))
+    except SystemExit as exc:
+        if exc.code not in (0, None):
+            raise LabError(f"netlab {' '.join(args)} failed (see its messages above)") from exc
+    finally:
+        stop.set()
 
 
 def up(settings: Settings, log) -> None:
-    """Start the lab if needed and apply the baseline. Safe to re-run."""
-    if not shutil.which("netlab"):
-        raise LabError("netlab is not installed in this environment")
+    """Start the lab if needed: netlab builds it and configures every router itself. Safe to re-run (a running lab is left as it is)."""
     states = containers()
-    lab = lab_dir(settings)
     if not states:
-        log("starting the lab (netlab up --no-config) ...")
-        _run(["netlab", "up", "--no-config", "-p", "clab"], cwd=lab, log=log)
+        log("starting the lab: netlab creates the containers, then configures each router (Netmiko, over SSH) ...")
+        netlab(settings, log, "up", "-p", "clab")
     elif any(state != "running" for state in states.values()):
-        # Containers that were stopped lose their data-plane links; only a redeploy restores them.
-        log("the lab was stopped; redeploying it (containerlab deploy --reconfigure) ...")
-        _run(["sudo", "-E", "containerlab", "deploy", "--reconfigure", "-t", "clab.yml"], cwd=lab, log=log)
+        # Stopped containers lose their data-plane links and their configuration: netlab removes them and builds them again.
+        log("the lab was stopped (a Codespace restart does that): netlab removes it and builds it again ...")
+        netlab(settings, log, "down", "--cleanup")
+        netlab(settings, log, "up", "-p", "clab")
     else:
         log("lab containers are running")
+        wait_ssh(settings, log)
+        if not configured(settings):
+            # a bring-up that stopped after the containers started (netlab up was interrupted, or failed before configuring)
+            log("  the routers have no configuration yet: netlab finishes its bring-up (netlab initial) ...")
+            netlab(settings, log, "initial")
+        else:
+            log("  and configured (their configuration is left as it is: `workshop restore` or `workshop reset` puts it back)")
     wait_ssh(settings, log)
-    apply_baseline(settings, log)
     wait_bgp(settings, log)
 
 
-def apply_baseline(settings: Settings, log) -> None:
-    ips = mgmt_ips(settings)
-    for device in fingerprint.ROUTERS:
-        lines = baseline_lines(settings, device)
-        show.napalm(log, device, f"{len(lines)} lines from lab/baseline/{device}.eos: {show.NAPALM_APPLY}")
-        executor.apply(settings, device, ips[device], lines)
-        log(f"  {device}: baseline applied ({len(lines)} lines)")
+def configured(settings: Settings) -> bool:
+    """Has netlab configured the lab? r1 with BGP neighbors is the tell: a fresh cEOS has no BGP at all."""
+    try:
+        summary = executor.show_json(settings, mgmt_ips(settings)["r1"], "show ip bgp summary")
+    except executor.DeployError:
+        return False
+    return bool((summary.get("vrfs", {}).get("default", {}) or {}).get("peers"))
 
 
-def baseline_lines(settings: Settings, device: str) -> list[str]:
-    path = lab_dir(settings) / "baseline" / f"{device}.eos"
-    return [line.rstrip() for line in path.read_text().splitlines() if line.strip() and not line.strip().startswith("!")]
+def netlab_has_netmiko() -> bool:
+    """netlab pushes EOS configuration with Netmiko; without it netlab falls back to Ansible (not installed)."""
+    import importlib.util
+
+    return importlib.util.find_spec("netmiko") is not None
 
 
 def wait_ssh(settings: Settings, log, timeout: float = 600) -> None:
     ips, deadline = mgmt_ips(settings), time.monotonic() + timeout
     pending, last_error = set(ips), {}
+    beat = show.Heartbeat(log, "waiting for the routers to boot (cEOS takes 1 to 4 minutes)", usual=240, give_up=540)
     while pending:
         for device in sorted(pending):
             try:
@@ -121,14 +172,17 @@ def wait_ssh(settings: Settings, log, timeout: float = 600) -> None:
             if time.monotonic() > deadline:
                 detail = "; ".join(f"{d}: {last_error.get(d, '?')}" for d in sorted(pending))
                 raise LabError(f"routers not reachable over eAPI and SSH after {timeout:.0f}s -- {detail}")
+            up_now = len(ips) - len(pending)
+            beat.beat(f"{up_now} of {len(ips)} routers answering ({100 * up_now // len(ips)}%); waiting for {', '.join(sorted(pending))}")
             time.sleep(5)
     log("  all four routers answer eAPI and SSH")
 
 
 def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
     ips, deadline = mgmt_ips(settings), time.monotonic() + timeout
+    beat = show.Heartbeat(log, "waiting for BGP to come up", usual=120, give_up=240)
     while True:
-        down = {}
+        down, established, sessions = {}, 0, 0
         for device in fingerprint.ROUTERS:
             try:
                 summary = executor.show_json(settings, ips[device], "show ip bgp summary")
@@ -137,6 +191,8 @@ def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
                 continue
             peers = (summary.get("vrfs", {}).get("default", {}) or {}).get("peers", {}) or {}
             not_up = [peer for peer, info in peers.items() if info.get("peerState") != "Established"]
+            sessions += max(len(peers), 2)
+            established += len(peers) - len(not_up)
             if len(peers) < 2 or not_up:
                 down[device] = not_up or ["fewer than 2 peers"]
         if not down:
@@ -144,6 +200,8 @@ def wait_bgp(settings: Settings, log, timeout: float = 300) -> None:
             return
         if time.monotonic() > deadline:
             raise LabError(f"BGP not established after {timeout:.0f}s: {down}")
+        total = max(sessions, 2 * len(fingerprint.ROUTERS))
+        beat.beat(f"{established} of {total} BGP sessions Established ({100 * established // total}%); still waiting on {', '.join(sorted(down))}")
         time.sleep(5)
 
 
@@ -153,20 +211,11 @@ def live_configs(settings: Settings) -> dict[str, str]:
 
 
 def probe(port: int) -> Probe:
-    reach = subprocess.run(["docker", "exec", CLIENT, "nc", "-z", "-w", "3", SERVICE_IP, str(port)], capture_output=True, check=False)
-    listen = subprocess.run(["docker", "exec", SERVICE, "nc", "-z", "-w", "1", "127.0.0.1", str(port)], capture_output=True, check=False)
-    return Probe(port, reach.returncode == 0, listen.returncode == 0)
+    """Real packets from the real client: ``nc -z`` inside the client container, and inside the service container to tell a
+    blocked port from a service that is not listening. Docker SDK ``exec_run``: the API behind ``docker exec``."""
+    d = _docker()
+    reach = d.containers.get(CLIENT).exec_run(["nc", "-z", "-w", "3", SERVICE_IP, str(port)])
+    listen = d.containers.get(SERVICE).exec_run(["nc", "-z", "-w", "1", "127.0.0.1", str(port)])
+    return Probe(port, reach.exit_code == 0, listen.exit_code == 0)
 
 
-def _run(cmd: list[str], cwd: Path, log=None) -> None:
-    """Run a lab command, showing its output as it happens (netlab and containerlab take minutes, and people should see them work)."""
-    lines: list[str] = []
-    show.shell(log, cmd, f"{cwd.name}/")
-    proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
-    for raw in proc.stdout:  # type: ignore[union-attr]
-        line = raw.rstrip("\n")
-        lines.append(line)
-        if log is not None and line.strip():
-            log("  | " + line)
-    if proc.wait() != 0:
-        raise LabError(f"{' '.join(cmd)} failed:\n" + "\n".join(lines[-15:]))

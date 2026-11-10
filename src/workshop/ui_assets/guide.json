@@ -14,27 +14,27 @@
     "Network",
     "Executor"
    ],
-   "what": "Nothing starts until you press the button. netlab reads lab/topology.yml (four routers, a client and a service, and their links) and has containerlab start them, without configuring them. Then NAPALM writes each router's baseline configuration over eAPI, so there is exactly one way a change gets onto a router. You can watch the lab in the Containerlab panel in the left bar of VS Code: open a terminal on any router or on the client and the service.",
+   "what": "Nothing starts until you press the button. netlab reads lab/topology.yml (four routers, a client and a service, and their links), has containerlab start them, then configures each router over SSH with Netmiko: interfaces, BGP, and the workshop's own pieces from lab/*.j2. That is the lab's starting point. After that, every change goes through NAPALM, so there is exactly one way a change gets onto a running router. You can watch the lab in the Containerlab panel in the left bar of VS Code, or with `netlab status` in lab/.",
    "before": [
     {
-     "q": "netlab builds the topology. What puts the baseline configuration on the routers?",
+     "q": "netlab builds the topology. What gives the routers their starting configuration?",
      "options": [
-      "netlab's own config push",
       "NAPALM, over eAPI",
+      "netlab itself, with Netmiko, when it builds them",
       "The Forward collector"
      ],
      "answer": 1,
-     "why": "NAPALM. Every change in this workshop, baseline, candidate and restore, takes the same path, which is what lets Deploy check it. The collector only reads."
+     "why": "netlab, once, as it builds the lab: lab/topology.yml and the templates in lab/*.j2. The collector only reads. NAPALM takes over for every change after that."
     },
     {
-     "q": "netlab starts your lab with --no-config. What does that mean?",
+     "q": "netlab configured your routers when it built them. What configures them after that?",
      "options": [
-      "It starts nothing",
-      "It builds and links the nodes but leaves them unconfigured",
-      "It skips the network links"
+      "netlab again, whenever something changes",
+      "NAPALM, for every change: deploy and restore",
+      "Forward"
      ],
      "answer": 1,
-     "why": "netlab only defines and launches the topology. The configuration comes from the baseline files through NAPALM, which keeps one change path for the whole workshop."
+     "why": "netlab gives the lab its starting point, once. Every change after that goes through NAPALM, one change path, so Deploy can check it. Forward never changes a router: it models them."
     }
    ],
    "after": [
@@ -53,7 +53,7 @@
     {
      "step": "up",
      "label": "Start the lab",
-     "note": "Takes 2 to 3 minutes. You will see netlab start the six nodes, then the baseline go on. The machine will be busy; that is normal.",
+     "note": "Takes 3 to 10 minutes. You will see netlab start the six nodes, then configure the routers. The machine will be busy; that is normal.",
      "cmd": "workshop up"
     },
     {
@@ -63,7 +63,7 @@
      "cmd": "workshop doctor"
     }
    ],
-   "catchup": "Starts the lab if it isn't running and applies the baseline configuration. Nothing else changes.",
+   "catchup": "Starts the lab if it isn't running (netlab builds and configures it). A running lab is left as it is.",
    "why": "Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today."
   },
   "baseline": {
@@ -99,10 +99,28 @@
    ],
    "run": [
     {
-     "step": "baseline",
-     "label": "Collect the baseline",
-     "note": "Reads all four routers and uploads the snapshot. About a minute.",
-     "cmd": "workshop baseline"
+     "step": "baseline collect",
+     "label": "1. Collect",
+     "note": "Forward's headless collector reads r1-r4 into a snapshot ZIP. About 15 seconds.",
+     "cmd": "workshop baseline collect"
+    },
+    {
+     "step": "baseline upload",
+     "label": "2. Upload",
+     "note": "The ZIP to your Forward network, with a note saying what it is.",
+     "cmd": "workshop baseline upload"
+    },
+    {
+     "step": "baseline wait",
+     "label": "3. Wait for the model",
+     "note": "Forward builds its model of every route, ACL and path. About a minute.",
+     "cmd": "workshop baseline wait"
+    },
+    {
+     "step": "baseline check",
+     "label": "4. Check",
+     "note": "Three integrity checks, then every baseline requirement against Forward's model.",
+     "cmd": "workshop baseline check"
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline.",
@@ -196,10 +214,22 @@
    ],
    "run": [
     {
-     "step": "predict",
-     "label": "Predict my change",
-     "note": "Runs the same check as the pull request, locally. A minute or two.",
-     "cmd": "workshop predict"
+     "step": "predict changeset",
+     "label": "1. Change set",
+     "note": "Checks the baseline, then puts your candidate's lines in a Forward change set.",
+     "cmd": "workshop predict changeset"
+    },
+    {
+     "step": "predict run",
+     "label": "2. Predict",
+     "note": "Forward builds the network your change would produce. A minute or so.",
+     "cmd": "workshop predict run"
+    },
+    {
+     "step": "predict check",
+     "label": "3. Check",
+     "note": "Every requirement against the predicted network; writes the evidence.",
+     "cmd": "workshop predict check"
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It writes the known-good change (retire the two stale prefixes) so you can carry on from here. You still predict, approve, deploy and verify it yourself. Your candidate file is replaced.",
@@ -333,16 +363,34 @@
    ],
    "run": [
     {
-     "step": "verify",
-     "label": "Verify the network",
-     "note": "Probes the real flows, collects again and compares.",
-     "cmd": "workshop verify"
+     "step": "verify probe",
+     "label": "1. Probe",
+     "note": "Real packets from the client: 8080 should work, 2222 must be refused.",
+     "cmd": "workshop verify probe"
     },
     {
-     "step": "probe",
-     "label": "Just test the flows",
-     "note": "TCP 8080 should work, TCP 2222 must be refused.",
-     "cmd": "workshop probe"
+     "step": "verify collect",
+     "label": "2. Collect",
+     "note": "The collector again, on the network as it is now.",
+     "cmd": "workshop verify collect"
+    },
+    {
+     "step": "verify upload",
+     "label": "3. Upload",
+     "note": "Into Forward, noted as the network after the change.",
+     "cmd": "workshop verify upload"
+    },
+    {
+     "step": "verify wait",
+     "label": "4. Wait for the model",
+     "note": "About a minute.",
+     "cmd": "workshop verify wait"
+    },
+    {
+     "step": "verify compare",
+     "label": "5. Compare",
+     "note": "Every requirement on the real network, against what Predict said.",
+     "cmd": "workshop verify compare"
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. This restarts the loop from the Change step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
@@ -385,10 +433,28 @@
      "cmd": "workshop restore"
     },
     {
-     "step": "baseline",
-     "label": "Take a new baseline",
-     "note": "Do this after every restore.",
-     "cmd": "workshop baseline"
+     "step": "baseline collect",
+     "label": "Then 1. Collect",
+     "note": "A fresh baseline, one step at a time: collect, upload, wait, check.",
+     "cmd": "workshop baseline collect"
+    },
+    {
+     "step": "baseline upload",
+     "label": "2. Upload",
+     "note": "",
+     "cmd": "workshop baseline upload"
+    },
+    {
+     "step": "baseline wait",
+     "label": "3. Wait",
+     "note": "",
+     "cmd": "workshop baseline wait"
+    },
+    {
+     "step": "baseline check",
+     "label": "4. Check",
+     "note": "",
+     "cmd": "workshop baseline check"
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It clears your candidate, ready for another go.",

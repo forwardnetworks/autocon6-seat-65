@@ -48,7 +48,7 @@ workshop probe      # 8080 is still open on the real network
 A red check says a requirement failed. Forward can also show you **what the change did to the routing tables**, as data, without anyone opening Forward:
 
 - On the **Your lab** page, the **Predict** step has a **What Forward says** panel: a sentence, then a table of the routes that would change.
-- Or in the terminal (use the PR's prediction, or run `workshop predict` first):
+- Or in the terminal (use the PR's prediction, or run the predict steps first: `workshop predict changeset`, `run`, `check`):
   ```
   workshop data diff
   ```
@@ -57,7 +57,7 @@ A red check says a requirement failed. Forward can also show you **what the chan
 
 ### Follow the packet (5 min)
 
-After a local `workshop predict` of this change, trace the application on both networks and compare:
+After the local predict steps for this change, trace the application on both networks and compare:
 ```
 workshop path --compare predicted
 ```
@@ -71,10 +71,10 @@ Work out what changed and why, using as many of these as you like:
 
 - **The check summary:** which tests fail, and what Forward observed on the predicted network. Compare it with your
   `retire-one` PR: what's different?
-- **The Your lab tab:** run `workshop predict` locally first. The tab then shows the service path in red, r1 with no
+- **The Your lab tab:** run the predict steps locally first. The tab then shows the service path in red, r1 with no
   route to `10.20.20.0/24`, and which advertisements the change retires.
 - **The forward/advice check:** Forward AI's Reviewer summarizes what the change alters and what it would affect.
-- **`workshop explain`**, after a local `workshop predict`: adds the Troubleshooter's answer.
+- **`workshop explain`**, after the local predict steps: adds the Troubleshooter's answer.
 
 **Find the line responsible.** Why does removing a `network` statement on r4 take a route away from r2, r3 and r1 (two hops away)? Check the routing changes Forward lists.
 Which of the three statements carried the service, and how could you have known before writing the change?
@@ -104,7 +104,7 @@ A real class of mistake was caught in a pull request, before deploy, by a test s
   everything. Then compare. Add `--all` for all seven combinations. Only one row is fully green: why is "retire
   everything" not it, even though it clears every stale advertisement?
 - Another "looks safe" change: retire only `10.20.20.0/24`, the one statement that *isn't* stale. Guess which tests
-  fail, then check with `workshop predict`.
+  fail, then check with the predict steps.
 - `cat evidence/evidence.json` for the failed prediction: find the predicted snapshot id and the change set.
 - **Why one query isn't enough.** Run the hygiene query yourself on the *predicted* network of this bad change:
   ```

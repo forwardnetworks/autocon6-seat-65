@@ -7,13 +7,15 @@ Your own lab: four routers, a client and a service, and a Forward network that m
 | Step | Where | Command / action |
 |---|---|---|
 | 0. Check your setup | Codespace terminal | `workshop doctor` |
-| 1. Start the lab | Codespace terminal | `workshop up` |
-| 2. Baseline | Codespace terminal | `workshop baseline` |
+| 1. Start the lab | Codespace terminal | `workshop up` (netlab builds and configures it) |
+| 2. Baseline | Codespace terminal | `workshop baseline collect`, `upload`, `wait`, `check` |
 | 3. Change | Editor → `candidate/r4-bgp.eos` | edit, commit on a branch, open a pull request |
-| 4. Predict | GitHub → your pull request | read the **forward/predict** check |
+| 4. Predict | GitHub → your pull request (or the terminal) | read the **forward/predict** check (or `workshop predict changeset`, `run`, `check`) |
 | 5. Approve | GitHub | merge only a green check |
-| 6. Deploy | Codespace terminal | `git pull`, then `workshop deploy --pr <number> --confirm <sha>` |
-| 7. Verify | Codespace terminal | `workshop verify` |
+| 6. Deploy | Codespace terminal | `git pull`, then `workshop deploy gates`, `render`, `apply`, `readback` (with `--pr <number> --confirm <sha7>`) |
+| 7. Verify | Codespace terminal | `workshop verify probe`, `collect`, `upload`, `wait`, `compare` |
+
+Each step does one thing and prints the real call it makes. [What each command really does](docs/exercises/commands.md).
 
 
 The goal is written down in `intent.md`. The tests that prove it are in `requirements/`. The step-by-step exercises are in

@@ -13,7 +13,7 @@ of it is `requirements/candidate.yml`.
 
 - **Only `candidate/r4-bgp.eos`.** The pull request check refuses a PR that changes anything else, and the candidate
   itself may only contain `router bgp 65004` / `address-family ipv4` followed by `[no] network <prefix>` lines.
-  `workshop predict` checks that before calling Forward.
+  `workshop predict changeset` checks that before calling Forward.
 - Do not edit `requirements/`, `src/`, `lab/`, `.github/` or `.devcontainer/`. The check runs the code and
   requirements from `main`, not from the pull request, so edits there don't change the verdict. They just fail the PR.
 
@@ -30,7 +30,7 @@ of it is `requirements/candidate.yml`.
 | Command | What it tells you |
 |---|---|
 | `workshop status` | where this lab is in the loop |
-| `workshop predict` | predicts `candidate/r4-bgp.eos` against the current baseline and judges it (the same thing the PR check does) |
+| `workshop predict changeset`, `run`, `check` | predicts `candidate/r4-bgp.eos` against the current baseline and judges it, one step at a time (the same three steps the PR check runs) |
 | `workshop explain` | Forward AI's review of the last prediction: what it changes, what it affects, and why it failed if it did |
 | `workshop ask "<question>"` | a Forward AI chat grounded in a snapshot (`--snapshot baseline|predicted|post`); one question at a time, 1–2 minutes |
 | `workshop propose` | Predict's config assist drafts the candidate from `intent.md` (`--write` to save it) |

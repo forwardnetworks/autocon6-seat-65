@@ -9,7 +9,7 @@ NAPALM's EOS driver speaks eAPI (HTTPS) and applies a change as a configuration 
    startup config. A line the router refuses stops the whole session, so a change never half applies.
 
 This is the one module that imports a device library. A different Executor (Netmiko, scrapli, Nornir)
-means rewriting these five functions: ``connect``, ``apply``, ``show``, ``show_json`` and ``running_config``.
+means rewriting these six functions: ``connect``, ``apply``, ``preview``, ``show``, ``show_json`` and ``running_config``.
 """
 
 from __future__ import annotations
@@ -91,6 +91,31 @@ def apply(settings: Settings, device: str, host: str, lines: Sequence[str]) -> A
         except (NapalmException, EapiError):
             pass  # never let closing hide the real error
     return Applied(device, tuple(lines), diff)
+
+
+def preview(settings: Settings, device: str, host: str, lines: Sequence[str]) -> str:
+    """What ``apply`` would do, without doing it: stage the lines in a config session, ask the router for its own diff
+    (``compare_config``), then ``discard_config``. Nothing on the router changes. An empty string: the router already matches."""
+    if not lines:
+        raise DeployError(f"{device}: nothing to preview")
+    conn = connect(settings, host)
+    try:
+        try:
+            _clear_stale_sessions(conn)
+            conn.load_merge_candidate(config="\n".join(lines) + "\n")
+            return conn.compare_config()
+        except (MergeConfigException, NapalmException, EapiError) as exc:
+            raise DeployError(f"{device} would refuse the change: {exc}") from exc
+        finally:
+            try:
+                conn.discard_config()
+            except (NapalmException, EapiError):
+                pass
+    finally:
+        try:
+            conn.close()
+        except (NapalmException, EapiError, OSError):
+            pass
 
 
 def show(settings: Settings, host: str, command: str) -> str:

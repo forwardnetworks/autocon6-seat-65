@@ -1,5 +1,6 @@
-# AutoCon6 four-router eBGP diamond. netlab is used ONLY to define and launch this topology
-# (netlab up --no-config); router configuration is applied through NAPALM from lab/baseline/.
+# AutoCon6 four-router eBGP diamond. netlab builds the lab AND configures it: `netlab up` renders each router's
+# configuration from this file (its modules plus the three custom templates next to it) and pushes it with Netmiko.
+# After that, every change to a router goes through NAPALM (src/workshop/executor.py), never through netlab.
 name: autocon6
 # Use only this project's defaults and netlab's packaged ones. The host carries a machine-wide
 # ~/.netlab.yml and /etc/netlab/defaults.yml for other labs (Skyforge); neither may leak in.
@@ -23,29 +24,36 @@ addressing:
   p2p:
     ipv4: 10.255.0.0/24
     prefix: 30
+  # The client's and the service's subnets, as pools: netlab gives every host a static route through its router for
+  # each address pool, so the client reaches 10.20.20.0/24 through r1 and the service answers through r4.
+  clients:
+    ipv4: 10.10.0.0/16
+    prefix: 24
+  services:
+    ipv4: 10.20.0.0/16
+    prefix: 24
   mgmt:
     start: 100
 
 bgp:
   advertise_loopback: false
 
+# Custom configuration templates (lab/*.j2), applied by netlab after its modules:
+#   no-mgmt-default  every router: no default route via the management bridge
+#   client-in        r1: the CLIENT-IN ACL (8080 allowed, 2222 denied)
+#   stale-adverts    r4: the two stale network statements the exercises retire
 nodes:
-  r1: { bgp.as: 65001 }
-  r2: { bgp.as: 65002 }
-  r3: { bgp.as: 65003 }
-  r4: { bgp.as: 65004 }
+  r1: { bgp.as: 65001, config: [ no-mgmt-default, client-in ] }
+  r2: { bgp.as: 65002, config: [ no-mgmt-default ] }
+  r3: { bgp.as: 65003, config: [ no-mgmt-default ] }
+  r4: { bgp.as: 65004, config: [ no-mgmt-default, stale-adverts ] }
   client:
     device: linux
     role: host
-    clab.exec:
-      - ip addr add 10.10.10.10/24 dev eth1
-      - ip route replace default via 10.10.10.1
   service:
     device: linux
     role: host
     clab.exec:
-      - ip addr add 10.20.20.20/24 dev eth1
-      - ip route replace default via 10.20.20.1
       - sh -c 'nohup python3 -m http.server 8080 --bind 0.0.0.0 >/dev/null 2>&1 &'
       - sh -c 'nohup python3 -m http.server 8443 --bind 0.0.0.0 >/dev/null 2>&1 &'
       - sh -c 'nohup python3 -m http.server 2222 --bind 0.0.0.0 >/dev/null 2>&1 &'

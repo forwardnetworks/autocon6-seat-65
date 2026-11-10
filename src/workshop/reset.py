@@ -2,20 +2,18 @@
 
 What it does, in order (each printed as it happens):
   1. Git: anything you changed is kept with ``git stash`` (``git stash list`` shows it, ``git stash pop`` brings it back),
-     then you are on ``main`` with the latest from GitHub. Nothing is deleted.
-  2. Routers: each gets its baseline configuration merged back over NAPALM, and r4 loses any extra advertisement. A merge
-     puts back what was removed or changed; a line someone *added* by hand on r1-r3 stays. ``--rebuild`` removes the lab and
-     builds it from scratch, which clears everything.
+     then you are on ``main`` with the latest from GitHub (and told to run ``uv sync --frozen`` if its pinned packages changed). Nothing is deleted.
+  2. Routers: a netlab redeploy. ``netlab down --cleanup`` removes the lab, ``netlab up`` builds it again and configures every
+     router from lab/topology.yml, exactly as at the start. Whatever was changed, by a deploy or by hand, is gone.
   3. The starting point of exercise N: a fresh baseline from exercise 2 on, and the candidate the exercise starts from.
 Pull requests on GitHub are left alone: close any you no longer want there.
 """
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 
-from workshop import baseline, candidate, lab, restore, show
+from workshop import baseline, candidate, gitrepo, lab, show
 from workshop.config import Settings
 
 R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
@@ -34,12 +32,11 @@ class ResetError(RuntimeError):
     pass
 
 
-def _git(settings: Settings, log, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    show.shell(log, ["git", *args])
-    out = subprocess.run(["git", *args], cwd=settings.repo_root, capture_output=True, text=True, check=False)
-    if check and out.returncode != 0:
-        raise ResetError(f"git {' '.join(args)} failed: {(out.stderr or out.stdout).strip()[:300]}")
-    return out
+def _lock_text(settings: Settings) -> str:
+    try:
+        return (settings.repo_root / "uv.lock").read_text()
+    except OSError:
+        return ""
 
 
 def write_candidate(settings: Settings, retire: list[str] | None) -> None:
@@ -51,29 +48,37 @@ def write_candidate(settings: Settings, retire: list[str] | None) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def run(settings: Settings, to: int, log, *, rebuild: bool = False) -> None:
+def run(settings: Settings, to: int, log) -> None:
     start = STARTS[to]
     log(f"resetting to the start of {start['what']}")
     log("")
     log("1. Git: keep your work, then back to main")
-    if _git(settings, log, "status", "--porcelain").stdout.strip():
-        stamp = datetime.now(UTC).strftime("%H%M%S")
-        _git(settings, log, "stash", "push", "--include-untracked", "-m", f"workshop reset {stamp}")
-        log(f"  your changes are kept: `git stash list` shows 'workshop reset {stamp}', `git stash pop` brings them back")
-    _git(settings, log, "switch", "main")
-    pulled = _git(settings, log, "pull", "--ff-only", check=False)
-    if pulled.returncode != 0:
+    root = settings.repo_root
+    lock_before = _lock_text(settings)
+    try:
+        if gitrepo.dirty(root):
+            stamp = datetime.now(UTC).strftime("%H%M%S")
+            show.git(log, f"stash push --include-untracked -m 'workshop reset {stamp}'")
+            gitrepo.stash(root, f"workshop reset {stamp}")
+            log(f"  your changes are kept: `git stash list` shows 'workshop reset {stamp}', `git stash pop` brings them back")
+        show.git(log, "switch main")
+        gitrepo.switch(root, "main")
+    except gitrepo.GitError as exc:
+        raise ResetError(str(exc)) from exc
+    show.git(log, "pull --ff-only")
+    try:
+        gitrepo.pull(root)
+    except gitrepo.GitError:
         log("  (could not pull from GitHub just now; carrying on with the main you have)")
+    if _lock_text(settings) != lock_before:
+        log("  the update changes the pinned packages (uv.lock): after this finishes, run `uv sync --frozen` to install them")
     log("")
-    log("2. Routers: back to their baseline configuration")
-    if rebuild:
-        log("  --rebuild: removing the lab and building it again (3 to 10 minutes)")
-        try:
-            lab._run(["netlab", "down", "--cleanup"], lab.lab_dir(settings), log=log)
-        except lab.LabError as exc:
-            log(f"  (netlab down did not finish cleanly: {str(exc).splitlines()[0][:120]}; building it again anyway)")
+    log("2. Routers: a netlab redeploy, so every router is exactly as netlab first configured it (3 to 10 minutes)")
+    try:
+        lab.netlab(settings, log, "down", "--cleanup")
+    except lab.LabError as exc:
+        log(f"  (netlab down did not finish cleanly: {str(exc).splitlines()[0][:120]}; building it again anyway)")
     lab.up(settings, log)
-    restore.run(settings, log)
     log("")
     log("3. The starting point of the exercise")
     write_candidate(settings, start["retire"])
@@ -86,9 +91,9 @@ def run(settings: Settings, to: int, log, *, rebuild: bool = False) -> None:
         status = report.status.value if report else "?"
         log(f"  fresh baseline: snapshot {snap}, requirements {status}")
         if status != "PASS":
-            raise ResetError(f"the fresh baseline is {status}, not PASS: run `workshop reset --to {to} --rebuild`, or ask a proctor")
+            raise ResetError(f"the fresh baseline is {status}, not PASS: run `workshop reset --to {to}` again, or ask a proctor")
     log("")
     if to == 5:
-        log("  A fresh baseline makes any earlier prediction stale. To deploy this change now: `workshop predict`, then")
-        log("  `workshop deploy --evidence evidence/evidence.json --confirm <sha7> --no-github` (it prints the sha7 to use).")
+        log("  A fresh baseline makes any earlier prediction stale. To deploy this change now: the predict steps, then")
+        log("  `workshop deploy gates|render|apply|readback --evidence evidence/evidence.json --confirm <sha7> --no-github` (check prints the sha7).")
     log(f"Ready: you are at the start of exercise {to}. Open docs/exercises/ for it, or the Your lab page.")

@@ -97,6 +97,17 @@ def render_data_sources(settings: Settings) -> Path:
     return path
 
 
+def _last_line(path: Path) -> str:
+    """The collector's latest log line, shortened: shows it is working (and on what) during a long collection."""
+    try:
+        with path.open("rb") as handle:
+            handle.seek(max(path.stat().st_size - 400, 0))
+            tail = [line for line in handle.read().decode(errors="replace").splitlines() if line.strip()]
+        return tail[-1].strip()[:100] if tail else ""
+    except OSError:
+        return ""
+
+
 def run(settings: Settings, binary: Path, base_name: str, log) -> Path:
     sources = render_data_sources(settings)
     out_dir = settings.state("snapshots")
@@ -108,11 +119,20 @@ def run(settings: Settings, binary: Path, base_name: str, log) -> Path:
             "--snapshot-base-name", base_name, "--threads", "4"]
     show.shell(log, argv)
     show.note(log, f"it logs in to r1-r4 over SSH, runs show commands, and writes one ZIP (its log: {log_path})")
+    beat = show.Heartbeat(log, "collecting", every=15)
     with log_path.open("w") as log_file:
-        result = subprocess.run(
-            argv,
-            cwd=settings.state_dir, env=env, stdout=log_file, stderr=subprocess.STDOUT, timeout=900, check=False,
-        )
+        proc = subprocess.Popen(argv, cwd=settings.state_dir, env=env, stdout=log_file, stderr=subprocess.STDOUT)
+        try:
+            while proc.poll() is None:
+                if time.time() - started > 900:
+                    proc.kill()
+                    raise CollectError(f"the collector ran for 15 minutes without finishing; see {log_path}")
+                beat.beat(_last_line(log_path))
+                time.sleep(1)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+        result = proc
     zips = sorted((p for p in out_dir.glob(f"{base_name}_*.zip") if p.stat().st_mtime >= started - 1), key=lambda p: p.stat().st_mtime)
     if result.returncode != 0 or not zips:
         raise CollectError(f"the collector exited {result.returncode} without a snapshot; see {log_path}")

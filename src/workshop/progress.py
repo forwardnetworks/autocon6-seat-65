@@ -31,7 +31,7 @@ CHALLENGES: tuple[Challenge, ...] = (
     Challenge("baseline", "Take a baseline", "core", 0, (
         "Forward needs a snapshot of your routers before it can predict anything.",
         "The lab must be up first, then collect and upload.",
-        "`workshop up`, then `workshop baseline`. Every line should say PASS.")),
+        "`workshop up`, then the baseline steps (`workshop baseline collect`, `upload`, `wait`, `check`). Every line should say PASS.")),
     Challenge("first-prediction", "Get a prediction on a pull request", "core", 0, (
         "A prediction runs when a pull request changes `candidate/r4-bgp.eos`.",
         "Make a branch, edit the candidate, commit, publish the branch, and create the pull request.",
@@ -47,11 +47,11 @@ CHALLENGES: tuple[Challenge, ...] = (
     Challenge("deployed", "Deploy exactly what was predicted", "core", 0, (
         "Deploy sends the routers the same lines Predict evaluated, and only if nothing has drifted.",
         "The exact command is at the top of the green check's summary.",
-        "`workshop deploy --pr <number> --confirm <first 7 characters of the candidate hash>`")),
+        "`workshop deploy gates|render|apply|readback --pr <number> --confirm <first 7 characters of the candidate hash>`")),
     Challenge("verified", "Verify: reality matches the prediction", "core", 0, (
         "After the change, collect the network again and compare with what was predicted.",
         "Verify probes the real flows, collects, and re-judges every requirement.",
-        "`workshop verify`, and look for MATCH.")),
+        "the verify steps (`workshop verify probe` … `compare`), and look for MATCH.")),
     Challenge("ask-ai", "Ask Forward AI about your network", "stretch", 5, (
         "The chat in this tab is grounded in a snapshot of your own lab.",
         "Pick one of the suggestion chips, or ask your own question. It takes a minute or two.",
@@ -59,7 +59,7 @@ CHALLENGES: tuple[Challenge, ...] = (
     Challenge("explain", "Have a failed prediction explained", "stretch", 5, (
         "Forward AI can review a prediction: what the change alters and what it affects.",
         "It needs a local prediction first.",
-        "`workshop predict` on a change that fails, then `workshop explain`.")),
+        "the predict steps on a change that fails, then `workshop explain`.")),
     Challenge("propose", "Let Forward AI draft the change", "stretch", 5, (
         "Predict's config assist can write the candidate from the intent in `intent.md`.",
         "It only drafts. You still review it and Predict still judges it.",

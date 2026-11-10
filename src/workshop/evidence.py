@@ -74,8 +74,9 @@ def markdown(m: Manifest, routing=None) -> str:
         lines += [m.reason, ""]
     if m.deployable:
         target = f"--pr {m.git['pr']}" if m.git.get("pr") else "--evidence evidence/evidence.json"
-        command = f"workshop deploy {target} --confirm {m.candidate_sha256[:7]}"
-        lines += [f"After this pull request is merged, deploy it from your Codespace terminal: `{command}`", ""]
+        flags = f"{target} --confirm {m.candidate_sha256[:7]}"
+        lines += ["After this pull request is merged, deploy it from your Codespace terminal, one step at a time:", "",
+                  f"`workshop deploy gates {flags}` · `workshop deploy render {target}` · `workshop deploy apply {flags}` · `workshop deploy readback`", ""]
     if m.results:
         lines += ["| Requirement | Result | Expected | Predicted |", "|---|---|---|---|"]
         for r in m.results:

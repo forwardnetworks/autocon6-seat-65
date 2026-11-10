@@ -1,0 +1,4 @@
+{# Every router: containerlab's startup config adds a default route via the management bridge. The lab keeps Management0
+   in the default VRF, so that route would carry client traffic onto the host once the service route is withdrawn.
+   NAPALM and the collector reach the routers on the connected management subnet and do not need it. #}
+no ip route 0.0.0.0/0 {{ mgmt.ipv4.split('.')[:3] | join('.') }}.1

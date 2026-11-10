@@ -49,6 +49,6 @@ The only way to merge is a green check, so approval is a person looking at evide
 ## Finished early?
 
 - Run your own `HTTPS-DENY` test (exercise 2) against the fixed change:
-  `workshop predict --requirements requirements/mine.yml`.
+  the predict steps with `--requirements requirements/mine.yml` (on `changeset` and `check`).
 - `workshop agent`: on a scratch branch, put the broken change back in the candidate and let the advisers iterate to
   a passing change. It stops before approval, so compare its answer with yours.

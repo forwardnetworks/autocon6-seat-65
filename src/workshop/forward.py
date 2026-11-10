@@ -279,31 +279,53 @@ class Forward:
         return SnapshotObserver(self.c, snapshot_id, sink=self.settings.state(f"forward-{snapshot_id}.json"))
 
     def predict(self, candidate: Candidate, baseline_id: str, name: str, description: str, log=None) -> Prediction:
-        """Predict ``candidate`` against ``baseline_id`` in change set ``name``.
+        """Predict ``candidate`` against ``baseline_id`` in change set ``name``: ``change_set`` then ``run_prediction``.
 
         Re-running with the same name reuses a finished prediction of the same baseline instead of
         submitting a duplicate job (a CI retry must not queue a second Predict run).
         """
+        made = self.change_set(candidate, baseline_id, name, description, log=log)
+        if isinstance(made, Prediction):
+            return made
+        return self.run_prediction(made, f"{name} {candidate.sha256[:12]}", log=log)
+
+    def change_set(self, candidate: Candidate, baseline_id: str, name: str, description: str, log=None) -> str | Prediction:
+        """Create change set ``name`` on the baseline, holding exactly the candidate's lines for its device, and commit it.
+        Returns its id; or, when a change set of that name already holds a finished prediction of this baseline, that Prediction."""
         for info in self.c.change_sets.list():
             if info.name != name:
                 continue
             handle = self.c.change_sets.handle(str(info.id))
             for snap in handle.predicted_snapshots():
                 if str(snap.state) == "PROCESSED" and str(snap.parent_snapshot_id) == str(baseline_id):
+                    if log:
+                        log(f"  change set {name} already holds a finished prediction of this baseline: snapshot {snap.id} (reused, not run again)")
                     return Prediction(str(info.id), str(snap.id), str(snap.parent_snapshot_id), True)
             handle.delete()  # a half-finished attempt; start clean
         show.sdk(log, f'change_sets.create("{name}", snapshot_id="{baseline_id}")   a change set on top of your baseline')
         handle = self.c.change_sets.create(name, snapshot_id=baseline_id, description=description, tags=["autocon6"])
         show.sdk(log, f'set_commands("{candidate.device}", <{len(candidate.lines)} lines, sha256 {candidate.sha256[:7]}>)   the exact bytes deploy will send')
         handle.set_commands(candidate.device, candidate.text)
-        show.sdk(log, "commit(…) · predict(…)   Forward builds the network that would result, as a new snapshot")
+        show.sdk(log, f'commit("{name} {candidate.sha256[:12]}")   the change set is ready to predict')
         handle.commit(f"{name} {candidate.sha256[:12]}")
-        started = handle.predict(f"{name} {candidate.sha256[:12]}")  # what predict_and_wait does, with the status shown while it waits
+        return str(handle.id)
+
+    def run_prediction(self, change_set_id: str, label: str, log=None, *, timeout: float = 600) -> Prediction:
+        """Ask Forward to build the network the change set would produce, and wait for that predicted snapshot."""
+        handle = self.c.change_sets.handle(change_set_id)
+        for snap in handle.predicted_snapshots():
+            if str(snap.state) == "PROCESSED":
+                if log:
+                    log(f"  this change set was already predicted: snapshot {snap.id} (reused, not run again)")
+                return Prediction(change_set_id, str(snap.id), str(snap.parent_snapshot_id), True)
+        show.sdk(log, f'predict("{label}")   Forward builds the network that would result, as a new snapshot')
+        started = handle.predict(label)
         if not started.id:
             raise ValueError("Forward did not return the predicted snapshot's id")
+        show.sdk(log, f'snapshots.wait_until_processed("{started.id}")')
         watch = ProcessingWatch(self.c, log, "building the predicted network") if log else None
-        snap = self.c.snapshots.wait_until_processed(str(started.id), poll_interval=3, timeout=600, on_poll=watch)
-        return Prediction(handle.id, str(snap.id), str(snap.parent_snapshot_id), False)
+        snap = self.c.snapshots.wait_until_processed(str(started.id), poll_interval=3, timeout=timeout, on_poll=watch)
+        return Prediction(change_set_id, str(snap.id), str(snap.parent_snapshot_id), False)
 
     def download_collector(self, destination: Path):
         return self.c.client_software.download(destination)

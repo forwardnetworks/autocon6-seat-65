@@ -552,7 +552,9 @@ function renderGuide(s, key) {
   }
   if (key === "deploy") {
     extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
-      <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false"> <button id="dep-go" ${s.job && !s.job.done ? "disabled" : ""}>Deploy</button></div>
+      <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false"> </div>
+      <div class="runrow">${[["deploy gates", "1. Gates"], ["deploy render", "2. Render"], ["deploy apply", "3. Apply"], ["deploy readback", "4. Read back"]].map(([st, lb]) => `<button class="dep-step" data-step="${st}" ${s.job && !s.job.done ? "disabled" : ""}>${lb}</button>`).join(" ")}</div>
+      <div class="muted">Gates checks everything and sends nothing. Render shows the change in Forward and on r4, side by side (a dry run). Apply sends it. Read back confirms it on r4.</div>
       <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
   }
   if (key === "predict") {
@@ -571,7 +573,7 @@ function renderGuide(s, key) {
       ? `<button class="warn" id="catch-yes" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Yes, start a fresh loop" : "Yes, reset to the start of this step"}</button><button class="ghost" id="catch-no">Cancel</button>`
       : `<button class="ghost" id="catch-btn" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Start a fresh loop" : "Catch me up"}</button>`}</div></div></div>`;
   const upd = s.updates && s.updates.available
-    ? `<div class="banner warn"><b>The workshop team pushed an update.</b> In the terminal: <code>git switch main && git pull</code> (your branches and your change are untouched), then carry on. <span class="muted">${esc((s.updates.files || []).join(", "))}</span></div>` : "";
+    ? `<div class="banner warn"><b>The workshop team pushed an update.</b> In the terminal: <code>git switch main && git pull && uv sync --frozen</code> (your branches and your change are untouched), then carry on. <span class="muted">${esc((s.updates.files || []).join(", "))}</span></div>` : "";
   $("next").innerHTML = `
     ${upd}
     ${paceHtml(s)}
@@ -619,8 +621,7 @@ function renderGuide(s, key) {
       : `Updated <b>PR #${esc(r.number)}</b> (branch <code>${esc(r.branch)}</code>)${r.pushed ? " with your new commit" : ": nothing new to push"}: <a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.url)}</a>`;
     guideSig = ""; renderGuide(state, key); refresh();
   };
-  const d = $("dep-go");
-  if (d) d.onclick = () => runStep({ step: "deploy", pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() });
+  document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => runStep({ step: b.dataset.step, pr: $("dep-pr").value.trim(), confirm: $("dep-sha").value.trim() }); });
   showOut();
   loadArts(key);
   loadData(key, g);
@@ -702,8 +703,23 @@ function showMsg(text) {
 function jobBelongsHere() {
   // A job's output is shown on the step that runs it (and for a catch-up, wherever it was started), never under an unrelated step.
   if (!job || job.home === "lane") return true;
-  const here = ((guide && guide.steps[currentKey()] || {}).run || []).map((r) => r.step).concat(currentKey() === "deploy" ? ["deploy"] : []);
+  const here = ((guide && guide.steps[currentKey()] || {}).run || []).map((r) => r.step).concat(currentKey() === "deploy" ? ["deploy", "deploy gates", "deploy render", "deploy apply", "deploy readback"] : []);
   return String(job.step || "").startsWith("catch-up") || String(job.cmd || "").includes("catch-up") || here.includes(job.step);
+}
+
+// Where a running command is: its step line ("Baseline · step 2 of 4: ..."), and the newest "(NN%)" or "(NN s)" a heartbeat
+// printed. Read from the command's own output, so the page never claims more than the command said.
+function progressHtml(lines, done) {
+  let stepLine = "", pct = null, latest = "";
+  for (const l of lines) {
+    if (/· step \d+ of \d+:/.test(l)) stepLine = l.trim();
+    const m = l.match(/\((\d{1,3})%\)/);
+    if (m) { pct = Math.min(100, +m[1]); latest = l.trim(); }
+    else if (/still .*Nothing is stuck|Forward is .*\(\d+s\)/.test(l)) latest = l.trim();
+  }
+  if (!stepLine && pct === null && !latest) return "";
+  const bar = pct !== null && !done ? `<div class="meter" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" style="height:8px;background:var(--line,#ddd);border-radius:4px;margin:4px 0"><div style="height:8px;width:${pct}%;background:var(--ok,#2a7);border-radius:4px"></div></div>` : "";
+  return `<div class="muted" style="margin:4px 0">${esc(stepLine)}</div>${bar}${latest && !done ? `<div class="muted" style="font-size:.9em">${esc(latest)}</div>` : ""}`;
 }
 
 function showOut() {
@@ -713,7 +729,7 @@ function showOut() {
   const quiet = !job.done && Date.now() - lastLineAt > QUIET_AFTER;
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : `<span class="spinner"></span>running… ${job.secs ? job.secs + "s" : ""}`;
   const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.<br><em class="muted">${esc(WAITING[Math.floor(Date.now() / 15000) % WAITING.length])}</em></div>` : "";
-  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3>${patience}<pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
+  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3>${progressHtml(outLines, job.done)}${patience}<pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }
 

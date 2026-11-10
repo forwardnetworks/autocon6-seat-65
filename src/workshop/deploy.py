@@ -61,7 +61,7 @@ def gates(settings: Settings, m: Manifest, fwd: Forward, *, check_github: bool =
         raise Refused("STALE", f"a newer snapshot ({getattr(latest, 'id', None)}) exists than the one predicted against ({m.baseline_snapshot_id}); re-run the check")
     live = fingerprint.of(lab.live_configs(settings))
     if live != m.baseline_fingerprint:
-        raise Refused("STALE", "the routers' configs are not what was collected for the prediction; run `workshop baseline` and re-run the check")
+        raise Refused("STALE", "the routers' configs are not what was collected for the prediction; run the baseline steps (`workshop baseline collect` first) and re-run the check")
 
 
 def GATES_PASSED(m: Manifest, check_github: bool) -> list[str]:
@@ -76,15 +76,24 @@ def GATES_PASSED(m: Manifest, check_github: bool) -> list[str]:
     return out
 
 
-def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True) -> dict:
+def check(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True) -> Manifest:
+    """``workshop deploy gates``: every gate, read-only. Nothing is sent to a router."""
     m = Manifest.read(evidence)
     if confirm != m.candidate_sha256[:7]:
         raise Refused("ERROR", f"to deploy, confirm the candidate you reviewed: --confirm {m.candidate_sha256[:7]}")
-    with lab_lock(settings), Forward(settings) as fwd:
+    with Forward(settings) as fwd:
         log("checking the gates (any one failing stops the deploy before anything is written) ...")
         gates(settings, m, fwd, check_github=check_github)
-        for gate in GATES_PASSED(m, check_github):
-            log(f"  ✓ {gate}")
+    for gate in GATES_PASSED(m, check_github):
+        log(f"  ✓ {gate}")
+    return m
+
+
+def apply(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True) -> dict:
+    """``workshop deploy apply``: the gates once more (they must hold at the moment of the write, not a minute ago), then the
+    evidence's lines to r4 over NAPALM. Writes deploy.json. ``workshop deploy readback`` confirms it on the router."""
+    with lab_lock(settings):
+        m = check(settings, evidence, confirm, log, check_github=check_github)
         lines = candidate.normalize(m.candidate_text)
         show.napalm(log, candidate.DEVICE, f"{len(lines)} lines, the exact bytes Predict judged: {show.NAPALM_APPLY}")
         started = datetime.now(UTC)
@@ -95,23 +104,45 @@ def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], N
                 log(f"    {line}")
         else:
             log(f"  {candidate.DEVICE}: no difference, the router already matches the candidate")
-        readback = executor.show(settings, lab.mgmt_ips(settings)[candidate.DEVICE], "show running-config section router bgp")
-        problems = readback_problems(lines, readback)
         record = {
             "evidence": str(evidence), "candidate_sha256": m.candidate_sha256, "baseline_snapshot_id": m.baseline_snapshot_id,
             "predicted_snapshot_id": m.predicted_snapshot_id, "started_at": started.isoformat(timespec="seconds"),
-            "finished_at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(applied.lines), "device_diff": applied.output, "readback_problems": problems,
+            "finished_at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(applied.lines), "device_diff": applied.output,
+            "readback_problems": None,
         }
         settings.state("deploy.json").write_text(json.dumps(record, indent=2) + "\n")
-        if problems:
-            raise Refused("ERROR", "the change was sent but the router does not show it as expected: " + "; ".join(problems))
-        log(f"  {candidate.DEVICE}: {len(lines) - len(candidate.HEADER)} change(s) applied and read back from the router")
-        log("")
-        log("What this means: r4 now holds exactly the lines Predict judged (hash " + m.candidate_sha256[:12] + "), nothing more. The gates that")
-        approved = "the pull request merged and its check green" if check_github and m.git.get("pr") else "no pull request was involved (a local rehearsal)"
-        log(f"allowed it: evidence PASS, {approved}, the baseline still current, and no router edited by hand since.")
-        log("Whether the real network behaves as predicted is what `workshop verify` checks next.")
+        for name in ("steps/collect-post.json", "steps/upload-post.json", "steps/probes.json", "verify.json"):
+            settings.state(name).unlink(missing_ok=True)  # a new deploy: an earlier verify's collection says nothing about it
         return record
+
+
+def readback(settings: Settings, log: Callable[[str], None]) -> dict:
+    """``workshop deploy readback``: read r4's BGP section back and check every line of the change is there."""
+    path = settings.state("deploy.json")
+    if not path.is_file():
+        raise Refused("ERROR", "nothing deployed yet: run `workshop deploy apply` first")
+    record = json.loads(path.read_text())
+    lines = tuple(record["lines"])
+    show.napalm(log, candidate.DEVICE, "cli('show running-config section router bgp')   what the router holds now")
+    text = executor.show(settings, lab.mgmt_ips(settings)[candidate.DEVICE], "show running-config section router bgp")
+    problems = readback_problems(lines, text)
+    record["readback_problems"] = problems
+    path.write_text(json.dumps(record, indent=2) + "\n")
+    if problems:
+        raise Refused("ERROR", "the change was sent but the router does not show it as expected: " + "; ".join(problems))
+    log(f"  ✓ {candidate.DEVICE} shows all {len(lines) - len(candidate.HEADER)} change(s): r4 holds exactly the lines Predict judged (hash {record['candidate_sha256'][:12]})")
+    return record
+
+
+def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True) -> dict:
+    """apply, then readback (the lab page's catch-up runs this; the exercises run the steps)."""
+    apply(settings, evidence, confirm, log, check_github=check_github)
+    record = readback(settings, log)
+    log("")
+    approved = "the pull request merged and its check green" if check_github and Manifest.read(evidence).git.get("pr") else "no pull request was involved (a local rehearsal)"
+    log(f"What this means: the gates allowed it (evidence PASS, {approved}, the baseline still current, no router edited by hand since),")
+    log("and r4 now holds exactly what Predict judged. Whether the real network behaves as predicted is what the verify steps check next (`workshop verify probe` first).")
+    return record
 
 
 def readback_problems(lines: tuple[str, ...], readback: str) -> list[str]:
