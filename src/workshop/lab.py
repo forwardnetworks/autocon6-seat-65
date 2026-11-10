@@ -83,6 +83,9 @@ def netlab(settings: Settings, log, *args: str) -> None:
     from netsim.cli import up as up_
 
     command = {"up": up_.run, "down": down.run, "initial": initial.run}[args[0]]
+    import os
+
+    os.environ.setdefault("CLAB_VERSION_CHECK", "disable")  # containerlab's "a newer version is available" banner: noise in a lab
     show.netlab(log, list(args))
     beat = show.Heartbeat(log, f"netlab {args[0]}: it is quiet while the routers boot", every=30, usual=300, give_up=720)
 

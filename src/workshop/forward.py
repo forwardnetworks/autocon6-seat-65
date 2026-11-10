@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -261,10 +262,37 @@ class Forward:
                     log("  it didn't: uploading again")
         raise AssertionError("unreachable")
 
-    def wait(self, snapshot_id: str, *, log=None, timeout: float = 900):
-        """Wait for Forward to finish processing. On a timeout Forward keeps going: the caller decides what to say."""
-        watch = ProcessingWatch(self.c, log, "processing your snapshot into a model") if log else None
-        return self.c.snapshots.wait_until_processed(snapshot_id, poll_interval=3, timeout=timeout, on_poll=watch)
+    def wait(self, snapshot_id: str, *, log=None, timeout: float = 900, what: str = "processing your snapshot into a model", sleep=time.sleep):
+        """Wait for Forward to finish processing. On a timeout Forward keeps going: the caller decides what to say.
+
+        Each status check gets 30 seconds (not the SDK's five minutes): on a slow network one stalled request must not
+        silence the wait for minutes. A check that doesn't answer is said and asked again, and a heartbeat thread prints a
+        line every 20 seconds whatever the network does, so the person waiting always sees it is still going."""
+        polls = ForwardClient.from_env(network_id=self.settings.network_id, user_agent=f"autocon6-workshop/{__version__}", timeout=30, retries=1)
+        watch = ProcessingWatch(polls, log, what) if log else None
+        beat = show.Heartbeat(log, f"waiting for Forward ({what})", every=20, usual=180, give_up=600)
+        stop = threading.Event()
+
+        def ticker() -> None:
+            while not stop.wait(5):
+                beat.beat()
+
+        if log:
+            threading.Thread(target=ticker, daemon=True).start()
+        deadline = time.monotonic() + timeout
+        try:
+            while True:
+                try:
+                    return polls.snapshots.wait_until_processed(snapshot_id, poll_interval=3, timeout=max(deadline - time.monotonic(), 1),
+                                                                on_poll=(lambda s, e: (beat.heard(), watch(s, e))) if watch else None)
+                except (ForwardTransportError, ForwardServerError, ForwardRateLimitError) as exc:
+                    if time.monotonic() >= deadline:
+                        raise ForwardTimeoutError(f"snapshot {snapshot_id} still not processed after {timeout:.0f}s") from exc
+                    if log:
+                        log(f"  Forward didn't answer a status check ({type(exc).__name__}); asking again")
+                    sleep(5)
+        finally:
+            stop.set()
 
     def device_names(self, snapshot_id: str) -> set[str]:
         return {d.name for d in self.c.devices.list(snapshot_id=snapshot_id)}
