@@ -1,5 +1,11 @@
 # If something goes wrong
 
+**Start an exercise again, whatever state you're in:** `workshop reset --to N` (N = 1 to 5). It keeps your uncommitted work in
+`git stash` (`git stash pop` brings it back), switches you to `main` with the latest from GitHub, merges each router's baseline config
+back (a line you *added* by hand stays: use `--rebuild` for that), and sets up the start of exercise N (a fresh baseline from exercise 2 on; exercise 4 starts with the
+breaking change, exercise 5 with the fixed one, ready for `workshop predict` and a local deploy). Add `--rebuild` if a router itself is broken: the lab is rebuilt from
+scratch (3 to 10 minutes). Your pull requests on GitHub are left alone.
+
 Find the line that looks like yours. Most fixes are one command. Run `workshop status` any time to see where you are in the loop and the next command.
 
 | You see | What it means | What to do |
@@ -15,7 +21,7 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 | `workshop baseline` fails on `APP-EXISTING` | The routers were still booting | `workshop up` again, then `workshop baseline` |
 | `workshop baseline` fails on `STALE-KNOWN` with three rows, or says the lab is not at its starting state | Something changed r4 by hand, or a deploy is still on it | `workshop restore`, then `workshop baseline` |
 | The **forward/predict** check is slow | Many people predicting at once | Wait a few minutes. It reruns by itself when you push again |
-| The check says **STALE** | A newer snapshot exists, or the routers changed since your baseline | `workshop baseline`, then push your change again |
+| The check says **STALE** | A newer snapshot than your baseline exists in Forward (a verify, or another baseline), or the baseline was taken for a different lab. The check never reads your routers | `workshop baseline`, then push your change again |
 | The check says **ERROR: changes files outside candidate/** | Your pull request touched other files | Revert them on the branch and push. Only `candidate/r4-bgp.eos` may change |
 | You can't merge | The check isn't green | By design. Fix the candidate until it is |
 | `workshop deploy` refuses | Not merged yet, a red check, a wrong `--confirm`, a newer baseline, or the routers drifted | Read its message. It prints the exact `--confirm` value it expects |

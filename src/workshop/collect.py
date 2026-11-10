@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from workshop import fingerprint, lab
+from workshop import fingerprint, lab, show
 from workshop.config import Settings
 from workshop.forward import Forward
 
@@ -58,6 +58,7 @@ def ensure(settings: Settings, fwd: Forward, log) -> Path:
         return binary
     log(f"downloading the Forward {release} headless collector ...")
     home.mkdir(parents=True, exist_ok=True)
+    show.sdk(log, f"client_software.download(…)   the collector for Forward {release}, from your Forward server")
     with tempfile.TemporaryDirectory(dir=home) as tmp:
         package = fwd.download_collector(Path(tmp))
         fit = compatible(release, package.file_name)
@@ -103,10 +104,13 @@ def run(settings: Settings, binary: Path, base_name: str, log) -> Path:
     started = time.time()
     env = {**os.environ, "INSTALL4J_ADD_VM_PARAMS": HEAP}
     log_path = settings.state(f"collect-{base_name}.log")
+    argv = [str(binary), "createsnapshot", "--data-sources", str(sources), "--snapshot-generated-dir", str(out_dir),
+            "--snapshot-base-name", base_name, "--threads", "4"]
+    show.shell(log, argv)
+    show.note(log, f"it logs in to r1-r4 over SSH, runs show commands, and writes one ZIP (its log: {log_path})")
     with log_path.open("w") as log_file:
         result = subprocess.run(
-            [str(binary), "createsnapshot", "--data-sources", str(sources), "--snapshot-generated-dir", str(out_dir),
-             "--snapshot-base-name", base_name, "--threads", "4"],
+            argv,
             cwd=settings.state_dir, env=env, stdout=log_file, stderr=subprocess.STDOUT, timeout=900, check=False,
         )
     zips = sorted((p for p in out_dir.glob(f"{base_name}_*.zip") if p.stat().st_mtime >= started - 1), key=lambda p: p.stat().st_mtime)

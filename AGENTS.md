@@ -22,7 +22,8 @@ of it is `requirements/candidate.yml`.
 - **Deploy.** `workshop deploy` needs a merged pull request whose `forward/predict` check passed, and a person typing
   the first 7 characters of the candidate hash (`--confirm`). Leave that step to the human.
 - **Change the routers any other way.** No SSH edits, no `netlab`/`containerlab` config pushes. A router that drifts
-  from the baseline makes every later step return STALE.
+  from the baseline is refused by deploy (the live fingerprint no longer matches) and shows up in verify; the PR check
+  can't see it, because it never reads the routers.
 
 ## Useful commands
 

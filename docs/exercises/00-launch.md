@@ -31,7 +31,7 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
    - Then `workshop` writes each router's baseline configuration over eAPI with **NAPALM**, so there is one way a change
      reaches a router, and Deploy can check it.
 
-   It takes 2 to 3 minutes and the machine will be busy. Leave it running and read on.
+   It takes 3 to 10 minutes on a new Codespace (about 4 after a restart) and the machine will be busy. Leave it running and read on.
 4. **Look at what netlab built.** In the terminal, `containerlab inspect --all` lists your lab, `autocon6`, with six nodes
    (and the **Containerlab** icon in the left activity bar shows the same tree: if it stays blank, the terminal is the reliable way):
    - **r1, r2, r3, r4**: Arista cEOS routers in the diamond (AS 65001 to 65004)
@@ -45,6 +45,26 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
    show ip bgp summary
    ```
    Two neighbors should be **Established**. `netlab status` (from the `lab/` folder) lists the lab too.
+
+### Open the box: what `workshop up` actually did (while it runs)
+
+`workshop up` is a wrapper. Everything it does leaves files you can read, in a second terminal (the **+** in the terminal panel):
+
+```
+ls lab/
+sed -n 1,40p lab/clab.yml            # what netlab generated for containerlab: nodes, the cEOS image, the links
+grep -B3 ansible_host lab/hosts.yml  # the management addresses: NAPALM and the collector both find the routers here
+```
+
+`lab/topology.yml` is about 40 lines you could write by hand. netlab turned it into `clab.yml` (what containerlab runs) and
+`hosts.yml` (an inventory). With `--no-config`, netlab stopped there: no router configuration came from netlab.
+
+Once `workshop up` finishes, compare what is **on** r4 with what is **in Git**:
+```
+docker exec clab-autocon6-r4 Cli -p 15 -c "show running-config section router bgp"
+sed -n '/router bgp/,$p' lab/baseline/r4.eos
+```
+They match because NAPALM pushed that file. That is the point of one change path: the file in Git is what is on the router.
 
 ## What you have
 

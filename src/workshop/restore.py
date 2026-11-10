@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from workshop import candidate, executor, lab
+from workshop import candidate, executor, lab, show
 from workshop.config import Settings
 
 _NETWORK = re.compile(r"^\s*network (\S+)\s*$", re.MULTILINE)
@@ -25,6 +25,8 @@ def run(settings: Settings, log) -> None:
     extras = [prefix for prefix in current if prefix not in want]
     header = [line for line in lines if not line.startswith("network ")]
     plan = tuple(header + [f"no network {prefix}" for prefix in extras] + [f"network {p}" for p in want])
+    show.napalm(log, candidate.DEVICE, f"{len(plan)} lines from lab/restore/r4-bgp.eos: {show.NAPALM_APPLY}")
+    show.note(log, "no prediction and no gate: restore is the break-glass path, which is why a new baseline must follow")
     executor.apply(settings, candidate.DEVICE, host, plan)
     # r4 is back at the baseline: an earlier deploy and its verify no longer describe the network, so the page must stop saying so.
     for name in ("deploy.json", "verify.json"):

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import yaml
 
-from workshop import executor, fingerprint
+from workshop import executor, fingerprint, show
 from workshop.config import Settings
 
 CLIENT, SERVICE = "clab-autocon6-client", "clab-autocon6-service"
@@ -95,6 +95,7 @@ def apply_baseline(settings: Settings, log) -> None:
     ips = mgmt_ips(settings)
     for device in fingerprint.ROUTERS:
         lines = baseline_lines(settings, device)
+        show.napalm(log, device, f"{len(lines)} lines from lab/baseline/{device}.eos: {show.NAPALM_APPLY}")
         executor.apply(settings, device, ips[device], lines)
         log(f"  {device}: baseline applied ({len(lines)} lines)")
 
@@ -160,6 +161,7 @@ def probe(port: int) -> Probe:
 def _run(cmd: list[str], cwd: Path, log=None) -> None:
     """Run a lab command, showing its output as it happens (netlab and containerlab take minutes, and people should see them work)."""
     lines: list[str] = []
+    show.shell(log, cmd, f"{cwd.name}/")
     proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
     for raw in proc.stdout:  # type: ignore[union-attr]
         line = raw.rstrip("\n")

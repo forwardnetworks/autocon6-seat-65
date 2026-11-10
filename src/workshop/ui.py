@@ -93,6 +93,20 @@ def _read_json(path: Path) -> dict[str, Any] | None:
         return None
 
 
+WORKSHOP_PATHS = ("src/workshop", "examples", "docs/exercises", "requirements", "nqe", "lab", ".github", "pyproject.toml", "uv.lock")
+
+
+def _updates(root: Path) -> dict[str, Any]:
+    """Has the workshop team pushed an update to main that this Codespace doesn't have yet? Only the workshop's own files
+    count: the attendee's candidate and branches are never part of it. Display only; a failed fetch just shows nothing."""
+    if subprocess.run(["git", "fetch", "-q", "origin", "main"], cwd=root, capture_output=True, timeout=20, check=False).returncode != 0:
+        return {"available": False}
+    out = subprocess.run(["git", "diff", "--name-only", "HEAD", "origin/main", "--", *WORKSHOP_PATHS], cwd=root,
+                         capture_output=True, text=True, timeout=10, check=False)
+    files = [f for f in out.stdout.split() if f]
+    return {"available": bool(files), "files": files[:8], "count": len(files)}
+
+
 class _Cached:
     """A value refreshed at most every ``ttl`` seconds (docker and gh calls are slow)."""
 
@@ -363,6 +377,7 @@ class Board:
         self.settings, self.evidence = settings, evidence
         self.containers = _Cached(_containers, 10)
         self.prs = _Cached(lambda: _pull_requests(settings.repo_root), 30)
+        self.updates = _Cached(lambda: _updates(settings.repo_root), 60)
         self.pr_evidence = _Cached(self._pr_evidence, 20)
         self.chats = Chats(settings)
         self.jobs = Jobs(settings, evidence)
@@ -435,6 +450,7 @@ class Board:
             "threads": self.chats.threads[:12], "busy": self.chats.busy(), "intent": _intent(s.repo_root),
             "job": self.jobs.summary(), "r4_prefixes": list(R4_PREFIXES),
             "badges": badges(base, asdict(m) if m else None, prs, deployed, verified),
+            "updates": self.updates.get() or {},
             "green_at": green_at(asdict(m) if m else None, prs),
         }
 

@@ -525,7 +525,7 @@ let guideSig = "";
 function renderGuide(s, key) {
   if (!guide) { $("next").innerHTML = ""; return; }
   const g = guide.steps[key] || guide.steps.done;
-  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s)]);
+  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s), s.updates]);
   if (sig === guideSig) return;
   const a = document.activeElement;
   if (a && $("next").contains(a) && a.tagName === "INPUT" && a.type === "text" && a.value) return;  // never rebuild the card under someone's typing
@@ -570,7 +570,10 @@ function renderGuide(s, key) {
     <div class="runrow">${catchAsk === key
       ? `<button class="warn" id="catch-yes" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Yes, start a fresh loop" : "Yes, reset to the start of this step"}</button><button class="ghost" id="catch-no">Cancel</button>`
       : `<button class="ghost" id="catch-btn" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Start a fresh loop" : "Catch me up"}</button>`}</div></div></div>`;
+  const upd = s.updates && s.updates.available
+    ? `<div class="banner warn"><b>The workshop team pushed an update.</b> In the terminal: <code>git switch main && git pull</code> (your branches and your change are untouched), then carry on. <span class="muted">${esc((s.updates.files || []).join(", "))}</span></div>` : "";
   $("next").innerHTML = `
+    ${upd}
     ${paceHtml(s)}
     <h2>${esc(g.title)}${failed ? " — something needs attention" : ""}</h2>
     <div class="nafrow">Framework block: ${naf}</div>

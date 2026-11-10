@@ -9,9 +9,13 @@ the baseline requirements.
 from __future__ import annotations
 
 import json
+import time
+import zipfile
 from datetime import UTC, datetime
 
-from workshop import collect, fingerprint, lab, requirements
+from forward_sdk import ForwardTimeoutError
+
+from workshop import collect, executor, fingerprint, lab, requirements, show
 from workshop.config import Settings
 from workshop.evaluate import Report, evaluate
 from workshop.forward import Forward, SnapshotTag
@@ -27,19 +31,51 @@ def forget_previous_loop(settings: Settings) -> None:
         settings.state(name).unlink(missing_ok=True)
 
 
+COLLECT_TRIES = (0, 15, 30)  # seconds to wait before each attempt
+
+
+def collect_clean(settings: Settings, binary, kind: str, log, *, sleep=time.sleep):
+    """A ZIP that is complete (all four routers) and is the network as it is (it hashes like the live configs).
+
+    Routers still booting, an SSH login that times out, or a config changing mid-collection all make one attempt come out
+    wrong, and all of them pass on their own. So: up to three attempts, a little apart, each saying why it is trying again."""
+    for i, pause in enumerate(COLLECT_TRIES):
+        if pause:
+            log(f"  trying the collection again in {pause} s (attempt {i + 1} of {len(COLLECT_TRIES)})")
+            sleep(pause)
+        try:
+            log("reading the routers' running configs ...")
+            show.napalm(log, "r1-4", "cli('show running-config')   hashed into a fingerprint of the network as it is")
+            live_fp = fingerprint.of(lab.live_configs(settings))
+            log("running the headless collector ...")
+            zip_path = collect.run(settings, binary, kind, log)
+            zip_fp = fingerprint.of(fingerprint.configs_from_zip(zip_path))
+            if zip_fp == live_fp:
+                return zip_path, zip_fp
+            problem = "the router configs changed while they were being collected"
+        except (collect.CollectError, executor.DeployError, OSError, KeyError, zipfile.BadZipFile) as exc:  # KeyError: a router missing from the ZIP
+            problem = str(exc)
+        log(f"  the collection did not come out clean: {problem}")
+    raise BaselineError(f"three collections did not come out clean (last: {problem}). Is the lab up? `workshop up`, then try again")
+
+
 def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> tuple[str, str, Report | None]:
     """Collect, upload and (for a baseline) evaluate. Returns (snapshot id, fingerprint, report)."""
     with Forward(settings) as fwd:
         binary = collect.ensure(settings, fwd, log)
-        log("reading the routers' running configs ...")
-        live_fp = fingerprint.of(lab.live_configs(settings))
-        log("running the headless collector ...")
-        zip_path = collect.run(settings, binary, kind, log)
-        zip_fp = fingerprint.of(fingerprint.configs_from_zip(zip_path))
-        if zip_fp != live_fp:
-            raise BaselineError("the router configs changed while they were being collected; run it again")
+        zip_path, zip_fp = collect_clean(settings, binary, kind, log)
         log("uploading to Forward and waiting for the model ...")
-        snap = fwd.upload(zip_path, SnapshotTag(kind, settings.lab_id, zip_fp), f"collected {datetime.now(UTC).isoformat(timespec='seconds')}", log=log)
+        tag = SnapshotTag(kind, settings.lab_id, zip_fp)
+        show.sdk(log, f'snapshots.upload("{zip_path.name}", note="{tag.note()}", process=True)')
+        snap_id = fwd.submit(zip_path, tag, f"collected {datetime.now(UTC).isoformat(timespec='seconds')}", log=log)
+        log(f"  uploaded: snapshot {snap_id}")
+        show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of every route, ACL and path')
+        try:
+            snap = fwd.wait(snap_id, log=log)
+        except ForwardTimeoutError as exc:
+            again = "`workshop baseline judge`" if kind == "baseline" else "`workshop verify` again"
+            raise BaselineError(f"snapshot {snap_id} is uploaded and Forward is still processing it (its queue is busy). Don't collect "
+                                f"again: that only adds to the queue. In a minute or two, run {again}.") from exc
         devices = fwd.device_names(str(snap.id))
         if not set(fingerprint.ROUTERS) <= devices:
             raise BaselineError(f"snapshot {snap.id} is missing {sorted(set(fingerprint.ROUTERS) - devices)}")
@@ -47,7 +83,56 @@ def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> 
         report = None
         if kind == "baseline":
             reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
+            show.note(log, f"judging {len(reqs.requirements)} requirements: each is a path search or an NQE query to Forward, compared with the YAML by evaluate.py")
             report = evaluate(reqs, fwd.observer(str(snap.id)), str(snap.id), root=settings.repo_root)
             settings.state("baseline.json").write_text(json.dumps({"snapshot": str(snap.id), "fingerprint": zip_fp, "report": report.to_json()}, indent=2) + "\n")
             forget_previous_loop(settings)
     return str(snap.id), zip_fp, report
+
+
+# ---- by hand: you run the collector and upload the snapshot yourself; workshop prepares, then checks and judges ----
+
+def prepare(settings: Settings, log) -> dict[str, str]:
+    """Everything you need to take the baseline yourself: the collector, its device file, the live fingerprint and the note
+    your snapshot must carry. Written to ``by-hand.sh`` in the lab's folder, so ``source`` gives you the variables."""
+    with Forward(settings) as fwd:
+        binary = collect.ensure(settings, fwd, log)
+    sources = collect.render_data_sources(settings)
+    show.napalm(log, "r1-4", "cli('show running-config')   hashed into the fingerprint your snapshot's note will carry")
+    live_fp = fingerprint.of(lab.live_configs(settings))
+    tag = SnapshotTag("baseline", settings.lab_id, live_fp)
+    out_dir = settings.state("snapshots")
+    out_dir.mkdir(exist_ok=True)
+    env = {"S": str(settings.state_dir), "COLLECTOR": str(binary), "SOURCES": str(sources), "SNAPDIR": str(out_dir), "NOTE": tag.note()}
+    script = settings.state("by-hand.sh")
+    script.write_text("".join(f"export {k}='{v}'\n" for k, v in env.items()))
+    return env
+
+
+def judge(settings: Settings, log) -> tuple[str, str, Report]:
+    """Check the newest snapshot in Forward is a baseline of this lab, taken of the network as it is now, then judge it.
+
+    Three checks before any requirement: the note says baseline and this lab; Forward's copy of the configs hashes to the
+    note's fingerprint (the ZIP really is what the note claims); and the live routers still hash to it (nothing changed since)."""
+    with Forward(settings) as fwd:
+        show.sdk(log, "snapshots.latest_processed(include_predicted=False)   the newest snapshot that is not a prediction")
+        snap = fwd.latest_baseline()
+        if snap is None:
+            raise BaselineError("Forward has no processed snapshot for this network yet: upload yours first")
+        tag = SnapshotTag.parse(snap.note)
+        log(f"  snapshot {snap.id}, note: {snap.note!r}")
+        if tag is None or tag.kind != "baseline" or tag.lab != settings.lab_id:
+            raise BaselineError(f"snapshot {snap.id}'s note is not 'autocon6:baseline lab={settings.lab_id} fp=…': upload it with the NOTE from `workshop baseline prepare`")
+        show.sdk(log, 'devices.file("rN", "configuration.txt") for r1-r4   Forward\'s copy of each config, hashed')
+        if fwd.fingerprint(str(snap.id)) != tag.fp:
+            raise BaselineError(f"the configs in snapshot {snap.id} do not hash to the note's fingerprint: that ZIP is not the network the note describes")
+        show.napalm(log, "r1-4", "cli('show running-config')   the live network, hashed the same way")
+        if fingerprint.of(lab.live_configs(settings)) != tag.fp:
+            raise BaselineError("the routers changed after that snapshot was taken: run `workshop baseline prepare` and collect again")
+        log("  ✓ a baseline of this lab  ✓ Forward's copy of the four configs matches the note  ✓ the live routers match it too")
+        reqs = requirements.load(settings.repo_root / "requirements" / "baseline.yml", root=settings.repo_root)
+        show.note(log, f"judging {len(reqs.requirements)} requirements: each is a path search or an NQE query to Forward, compared with the YAML by evaluate.py")
+        report = evaluate(reqs, fwd.observer(str(snap.id)), str(snap.id), root=settings.repo_root)
+        settings.state("baseline.json").write_text(json.dumps({"snapshot": str(snap.id), "fingerprint": tag.fp, "report": report.to_json()}, indent=2) + "\n")
+        forget_previous_loop(settings)
+    return str(snap.id), tag.fp, report

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from workshop import candidate, executor, fingerprint, github, lab, requirements
+from workshop import candidate, executor, fingerprint, github, lab, requirements, show
 from workshop.config import Settings
 from workshop.evidence import Manifest
 from workshop.forward import Forward
@@ -64,15 +64,29 @@ def gates(settings: Settings, m: Manifest, fwd: Forward, *, check_github: bool =
         raise Refused("STALE", "the routers' configs are not what was collected for the prediction; run `workshop baseline` and re-run the check")
 
 
+def GATES_PASSED(m: Manifest, check_github: bool) -> list[str]:
+    """What ``gates`` has just proved, one line each (``gates`` raises on the first that fails)."""
+    out = [f"you confirmed candidate {m.candidate_sha256[:7]}, the one Predict judged",
+           f"the prediction was PASS (evidence for lab {m.lab_id}, network {m.network_id})",
+           "candidate/r4-bgp.eos holds the same lines that were predicted (comments and spacing aside), and requirements/candidate.yml is byte for byte the same"]
+    if check_github and (m.git or {}).get("pr"):
+        out.append(f"PR #{m.git['pr']} is merged, and its forward/predict check passed on the commit that was predicted")
+    out += [f"your baseline ({m.baseline_snapshot_id}) is still the newest snapshot in Forward",
+            "all four routers still match the baseline's fingerprint (nothing changed by hand)"]
+    return out
+
+
 def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True) -> dict:
     m = Manifest.read(evidence)
     if confirm != m.candidate_sha256[:7]:
         raise Refused("ERROR", f"to deploy, confirm the candidate you reviewed: --confirm {m.candidate_sha256[:7]}")
     with lab_lock(settings), Forward(settings) as fwd:
-        log("checking the gates ...")
+        log("checking the gates (any one failing stops the deploy before anything is written) ...")
         gates(settings, m, fwd, check_github=check_github)
-        log("  evidence PASS, candidate and requirements unchanged, baseline current, routers unchanged")
+        for gate in GATES_PASSED(m, check_github):
+            log(f"  ✓ {gate}")
         lines = candidate.normalize(m.candidate_text)
+        show.napalm(log, candidate.DEVICE, f"{len(lines)} lines, the exact bytes Predict judged: {show.NAPALM_APPLY}")
         started = datetime.now(UTC)
         applied = executor.apply(settings, candidate.DEVICE, lab.mgmt_ips(settings)[candidate.DEVICE], lines)
         if applied.output.strip():

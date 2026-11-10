@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from workshop import baseline, lab, requirements
+from workshop import baseline, lab, requirements, show
 from workshop.config import Settings
 from workshop.evaluate import evaluate
 from workshop.evidence import Manifest
@@ -27,6 +27,7 @@ def run(settings: Settings, evidence: Path, log) -> dict:
     for req in reqs.requirements:
         if req.kind != "flow":
             continue
+        show.shell(log, ["docker", "exec", lab.CLIENT, "nc", "-z", "-w", "3", lab.SERVICE_IP, str(req.port)])
         p = lab.probe(req.port)
         want = req.expect == "permit"
         ok = p.reachable == want and p.trustworthy

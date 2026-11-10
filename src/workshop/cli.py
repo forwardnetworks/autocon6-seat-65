@@ -51,7 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check tools, Forward access and the lab")
     sub.add_parser("up", help="start the lab and apply the baseline")
     sub.add_parser("down", help="stop and remove the lab")
-    sub.add_parser("baseline", help="collect the network and upload a tagged baseline")
+    bl = sub.add_parser("baseline", help="collect the network and upload a tagged baseline (or: prepare, then judge, to do it by hand)")
+    bl.add_argument("step", nargs="?", choices=["prepare", "judge"],
+                    help="by hand: 'prepare' sets up the collector and prints the commands; you collect and upload; 'judge' checks and judges it")
     p = sub.add_parser("predict", help="predict a candidate change and judge it")
     p.add_argument("--candidate", default="candidate/r4-bgp.eos")
     p.add_argument("--requirements", default="requirements/candidate.yml")
@@ -102,6 +104,21 @@ def main(argv: list[str] | None = None) -> int:
     dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff)")
     dt.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     dt.add_argument("--json", action="store_true", help="the structured answer as JSON, including Forward's raw response")
+    rs = sub.add_parser("reset", help="start an exercise again from a known point (keeps your work in git stash)")
+    rs.add_argument("--to", type=int, required=True, choices=[1, 2, 3, 4, 5], help="the exercise to start again")
+    rs.add_argument("--rebuild", action="store_true", help="also remove the lab and build it from scratch (3 to 10 minutes)")
+    rs.add_argument("--yes", action="store_true", help="don't ask first")
+    pa = sub.add_parser("path", help="trace one flow through Forward's model, hop by hop, with the ACL and route behind each hop")
+    pa.add_argument("--port", type=int, default=8080, help="destination TCP port (8080 the app, 2222 and 8443 blocked)")
+    pa.add_argument("--to", default="10.20.20.20", help="destination address (default: the service)")
+    pa.add_argument("--from", dest="src", default="10.10.10.10", help="source address (default: the client)")
+    pa.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | a snapshot id")
+    pa.add_argument("--compare", default="", help="a second snapshot (e.g. predicted): trace both and say what changed")
+    pa.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
+    nq = sub.add_parser("nqe", help="run an NQE query (a file such as nqe/stale_bgp_advertisements.nqe, or the query text) and show its rows")
+    nq.add_argument("query", help="a .nqe file, or the query itself in quotes")
+    nq.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | a snapshot id")
+    nq.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     sub.add_parser("collector", help="download the headless collector for the server's release")
     sub.add_parser("status", help="where this lab is in the loop")
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
@@ -219,18 +236,39 @@ def _baseline(settings: config.Settings, args) -> int:
     from workshop import baseline
     from workshop.forward import Forward
 
-    banner(settings, "baseline")
+    banner(settings, "baseline" + (f" {args.step}" if getattr(args, "step", None) else ""))
+    if getattr(args, "step", None) == "prepare":
+        try:
+            env = baseline.prepare(settings, log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"workshop baseline prepare: {exc}")
+            return EXIT["ERROR"]
+        for line in report_.by_hand_lines(env):
+            log(line)
+        return 0
     try:
-        snapshot_id, fp, report = baseline.run(settings, log)
+        if getattr(args, "step", None) == "judge":
+            snapshot_id, fp, report = baseline.judge(settings, log)
+        else:
+            snapshot_id, fp, report = baseline.run(settings, log)
     except Exception as exc:  # noqa: BLE001
         log(f"workshop baseline: {exc}")
         return EXIT["ERROR"]
     log(f"baseline snapshot {snapshot_id} (fingerprint {fp[:12]}): Forward's model of your network as it is now")
     with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only
         log(report_.inventory_line(fwd.c, snapshot_id))
+        log("")
+        log("The route to the service on every router, in Forward's model:")
+        for line in report_.service_routes(fwd.c, snapshot_id):
+            log(line)
+    rows = [r.to_json() for r in report.results]
     log("")
     log("Requirements checked on that model:")
-    for line in report_.requirement_lines([r.to_json() for r in report.results]):
+    for line in report_.requirement_table(rows, on=f"your baseline (snapshot {snapshot_id})"):
+        log(line)
+    log("")
+    log("Each requirement in detail:")
+    for line in report_.requirement_lines(rows):
         log(line)
     log("")
     log(f"baseline: {report.status.value}")
@@ -269,12 +307,25 @@ def _predict(settings: config.Settings, args) -> int:
         if m.predicted_snapshot_id and m.results:
             log("")
             log("Requirements, judged on the network that would result:")
+            for line in report_.requirement_table(m.results, on=f"the predicted network (snapshot {m.predicted_snapshot_id})"):
+                log(line)
+            log("")
+            log("Each requirement in detail:")
             for line in report_.requirement_lines(m.results):
                 log(line)
             log("")
             log(f"What the change does to the routing tables (baseline {m.baseline_snapshot_id} -> predicted {m.predicted_snapshot_id}):")
             for line in report_.routing_lines(routing):
                 log(line)
+            from workshop import paths
+            with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only, and on its own: a failure here must not hide the verdict lines below
+                before = paths.trace(fwd.c, str(m.baseline_snapshot_id), src="10.10.10.10", dst="10.20.20.20", port=8080, label="baseline")
+                after = paths.trace(fwd.c, str(m.predicted_snapshot_id), src="10.10.10.10", dst="10.20.20.20", port=8080, label="predicted")
+                for line in paths.compare(before, after):
+                    log(line)
+            log("")
+            log("Drill down: workshop path --compare predicted (hop by hop) · workshop path --port 2222 --snapshot predicted ·")
+            log("            workshop nqe nqe/stale_bgp_advertisements.nqe --snapshot predicted · workshop data diff --device r1")
         else:
             log("")
             log("No predicted network was built, so there are no requirements or routing changes to show for this change.")
@@ -329,6 +380,10 @@ def _verify(settings: config.Settings, args) -> int:
         return EXIT["INCONCLUSIVE"]
     log("")
     log("Requirements on the real network, compared with what Predict said:")
+    for line in report_.requirement_table(result["rows"], compare=True):
+        log(line)
+    log("")
+    log("Each requirement in detail:")
     for line in report_.requirement_lines(result["rows"], compare=True):
         log(line)
     with contextlib.suppress(Exception):  # display only: the verdict above never depends on this
@@ -590,6 +645,89 @@ def _probe(settings: config.Settings, args) -> int:
         p = lab.probe(port)
         results.append((port, p.reachable, p.listener_up))
     for line in report_.probe_lines(results, lab.SERVICE_IP):
+        log(line)
+    return 0
+
+
+def _reset(settings: config.Settings, args) -> int:
+    from workshop import reset
+
+    banner(settings, "reset")
+    log(f"This puts you at the start of {reset.STARTS[args.to]['what']}.")
+    log("Your uncommitted work is kept in `git stash`; each router gets its baseline config merged back" + (" after the lab is rebuilt" if args.rebuild else " (--rebuild also clears lines added by hand)") + ".")
+    if not args.yes:
+        if not sys.stdin.isatty():
+            log("Add --yes to run it without a question.")
+            return EXIT["ERROR"]
+        if input("Go ahead? [y/N] ").strip().lower() not in ("y", "yes"):
+            log("Nothing changed.")
+            return 0
+    try:
+        reset.run(settings, args.to, log, rebuild=args.rebuild)
+    except Exception as exc:  # noqa: BLE001 - say what stopped it; every step before it is already done and safe to repeat
+        log(f"workshop reset: {exc}")
+        log("Every step is safe to run again: `workshop reset --to N` once more, or ask a proctor.")
+        return EXIT["ERROR"]
+    return 0
+
+
+def _path(settings: config.Settings, args) -> int:
+    from workshop import data, paths
+    from workshop.forward import Forward
+
+    evidence = settings.repo_root / args.evidence
+    try:
+        which = [(args.snapshot, data.snapshot_for(settings, evidence, args.snapshot))]
+        if args.compare:
+            which.append((args.compare, data.snapshot_for(settings, evidence, args.compare)))
+        with Forward(settings) as fwd:
+            traces = [paths.trace(fwd.c, snap, src=args.src, dst=args.to, port=args.port, label=label) for label, snap in which]
+    except data.DataError as exc:
+        log(f"workshop path: {exc}")
+        return EXIT["ERROR"]
+    except Exception as exc:  # noqa: BLE001 - Forward unreachable or slow: say so in one line
+        log(f"workshop path: Forward could not answer ({type(exc).__name__}: {str(exc)[:160]})")
+        return EXIT["ERROR"]
+    for t in traces:
+        for line in paths.render(t):
+            log(line)
+    if len(traces) == 2:
+        for line in paths.compare(*traces):
+            log(line)
+    log("")
+    log("Try: --port 2222 (blocked by r1's ACL) · --snapshot predicted · --compare predicted · --to 10.20.30.1 (a stale prefix)")
+    return 0
+
+
+def _nqe(settings: config.Settings, args) -> int:
+    from workshop import data, show, term
+    from workshop.forward import Forward
+
+    path = settings.repo_root / args.query
+    query = path.read_text() if args.query.endswith(".nqe") and path.is_file() else args.query
+    try:
+        snap = data.snapshot_for(settings, settings.repo_root / args.evidence, args.snapshot)
+        show.sdk(log, f'nqe.query(<{"the query in " + args.query if query is not args.query else "your query"}>, snapshot_id="{snap}")')
+        with Forward(settings) as fwd:
+            rows = [dict(r) for r in fwd.c.nqe.query(query, snapshot_id=snap)]
+    except data.DataError as exc:
+        log(f"workshop nqe: {exc}")
+        return EXIT["ERROR"]
+    except Exception as exc:  # noqa: BLE001 - a query error from Forward is the most useful thing to show
+        log(f"workshop nqe: Forward did not run the query: {str(exc)[:400]}")
+        return EXIT["ERROR"]
+    log("")
+    log(f"{len(rows)} row(s) on {args.snapshot} snapshot {snap}")
+    if rows:
+        cols = list(rows[0])
+        for line in term.table(cols, [[("" if r.get(c) is None else r.get(c)) for c in cols] for r in rows[:60]], max_width=90):
+            log(line)
+        if len(rows) > 60:
+            log(f"... and {len(rows) - 60} more")
+    log("")
+    for line in term.how_to_read("NQE is Forward's query language over its model of the network: every row is one thing the query "
+                                 "selected, and the columns are what its `select` asked for. A requirement of kind nqe passes or fails on "
+                                 "how many rows come back. Run the same query with --snapshot predicted to see the network that would result."):
         log(line)
     return 0
 

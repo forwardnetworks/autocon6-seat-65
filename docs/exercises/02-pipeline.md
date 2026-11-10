@@ -49,7 +49,7 @@ gh pr create --fill
 The **forward/predict** check starts on your PR. While it runs, read how it works:
 
 1. `.github/workflows/forward-predict.yml`: the CI job. It checks out `main`, takes **only** `candidate/r4-bgp.eos`
-   from your PR (a PR that touches anything else fails), and runs `workshop predict`. Code and requirements come from
+   from your PR (a PR that changes any other file ends in ERROR), and runs `workshop predict`. Code and requirements come from
    `main`, so a PR can't weaken its own test.
 2. `src/workshop/predict.py`: the gate, step by step:
    - the candidate must be in scope
@@ -57,11 +57,13 @@ The **forward/predict** check starts on your PR. While it runs, read how it work
    - the baseline tests must pass
    - then predict, and judge the **predicted** network
 3. `src/workshop/forward.py`: Forward Predict, called programmatically through the Forward Python SDK:
-   - `change_sets.create`
-   - `set_commands` for r4
-   - `predict_and_wait`
-   - then path searches and an NQE query against the predicted snapshot
-4. `src/workshop/evidence.py`: the evidence manifest. It records what was predicted, against which baseline, with which
+   - `change_sets.create` against your baseline snapshot
+   - `set_commands("r4", …)` with the exact candidate lines
+   - `commit`, then `predict`: Forward builds the network that *would* result, as a new snapshot
+   - `wait_until_processed`, then path searches and NQE queries against that predicted snapshot
+4. `src/workshop/evaluate.py`: the judge. Forward answers questions; this file decides what the answers mean against
+   `requirements/*.yml`. Forward never sees your YAML.
+5. `src/workshop/evidence.py`: the evidence manifest. It records what was predicted, against which baseline, with which
    result, and it's kept as the check's artifact. Deploy will insist on it later.
 
 ### Read the result (10 min)
@@ -75,6 +77,38 @@ The same judgement runs locally, too:
 workshop predict
 cat evidence/evidence.json
 ```
+
+### Predict by hand (5 min)
+
+The check is a CI job calling the SDK. Make the same calls yourself, one at a time, and watch each one:
+```
+python examples/predict_by_hand.py
+```
+Read the script first: create a change set on your baseline, `set_commands` for r4, `commit`, `predict`, wait, then trace
+the application flow on both the baseline and the predicted network. It's for learning: the PR check is still the gate.
+
+### Open the box: the evidence (5 min)
+
+The verdict is a file, and everything after this step trusts it. Read it:
+```
+jq '{status, candidate_sha256, baseline_snapshot_id, change_set_id, predicted_snapshot_id}' evidence/evidence.json
+jq '.results[] | {id, status, observed}' evidence/evidence.json
+```
+
+**The exact bytes.** The hash is taken over the candidate *after* comments and indentation are removed, because those are
+the bytes Forward predicted and NAPALM will send. That's why `sha256sum candidate/r4-bgp.eos` gives a different value:
+```
+python -c "from workshop import candidate as c; x = c.load('candidate/r4-bgp.eos'); print(x.sha256[:7]); print(x.text)"
+```
+
+**What Forward was actually asked.** Every SDK call and Forward's raw answer are saved next to the evidence:
+```
+P=$(jq -r .predicted_snapshot_id evidence/evidence.json)
+jq '.calls[] | {call, request}' evidence/forward-$P.json
+```
+Each flow requirement is a `path_search.get_paths` from the client to the service on one port. Each route or
+hygiene requirement is an `nqe.query`. Find `MGMT-DENY` and look at the path's hops: "blocked" means a hop on r1
+says the `CLIENT-IN` ACL denied it, not just "no path".
 
 ### Discuss (10 min)
 
@@ -104,4 +138,9 @@ A change went from a branch to a verdict without anyone reading router configs b
   ```
   Then `workshop predict --requirements requirements/mine.yml`. Your test runs against the predicted network like the
   others. (The PR check keeps using `main`'s requirements, which is the point of discussion above.)
+- **Try to cheat the gate.** On a scratch branch, change your candidate *and* delete `APP-EXISTING` from
+  `requirements/candidate.yml`, then open a PR. The check ends in ERROR before Forward is asked anything. Then look at the
+  job itself: `gh run list --workflow forward-predict.yml -L 3`, `gh run view <id> --log | grep -A6 "Take only the candidate"`,
+  and the artifact deploy will use later: `gh run download <id> -n forward-predict-evidence -D /tmp/ev && jq .git /tmp/ev/evidence.json`.
+  Close the PR when you're done.
 - `workshop explain` on this prediction: Forward AI's plain-language summary of what the change alters and affects.

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from workshop import data
+from workshop import data, term
 
 
 def _path(evidence: dict[str, Any] | None) -> str:
@@ -46,6 +46,42 @@ def requirement_lines(rows: list[dict[str, Any]], *, compare: bool = False) -> l
     return out
 
 
+def _asked(r: dict[str, Any]) -> str:
+    ev = r.get("evidence") or {}
+    if ev.get("intent"):
+        return {"PREFER_VIOLATIONS": "path search: any path that fails?", "PREFER_DELIVERED": "path search: the delivered path"}.get(ev["intent"], "path search")
+    if "rows" in ev:
+        return f"NQE query ({len(ev['rows'] or [])} rows)"
+    return "–"
+
+
+def _answer(r: dict[str, Any]) -> str:
+    """Forward's answer in a few words: for an NQE requirement, the rows themselves rather than their JSON."""
+    rows = (r.get("evidence") or {}).get("rows")
+    if isinstance(rows, list) and "row(s) from" in str(r.get("expected", "")):
+        cells = ["/".join(str(v) for v in list(dict(row).values())[:2] if v not in (None, "")) for row in rows[:3]]
+        return f"{len(rows)} row(s)" + (": " + ", ".join(cells) if cells else "") + (" …" if len(rows) > 3 else "")
+    return str(r.get("observed", ""))
+
+
+def requirement_table(rows: list[dict[str, Any]], *, compare: bool = False, on: str = "this snapshot") -> list[str]:
+    """Every requirement in one table: the question Forward was asked, what it had to be, what Forward answered, the verdict."""
+    if compare:
+        body = [[r.get("id", ""), _asked(r), str(r.get("predicted", "")), str(r.get("collected", "")),
+                 "as predicted" if r.get("predicted") == r.get("collected") else "DIFFERENT", str(r.get("observed", ""))] for r in rows]
+        out = term.table(["requirement", "asked Forward", "predicted", "collected", "", "Forward saw on the real network"], body, max_width=48)
+        how = ("each row is one requirement from requirements/candidate.yml. 'predicted' is Predict's verdict on the model of the "
+               "change; 'collected' is the same question asked again of a fresh collection of the real network. MATCH needs every row "
+               "'as predicted' and the live probes to agree.")
+    else:
+        body = [[str(r.get("status", "")), r.get("id", ""), _asked(r), str(r.get("expected", "")), _answer(r)] for r in rows]
+        out = term.table(["verdict", "requirement", "asked Forward", "must be", "Forward answered"], body, max_width=46)
+        how = (f"one row per requirement, judged on {on}. 'asked Forward' is the question sent through the SDK: a path search for "
+               "a flow, an NQE query for routes and hygiene. 'must be' comes from the YAML; 'Forward answered' is what came back. "
+               "The verdict is evaluate.py comparing the two: Forward answers, the requirements judge.")
+    return out + term.how_to_read(how)
+
+
 def routing_table(client, before: str, after: str):
     """Forward's routing diff as a ``data.Table``, or None when Forward cannot answer just now (display only)."""
     try:
@@ -59,11 +95,29 @@ def routing_lines(table, *, limit: int = 8) -> list[str]:
     if table is None:
         return ["  (the routing changes are not available just now: run `workshop data diff` in a moment)"]
     out = [f"  {table.summary}"]
-    for row in table.rows[:limit]:
-        out.append(f"    {row.get('device') or ''!s:<4} {row.get('prefix') or ''!s:<16} {row.get('change') or ''!s:<8} was {row.get('before')}  now {row.get('after')}")
+    if table.rows:
+        out += term.table(["device", "prefix", "change", "before", "after"],
+                          [[r.get("device") or "", r.get("prefix") or "", r.get("change") or "", r.get("before") or "–", r.get("after") or "–"]
+                           for r in table.rows[:limit]], max_width=40)
     if len(table.rows) > limit:
         out.append(f"    ... and {len(table.rows) - limit} more: workshop data diff")
+    out += term.how_to_read("Forward's routing analysis compares the two snapshots' routing tables, device by device: a route "
+                            "'removed' means that router no longer has a way to that prefix. Empty means no route changed anywhere.")
     return out
+
+
+def service_routes(client, snapshot_id: str) -> list[str]:
+    """The route to the service prefix on every router: the table the baseline's requirements stand on."""
+    try:
+        t = data.routes(client, snapshot_id, prefix="10.20.20.0/24")
+    except Exception:  # noqa: BLE001 - display only
+        return ["  (the routing tables are not available just now: workshop data routes --prefix 10.20.20.0/24)"]
+    rows = [[r.get("device", ""), r.get("prefix", ""), str(r.get("protocol", "")).lower().replace("direct_connected", "connected").replace("_", " "),
+             r.get("via") or r.get("interface") or ""] for r in t.rows]
+    return ([f"  {t.summary}"] + term.table(["device", "prefix", "learned by", "next hop"], rows)
+            + term.how_to_read("this is how every router reaches the service's subnet today. r4 has it connected and advertises it "
+                               "with a BGP network statement; r2 and r3 learn it from r4; r1 prefers the path through r2. "
+                               "Drill down: workshop data routes, workshop path, workshop nqe nqe/stale_bgp_advertisements.nqe"))
 
 
 def inventory_line(client, snapshot_id: str) -> str:
@@ -204,6 +258,24 @@ def status_lines(baseline: dict[str, Any] | None, deploy: dict[str, Any] | None,
            else "predict it (a pull request, or `workshop predict`)" if not deploy else "workshop verify" if not verify or verify.get("outcome") == "INCOMPLETE"
            else "restore and go again: `workshop restore && workshop baseline`")
     return out + ["", f"Next: {nxt}", "(the bracketed names are NAF Framework blocks: docs/exercises/framework.md)"]
+
+
+def by_hand_lines(env: dict[str, str]) -> list[str]:
+    """What `workshop baseline prepare` hands you: the three steps, with the real commands."""
+    return ["", "Ready. Now take the baseline yourself, in three steps (the variables are in by-hand.sh):", "",
+            f"  source {env['S']}/by-hand.sh", "",
+            "  1. Collect: run Forward's headless collector against your four routers (about 15 seconds):",
+            '       (cd $S && INSTALL4J_ADD_VM_PARAMS=-Xmx1g $COLLECTOR createsnapshot --data-sources "$SOURCES" --snapshot-generated-dir "$SNAPDIR" --snapshot-base-name baseline --threads 4 > $S/collect-by-hand.log 2>&1)',
+            '       grep -E "finished with|Collected devices|Saved snapshot zip|ERROR" $S/collect-by-hand.log',
+            "     It logs in over SSH, runs the show commands Forward needs, and writes one ZIP (ls -la $SNAPDIR). The full log is",
+            "     about 1,600 lines; the grep shows each router finishing, the devices collected, and where the ZIP went.", "",
+            "  2. Upload it with the Forward Python SDK, with this note (later steps find your baseline by it):",
+            f"       NOTE={env['NOTE']}",
+            "     The code is in docs/exercises/01-baseline.md ('Take the baseline by hand'): snapshots.upload, then wait_until_processed.", "",
+            "  3. Judge it:  workshop baseline judge",
+            "     It checks the snapshot is a baseline of this lab, that Forward's copy of the four configs matches the note, and that the",
+            "     routers haven't changed since; then it judges the requirements. A wrong note or a stale ZIP is refused, with the reason.", "",
+            "Stuck? `workshop baseline` does all three in one go."]
 
 
 def up_close() -> list[str]:

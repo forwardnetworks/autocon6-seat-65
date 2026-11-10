@@ -55,6 +55,16 @@ A red check says a requirement failed. Forward can also show you **what the chan
   You should see something like "3 routes removed on r1, r2, r3 for 10.20.20.0/24". Look at the **before** column: those are the routes r1 uses to reach the service today. The change is on r4, and the damage is on three routers.
 - Narrow it: `workshop data diff --device r1`, or `workshop data routes --prefix 10.20.20.0/24` for the baseline's view. Add `--json` for exactly what Forward returned.
 
+### Follow the packet (5 min)
+
+After a local `workshop predict` of this change, trace the application on both networks and compare:
+```
+workshop path --compare predicted
+```
+The baseline table shows r1 → r2 → r4 with the route each router used. The predicted one stops early, and **What changed**
+names the router whose route disappeared and what it uses instead. Then try `workshop path --snapshot predicted --port 2222`:
+is the management port still blocked when the service is gone?
+
 ### Investigate (20 min)
 
 Work out what changed and why, using as many of these as you like:
@@ -96,3 +106,14 @@ A real class of mistake was caught in a pull request, before deploy, by a test s
 - Another "looks safe" change: retire only `10.20.20.0/24`, the one statement that *isn't* stale. Guess which tests
   fail, then check with `workshop predict`.
 - `cat evidence/evidence.json` for the failed prediction: find the predicted snapshot id and the change set.
+- **Why one query isn't enough.** Run the hygiene query yourself on the *predicted* network of this bad change:
+  ```
+  P=$(jq -r .predicted_snapshot_id evidence/evidence.json)
+  python -c "
+  import os; from forward_sdk import ForwardClient
+  c = ForwardClient.from_env(network_id=os.environ['FORWARD_NETWORK_ID'])
+  print(list(c.nqe.query(open('nqe/stale_bgp_advertisements.nqe').read(), snapshot_id='$P')))"
+  ```
+  Zero rows: no stale advertisements left, so `STALE-CLEARED` passes. If that query were your only check, this change
+  would have been approved and the service would be down. The behavioral tests (`APP-EXISTING`, `PATH-SERVICE`) are what
+  caught it.

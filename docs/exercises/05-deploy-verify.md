@@ -23,7 +23,26 @@ If the confirmation doesn't match, deploy refuses and prints the value it expect
 - your baseline is still the latest in Forward
 - the routers haven't drifted from it
 
-It then sends r4 exactly the lines Predict evaluated, over NAPALM, and reads them back. NAPALM stages them in a configuration session, so the router itself tells you the diff (`-` lines removed, `+` added) before the commit makes it live. A line the router refuses stops the whole session, so a change never half applies.
+It then sends r4 exactly the lines Predict evaluated, over NAPALM, and reads them back. NAPALM stages them in an EOS
+configuration session, asks the router for the session's diff (`-` lines removed, `+` added), and commits the session.
+A line the router refuses aborts the whole session, so a change never half applies. Deploy prints the router's diff
+after the commit. Nobody approves it there: the approval was the merged pull request, bound to these exact bytes.
+
+**Open the box first (3 min, before you deploy).** Do by hand what NAPALM is about to do, and throw it away:
+```
+docker exec -it clab-autocon6-r4 Cli
+enable
+configure session preview
+router bgp 65004
+address-family ipv4
+no network 10.20.30.0/24
+show session-config diffs
+abort
+```
+`show session-config diffs` is the router's own diff of a change that isn't live yet; `abort` discards it. NAPALM's
+`compare_config` is that command, and `commit_config` is `commit` instead of `abort`.
+
+Also try the guard: `workshop deploy --pr <number> --confirm 0000000` refuses and prints the value it expects.
 
 ### Verify (10 min)
 
@@ -43,9 +62,18 @@ prediction` line is the thing to look for.
 
 **MATCH** closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
 
+**Open the box: the records.** Deploy and verify each leave a file:
+```
+S=$WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID
+jq '{lines, device_diff, readback_problems}' $S/deploy.json      # what was sent, and the router's own diff
+jq '.rows[] | {id, predicted, collected}' $S/verify.json          # each requirement: predicted against collected
+docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 8080; echo "exit $?"   # the probe verify ran: 0 means open
+docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 2222; echo "exit $?"   # non-zero: blocked
+```
+
 ### What you just proved
 
-The model said which tests would pass, and the real network, collected again, agreed. That is the evidence that lets you trust the next prediction. `MATCH` isn't only a pass, it's a measurement of how good the prediction was.
+The model said which tests would pass, and the real network, collected again, agreed. That is the evidence that lets you trust the next prediction. Be precise about what `MATCH` compares: each requirement's verdict (PASS or FAIL) predicted against collected, plus the live probes. It does not compare every route; `workshop data diff --against post` below is how you look at those.
 
 **At work:** this is the part you can keep even if you change every tool: write down what you expect, deploy, and compare.
 
@@ -57,6 +85,8 @@ The model said which tests would pass, and the real network, collected again, ag
 
 - **Make it drift.** Change r4 by hand (`docker exec -it clab-autocon6-r4 Cli`, then `enable`, `configure`,
   `router bgp 65004`, `address-family ipv4`, `network 10.20.50.0/24`), then run `workshop verify` again. What does it
-  say, and which test catches the hand edit? A deploy started now would refuse too: the routers no longer match the
-  baseline that Predict used. Put things back with `workshop restore && workshop baseline`.
+  say, and which test catches the hand edit? Note what *didn't* catch it: the PR check never touches your routers, so it
+  only sees what was collected. Verify and deploy are the steps that read the live network. Put things back with
+  `workshop restore && workshop baseline` (restore is the one change path with no prediction: it is the break-glass step,
+  and that's why a new baseline must follow).
 - `workshop ask --prompt post-still-stale`: ask Forward AI about the network after the change.
