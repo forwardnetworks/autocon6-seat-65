@@ -12,7 +12,7 @@ of it is `requirements/candidate.yml`.
 ## What an agent may change
 
 - **Only `candidate/r4-bgp.eos`.** The pull request check refuses a PR that changes anything else, and the candidate
-  itself may only contain `router bgp 65004` / `address-family ipv4` followed by `[no] network <prefix>` lines.
+  itself may only contain `router bgp 65004` / `address-family ipv4` followed by `no network <prefix>` lines (adding a network is refused).
   `workshop predict changeset` checks that before calling Forward.
 - Do not edit `requirements/`, `src/`, `lab/`, `.github/` or `.devcontainer/`. The check runs the code and
   requirements from `main`, not from the pull request, so edits there don't change the verdict. They just fail the PR.

@@ -25,8 +25,21 @@ The workshop calls libraries, not command lines. You can always use the command 
 Forward **answers questions**; `evaluate.py` **judges** them against your requirements. A person approves the pull
 request. The pieces are kept apart so you can see which one decided what.
 
-Exit codes, for every step that gives a verdict: PASS 0, FAIL 1, ERROR 2, INCONCLUSIVE 3, STALE 4. Each step keeps its
+Exit codes, for every step that gives a verdict:
+
+| Status | Exit | Means |
+|---|---|---|
+| PASS | 0 | every requirement had positive evidence; the only verdict that can deploy |
+| FAIL | 1 | a requirement's evidence contradicts it |
+| ERROR | 2 | no answer we trust (a Forward error, an out-of-scope candidate, a refused gate) |
+| INCONCLUSIVE | 3 | no evidence either way (no path found, a timeout) |
+| STALE | 4 | true once, but about a baseline, file or router state that has changed since |
+
+Who raises each, and exactly when: [how it works, section d](how-it-works.md#d-the-five-status-words). Each step keeps its
 result in `$WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID/steps/`; a step whose input is missing tells you which step to run first.
+
+How Predict models a change, what each requirement kind really checks, and where the gates stop:
+[how it works, and where it stops](how-it-works.md).
 
 ---
 
@@ -76,7 +89,7 @@ before sending it again. Evidence: the snapshot id.
 
 ### `workshop baseline wait`
 **SDK** `snapshots.wait_until_processed(id)`, showing Forward's queue position and processing stage as it goes. Forward
-builds its model: every route, ACL and path. Evidence: the devices Forward modelled. If it runs out of time, run it again:
+builds its model: the modelled forwarding behaviour of the collected devices. Evidence: the devices Forward modelled. If it runs out of time, run it again:
 it waits for the same upload.
 
 ### `workshop baseline check`

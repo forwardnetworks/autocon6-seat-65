@@ -13,9 +13,17 @@ exactly why.*
 
 In r4's configuration, all three `network` statements look alike. Retire **all** of them:
 
-1. **Start from `main`:** click the branch name at the bottom-left → pick `main`. Then click it again → **Create new
-   branch…** → `retire-all`.
-2. **Edit** `candidate/r4-bgp.eos` so it ends with:
+1. **Start from `main`.** Your new branch must start from `main`, not from `retire-one`. Click the branch name at the
+   bottom-left and pick `main` first. Then click it again → **Create new branch…** → `retire-all`.
+   Using the lab page instead? Switch to `main` first all the same. **Open pull request** makes a fresh branch only when
+   you're on `main`; on any other branch it adds your commit to that branch (and its PR).
+2. **Edit** `candidate/r4-bgp.eos`. Under `address-family ipv4`, add three lines:
+   ```
+         no network 10.20.20.0/24
+         no network 10.20.30.0/24
+         no network 10.20.40.0/24
+   ```
+   Save. The end of the file now reads:
    ```
    router bgp 65004
       address-family ipv4
@@ -23,6 +31,7 @@ In r4's configuration, all three `network` statements look alike. Retire **all**
          no network 10.20.30.0/24
          no network 10.20.40.0/24
    ```
+   (The same lines are in `solutions/bad-candidate.eos`.)
 3. **Source Control:** message `Retire r4's network statements`, then **Commit** and **Publish Branch**.
 4. **GitHub Pull Requests:** **Create Pull Request** from `retire-all` into `main`.
 
@@ -34,13 +43,17 @@ git switch main && git switch -c retire-all
 git commit -am "Retire r4's network statements" && git push -u origin HEAD && gh pr create --fill
 ```
 </details>
+
 It's valid EOS and a three-line diff. A syntax check or a linter would pass it.
 
 ### Watch it fail, before deploy (5 min)
 
-The **forward/predict** check goes red. Your routers weren't touched:
+The **forward/predict** check goes red. This time it's not "not done yet": `APP-EXISTING`, `ROUTE-SERVICE` and
+`PATH-SERVICE` fail. The line you changed is on r4, but the damage lands on r1, where the client's traffic enters.
+
+Your routers weren't touched. `workshop probe` sends real packets on the real network, not Forward's model:
 ```
-workshop probe      # 8080 is still open on the real network
+workshop probe      # 8080 is still open
 ```
 
 ### See the data behind the red check (5 min)
@@ -48,8 +61,12 @@ workshop probe      # 8080 is still open on the real network
 A red check says a requirement failed. Forward can also show you **what the change did to the routing tables**, as data, without anyone opening Forward:
 
 - On the **Your lab** page, the **Predict** step has a **What Forward says** panel: a sentence, then a table of the routes that would change.
-- Or in the terminal (use the PR's prediction, or run the predict steps first: `workshop predict changeset`, `run`, `check`):
+- Or in the terminal. First run the three predict steps on this branch, so your Codespace has this change's
+  prediction (the PR check's prediction lives on GitHub):
   ```
+  workshop predict changeset
+  workshop predict run
+  workshop predict check
   workshop data diff
   ```
   You should see something like "3 routes removed on r1, r2, r3 for 10.20.20.0/24". Look at the **before** column: those are the routes r1 uses to reach the service today. The change is on r4, and the damage is on three routers.
@@ -67,22 +84,31 @@ is the management port still blocked when the service is gone?
 
 ### Investigate (15 min)
 
-Work out what changed and why, using as many of these as you like:
+Work out what changed and why, in this order:
 
-- **The check summary:** which tests fail, and what Forward observed on the predicted network. Compare it with your
-  `retire-one` PR: what's different?
-- **The Your lab tab:** run the predict steps locally first. The tab then shows the service path in red, r1 with no
-  route to `10.20.20.0/24`, and which advertisements the change retires.
-- **The forward/advice check:** Forward AI's Reviewer summarizes what the change alters and what it would affect.
-- **`workshop explain`**, after the local predict steps: adds the Troubleshooter's answer.
+1. **The check summary** (PR → **Details** next to forward/predict → **Summary**): which tests fail, and what Forward
+   observed on the predicted network. If you have a `retire-one` PR, compare: what's different?
+2. **`workshop data diff`** (you ran it above): which routes disappear, and on which routers.
+3. **The question.** Why does removing a `network` statement on r4 take a route away from r2, r3 and r1 (two hops
+   away)? Which of the three statements carried the service, and how could you have known before writing the change?
 
-**Find the line responsible.** Why does removing a `network` statement on r4 take a route away from r2, r3 and r1 (two hops away)? Check the routing changes Forward lists.
-Which of the three statements carried the service, and how could you have known before writing the change?
+<details><summary>Answer</summary>
 
-### Discuss (5 min)
+`network 10.20.20.0/24` carried the service. It's the one statement with a connected route behind it (the subnet on
+r4's service-facing interface), so it's the only one r4 actually advertised. Retire it and r4 stops telling r2 and r3
+about the service; they stop telling r1; r1 has no route left. You could have known from exercise 1: the NQE query
+listed only `10.20.30.0/24` and `10.20.40.0/24` as stale, and `workshop data routes --prefix 10.20.20.0/24` showed r4
+with it connected.
+</details>
 
-Forward AI helped, but did it get everything right? Asked with no context, a chat may blame the router where traffic
-drops rather than the change that caused it:
+The **Your lab** tab shows the same thing once the local predict steps have run: the service path in red, r1 with no
+route to `10.20.20.0/24`, and which advertisements the change retires.
+
+### Optional: what does Forward AI say? (instructor demo)
+
+The **forward/advice** check on your PR is Forward AI's Reviewer: what the change alters and what it would affect.
+`workshop explain` adds the Troubleshooter's answer. Did it get everything right? Asked with no context, a chat may
+blame the router where traffic drops rather than the change that caused it:
 ```
 workshop ask --prompt predicted-why-broken
 workshop ask --prompt predicted-r1-routes
@@ -95,10 +121,11 @@ A real class of mistake was caught in a pull request, before deploy, by a test s
 
 **At work:** think of the last change you approved because the diff looked fine. A check like this asks the question the diff can't.
 
-**Behind?** Do steps 1 to 3 (make the change, open the PR, see it go red) and read the check's summary. Skip the AI discussion.
+**Behind?** Make the change, open the PR, see it go red, and read the check's summary and the answer above. Skip Forward AI.
 
 ## Finished early?
 
+- **How the requirements decide**, exactly (and how a check can pass for the wrong reason): [How it works, §c](how-it-works.md).
 - **Predict them all.** `workshop matrix` predicts four ways of retiring r4's statements (about two minutes) and
   prints a grid of which tests each one passes. *Before you run it,* write down which rows you expect to pass
   everything. Then compare. Add `--all` for all seven combinations. Only one row is fully green: why is "retire

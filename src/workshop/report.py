@@ -256,7 +256,7 @@ def status_lines(baseline: dict[str, Any] | None, deploy: dict[str, Any] | None,
         out.append("  Verify    not yet   run `workshop verify probe` after a deploy   [Collector + Observability]")
     nxt = ("workshop baseline collect" if not baseline else "edit candidate/r4-bgp.eos, then `workshop predict changeset` or open a pull request" if not candidate_changes
            else "predict it (a pull request, or `workshop predict changeset`)" if not deploy else "workshop verify probe" if not verify or verify.get("outcome") == "INCOMPLETE"
-           else "restore and go again: `workshop restore && workshop baseline`")
+           else "restore and go again: `workshop restore`, then the baseline steps from `workshop baseline collect`")
     return out + ["", f"Next: {nxt}", "(the bracketed names are NAF Framework blocks: docs/exercises/framework.md)"]
 
 
@@ -271,7 +271,7 @@ def by_hand_lines(env: dict[str, str]) -> list[str]:
             "     about 1,600 lines; the grep shows each router finishing, the devices collected, and where the ZIP went.", "",
             "  2. Upload it with the Forward Python SDK, with this note (later steps find your baseline by it):",
             f"       NOTE={env['NOTE']}",
-            "     The code is in docs/exercises/01-baseline.md ('Take the baseline by hand'): snapshots.upload, then wait_until_processed.", "",
+            "     The code is in examples/upload_by_hand.py: snapshots.upload, then wait_until_processed.", "",
             "  3. Judge it:  workshop baseline judge",
             "     It checks the snapshot is a baseline of this lab, that Forward's copy of the four configs matches the note, and that the",
             "     routers haven't changed since; then it judges the requirements. A wrong note or a stale ZIP is refused, with the reason.", "",

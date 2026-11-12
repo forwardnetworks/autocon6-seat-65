@@ -7,6 +7,7 @@ working tree -- and only after every gate holds. Any failed gate stops before a 
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import re
 from collections.abc import Callable
@@ -44,12 +45,16 @@ def gates(settings: Settings, m: Manifest, fwd: Forward, *, check_github: bool =
         raise Refused("ERROR", f"the evidence is {m.status} ({m.mode}); only a live PASS can be deployed. Fix the change, predict again, and deploy the evidence that passes")
     if m.lab_id != settings.lab_id or m.network_id != settings.network_id:
         raise Refused("ERROR", f"the evidence is for lab {m.lab_id} / network {m.network_id}, not this lab")
+    sent = "\n".join(candidate.normalize(m.candidate_text)) + "\n"
+    if hashlib.sha256(sent.encode()).hexdigest() != m.candidate_sha256:
+        raise Refused("ERROR", "the evidence's candidate text does not match its own hash: it was edited after Predict; predict again")
     merged = candidate.load(settings.repo_root / m.candidate_path)
     if merged.sha256 != m.candidate_sha256:
         raise Refused("STALE", f"{m.candidate_path} changed since it was predicted; open a PR so the new change is predicted")
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
     if reqs.sha256 != m.requirements_sha256:
-        raise Refused("STALE", "requirements/candidate.yml changed since the prediction; re-run the check")
+        raise Refused("STALE", "the evidence was judged against different requirements than requirements/candidate.yml on this branch "
+                               "(it changed since the prediction, or the prediction used another file): re-run the check")
     if check_github and m.git.get("pr"):
         pr = github.merged_pr(int(m.git["pr"]))
         if pr.head_sha != m.git.get("head_sha"):

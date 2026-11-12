@@ -475,7 +475,8 @@ def _deploy(settings: config.Settings, args) -> int:
             evidence = Path(args.evidence)
         if step == "gates":
             deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github)
-            log("Every gate holds; nothing was sent. Next: workshop deploy render (the same flags), then apply")
+            src = f"--pr {args.pr}" if args.pr else f"--evidence {args.evidence}"
+            log(f"Every gate holds; nothing was sent. Next: workshop deploy render {src} (Forward's change next to r4's own dry run), then apply")
             return 0
         if step == "render":
             from workshop.evidence import Manifest
@@ -499,7 +500,7 @@ def _deploy(settings: config.Settings, args) -> int:
     except Exception as exc:  # noqa: BLE001 - render's dry run or Forward: a sentence, not a traceback
         log(f"workshop deploy {step or ''}: {type(exc).__name__}: {exc}")
         return EXIT["ERROR"]
-    log("deployed. Next: workshop verify")
+    log("deployed. Next: workshop verify probe")
     return 0
 
 
@@ -515,7 +516,7 @@ def _verify(settings: config.Settings, args) -> int:
     if not evidence:
         deployed = settings.state_dir / "deploy.json"
         if not deployed.is_file():
-            log("nothing deployed yet: run workshop deploy first (or pass --evidence)")
+            log("nothing deployed yet: run the deploy steps first, `workshop deploy gates --pr N --confirm <sha7>` (or pass --evidence)")
             return EXIT["ERROR"]
         evidence = json.loads(deployed.read_text())["evidence"]
     from workshop import show, steps
@@ -599,12 +600,12 @@ def _snapshot_for(settings: config.Settings, which: str, evidence: str) -> str:
         path = Path(evidence)
         if path.is_file() and Manifest.read(path).predicted_snapshot_id:
             return Manifest.read(path).predicted_snapshot_id
-        raise LookupError(f"no predicted snapshot in {evidence}: run workshop predict")
+        raise LookupError(f"no predicted snapshot in {evidence}: run the predict steps (`workshop predict changeset`, `run`, `check`)")
     if which == "post":
         path = settings.state_dir / "verify.json"
         if path.is_file():
             return str(json.loads(path.read_text())["post_snapshot_id"])
-        raise LookupError("no post-change snapshot yet: run workshop verify")
+        raise LookupError("no post-change snapshot yet: run the verify steps, starting with `workshop verify probe`")
     raise LookupError(f"unknown snapshot {which!r}: use baseline, predicted, post or a snapshot id")
 
 
@@ -673,7 +674,7 @@ def _propose(settings: config.Settings, args) -> int:
         with Forward(settings) as fwd:
             baseline = fwd.latest_baseline()
             if baseline is None:
-                log("no baseline yet: run workshop baseline")
+                log("no baseline yet: run the baseline steps, starting with `workshop baseline collect`")
                 return EXIT["STALE"]
             log("asking Predict's config assist to draft r4's change from intent.md ...")
             proposal = ai.author(fwd, lab_id=settings.lab_id, baseline_id=str(baseline.id), goal=ai.intent(settings.repo_root))
@@ -702,7 +703,7 @@ def _explain(settings: config.Settings, args) -> int:
 
     path = Path(args.evidence)
     if not path.is_file():
-        log(f"no evidence at {path}: run workshop predict first")
+        log(f"no evidence at {path}: run the predict steps first (`workshop predict changeset`, `run`, `check`)")
         return EXIT["ERROR"]
     m = Manifest.read(path)
     banner(settings, "explain")
@@ -763,7 +764,7 @@ def _agent(settings: config.Settings, args) -> int:
     with Forward(settings) as fwd:
         baseline = fwd.latest_baseline()
         if baseline is None:
-            log("no baseline yet: run workshop baseline")
+            log("no baseline yet: run the baseline steps, starting with `workshop baseline collect`")
             return EXIT["STALE"]
         outcome = agent.run(settings, fwd, inputs, baseline_id=str(baseline.id), max_iterations=args.max_iterations,
                             log=log, out_dir=Path(args.out), fresh=args.fresh)
@@ -802,10 +803,15 @@ def _ui(settings: config.Settings, args) -> int:
 
 
 def _restore(settings: config.Settings, args) -> int:
-    from workshop import restore
+    from workshop import deploy, restore
 
     banner(settings, "restore")
-    restore.run(settings, log)
+    try:
+        with deploy.lab_lock(settings):  # never alongside a deploy or another restore
+            restore.run(settings, log)
+    except deploy.Refused as exc:
+        log(f"NOT RESTORED ({exc.status}): {exc}")
+        return EXIT[exc.status]
     return 0
 
 

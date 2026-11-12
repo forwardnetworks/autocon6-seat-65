@@ -11,8 +11,13 @@
 ### Correct the change (10 min)
 
 On your `retire-all` branch (check the bottom-left), correct `candidate/r4-bgp.eos` so it retires only the stale
-advertisements. Then, in **Source Control**, commit with the message `Keep the live service advertisement` and press
-**Sync Changes** to push. VS Code asks you to confirm it: press **OK**.
+advertisements: delete the `no network 10.20.20.0/24` line and keep these two under `address-family ipv4`:
+```
+      no network 10.20.30.0/24
+      no network 10.20.40.0/24
+```
+Save. (The answer is in `solutions/fixed-candidate.eos`.) Then, in **Source Control**, commit with the message
+`Keep the live service advertisement` and press **Sync Changes** to push. VS Code asks you to confirm it: press **OK**.
 
 <details><summary>Or in the terminal</summary>
 
@@ -25,7 +30,8 @@ The **forward/predict** check re-runs by itself. This is a regression test on ev
 
 ### Prove it (10 min)
 
-When it's green, read the summary again. Confirm each of these:
+When it's green, open the check summary again (PR → **Details** next to forward/predict → **Summary**). All five rows
+in its table should be **PASS**:
 
 - The required reachability still works (APP-EXISTING)
 - The prohibited port is still blocked (MGMT-DENY)
@@ -35,10 +41,19 @@ When it's green, read the summary again. Confirm each of these:
 
 ### Approve (10 min)
 
-Merge the pull request: in the **GitHub Pull Requests** panel, open it and press **Merge Pull Request** (choose
-**Squash and Merge**). The same button is on the PR's page on github.com. The repository only allows the merge once
-**forward/predict** has passed. Try merging `retire-one` to see the refusal, then close `retire-one`.
-Wait for the checks to finish: GitHub can take a few minutes to start them, so press **Refresh** at the top of the pull request page now and then until it says **2 successful checks**. Pressing **Merge Pull Request** opens a form with the commit message; scroll down and press **Squash and Merge** to finish. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab). That also switches you back to `main`.
+In this repository, merging is the approval. There's no separate approve button here; in real life you'd also require
+a reviewer. The repository only allows the merge once **forward/predict** has passed.
+
+1. Wait for **forward/predict** to go green. GitHub can take a minute or two to start it: press **Refresh** at the top
+   of the pull request page now and then. Merge as soon as forward/predict is green. **forward/advice** is advisory
+   (Forward AI's review), can take a few minutes, and isn't required.
+2. In the **GitHub Pull Requests** panel, open the PR and press **Merge Pull Request**. (The same button is on the
+   PR's page on github.com.)
+3. It opens a form with the commit message. Scroll down and press **Squash and Merge**. Squash means your branch's
+   commits become one commit on `main`.
+4. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab).
+   That also switches you back to `main`.
+5. Optional: if you have a `retire-one` PR from exercise 2, try merging it to see the refusal, then close it.
 
 ### What you just proved
 

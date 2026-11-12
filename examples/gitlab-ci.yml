@@ -1,0 +1,37 @@
+# UNTESTED EXAMPLE. Nobody has run this. It's the three predict steps from
+# .github/workflows/forward-predict.yml (the seat template's workflow), written for GitLab CI, to show the shape.
+#
+# One real difference from the GitHub workflow: a GitLab merge request pipeline runs the MR's own copy of
+# this file. The `git checkout` below takes the code and requirements from the target branch, but the MR
+# can still edit this job. If that matters to you (it should), keep the pipeline definition somewhere the
+# MR can't change, such as a CI/CD configuration file in another project. Not tested here either.
+#
+# Variables (masked, set in the project's CI/CD settings): FORWARD_URL, FORWARD_USERNAME, FORWARD_PASSWORD,
+# FORWARD_NETWORK_ID, WORKSHOP_LAB_ID.
+#
+# `workshop deploy --pr` only knows GitHub. With this, you'd deploy the job's evidence artifact with
+# `workshop deploy ... --evidence evidence.json --no-github`, which skips the merged-and-checked gate.
+
+forward-predict:
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    WORKSHOP_STATE_DIR: $CI_PROJECT_DIR/.workshop-state
+    GIT_DEPTH: "0"
+  script:
+    # Code and requirements from the target branch; only candidate/ from the merge request.
+    - git fetch origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+    - outside=$(git diff --name-only "FETCH_HEAD...$CI_COMMIT_SHA" | grep -v '^candidate/' || true)
+    - if [ -n "$outside" ]; then echo "changes outside candidate/:" $outside; exit 2; fi
+    - git checkout FETCH_HEAD -- src requirements nqe pyproject.toml uv.lock
+    - uv sync --frozen --no-dev
+    # Each step exits 0 when it can continue, and 1-4 (FAIL, ERROR, INCONCLUSIVE, STALE) when it stops.
+    # Any non-zero code fails the job, so only PASS is green.
+    - uv run --frozen workshop predict changeset --head-sha "$CI_COMMIT_SHA" --out evidence
+    - uv run --frozen workshop predict run --head-sha "$CI_COMMIT_SHA" --out evidence
+    - uv run --frozen workshop predict check --head-sha "$CI_COMMIT_SHA" --out evidence
+  artifacts:
+    when: always
+    paths: [evidence/]
+    expire_in: 14 days

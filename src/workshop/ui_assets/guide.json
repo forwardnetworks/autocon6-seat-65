@@ -477,11 +477,20 @@
   "Predict": "The Forward feature that builds that model and checks the requirements on it.",
   "candidate": "The file holding your proposed change.",
   "eAPI": "Arista's HTTPS interface for configuring and reading a router.",
-  "netlab": "The tool that describes the lab (routers, links, addresses) and has containerlab start it.",
+  "netlab": "The tool that describes the lab (routers, links, addresses), has containerlab start it, and configures each router once at bring-up.",
   "containerlab": "The tool that runs network devices as containers.",
   "drift": "The network no longer matching what was predicted, for example because someone edited a router by hand.",
   "hash": "A short fingerprint of a file. If one character of the change differs, the hash differs.",
-  "collector": "Forward's tool that logs in to the devices and reads their configuration and state."
+  "collector": "Forward's tool that logs in to the devices and reads their configuration and state.",
+  "fingerprint": "One hash of all four routers' configs, taken live and again from the snapshot, to prove nothing changed between collecting and judging.",
+  "change set": "The lines of your change, held in Forward against the baseline, for Predict to apply to its model.",
+  "evidence": "The file (evidence/evidence.json) recording what was predicted, against which baseline, and the verdict. Deploy insists on it.",
+  "pull request": "A request to merge your branch into main. It is where the review happens and the forward/predict check runs.",
+  "branch": "Your own line of work in Git. main stays as it is until a change is merged.",
+  "commit": "A saved, named version of your change on a branch.",
+  "squash merge": "Merging a pull request so all of its branch's commits become one commit on main.",
+  "NAPALM": "The Python library that makes every change to a router after bring-up, through an EOS configuration session.",
+  "path search": "Forward tracing one flow through its model, hop by hop, with the ACL and route behind each decision."
  },
  "pace": {
   "date": "2026-11-16",

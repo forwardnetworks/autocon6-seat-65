@@ -1,7 +1,8 @@
 """The attendee's proposed change: one EOS CLI file, predicted and deployed as the same bytes.
 
-``candidate/r4-bgp.eos`` may only retire or add BGP ``network`` statements on r4. The scope check
-refuses anything else, so a pull request cannot slip an unrelated edit past the gate, and the
+``candidate/r4-bgp.eos`` may only retire BGP ``network`` statements on r4 (``no network <prefix>``). Adding one
+is refused: docs/api-contract.md records that Predict can drop an added origination on affected builds, and it
+was never re-tested, so a PASS on it would not be evidence. The scope check refuses anything else, so a pull request cannot slip an unrelated edit past the gate, and the
 normalized lines are exactly what goes to Predict (``set_commands``) and to the router (NAPALM).
 """
 
@@ -67,7 +68,11 @@ def scope_problems(lines: tuple[str, ...]) -> list[str]:
     for line in changes:
         match = _NETWORK.match(line)
         if not match:
-            problems.append(f"only '[no] network <prefix>' lines are allowed here, not {line!r}")
+            problems.append(f"only 'no network <prefix>' lines are allowed here, not {line!r}")
+            continue
+        if not match.group(1):
+            problems.append(f"{line!r} adds an advertisement; this change may only retire them ('no network <prefix>'): "
+                            "Predict's handling of an added network statement was not verified for this workshop")
             continue
         try:
             prefix = str(ipaddress.ip_network(match.group(2), strict=True))

@@ -78,11 +78,11 @@ def upload(settings: Settings, fwd: Forward, zip_path: Path, zip_fp: str, kind: 
 
 def wait(settings: Settings, fwd: Forward, snap_id: str, kind: str, log):
     """Wait while Forward turns the ZIP into a model; check all four routers are in it."""
-    show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of every route, ACL and path')
+    show.sdk(log, f'snapshots.wait_until_processed("{snap_id}")   Forward turns the ZIP into a model of the routes, ACLs and paths')
     try:
         snap = fwd.wait(snap_id, log=log)
     except ForwardTimeoutError as exc:
-        again = "`workshop baseline wait` (or `judge`)" if kind == "baseline" else "`workshop verify wait`"
+        again = "`workshop baseline wait`" if kind == "baseline" else "`workshop verify wait`"
         raise BaselineError(f"snapshot {snap_id} is uploaded and Forward is still processing it (its queue is busy). Don't collect "
                             f"again: that only adds to the queue. In a minute or two, run {again}: it waits for this upload rather than sending another.") from exc
     devices = fwd.device_names(str(snap.id))
@@ -155,17 +155,17 @@ def judge(settings: Settings, log, snapshot_id: str = "") -> tuple[str, str, Rep
             try:
                 snap = fwd.wait(str(snap.id), log=log)
             except ForwardTimeoutError as exc:
-                raise BaselineError(f"Forward is still processing snapshot {snap.id}: don't upload again; run `workshop baseline judge` in a minute or two") from exc
+                raise BaselineError(f"Forward is still processing snapshot {snap.id}: don't upload again; run `workshop baseline wait` in a minute or two, then `workshop baseline check`") from exc
         tag = SnapshotTag.parse(snap.note)
         log(f"  snapshot {snap.id}, note: {snap.note!r}")
         if tag is None or tag.kind != "baseline" or tag.lab != settings.lab_id:
-            raise BaselineError(f"snapshot {snap.id}'s note is not 'autocon6:baseline lab={settings.lab_id} fp=…': upload it with the NOTE from `workshop baseline prepare`")
+            raise BaselineError(f"snapshot {snap.id}'s note is not 'autocon6:baseline lab={settings.lab_id} fp=…': run the baseline steps again from `workshop baseline collect` (by hand: use the NOTE from `workshop baseline prepare`)")
         show.sdk(log, 'devices.file("rN", "configuration.txt") for r1-r4   Forward\'s copy of each config, hashed')
         if fwd.fingerprint(str(snap.id)) != tag.fp:
             raise BaselineError(f"the configs in snapshot {snap.id} do not hash to the note's fingerprint: that ZIP is not the network the note describes")
         show.napalm(log, "r1-4", "cli('show running-config')   the live network, hashed the same way")
         if fingerprint.of(lab.live_configs(settings)) != tag.fp:
-            raise BaselineError("the routers changed after that snapshot was taken: run `workshop baseline prepare` and collect again")
+            raise BaselineError("the routers changed after that snapshot was taken: run the baseline steps again from `workshop baseline collect`")
         log("  ✓ a baseline of this lab  ✓ Forward's copy of the four configs matches the note  ✓ the live routers match it too")
         report = evaluate_baseline(settings, fwd, str(snap.id), tag.fp, log)
     return str(snap.id), tag.fp, report

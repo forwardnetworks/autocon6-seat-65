@@ -55,6 +55,9 @@ left, and the terminal at the bottom. Each Git step also has the equivalent term
 **What does a `workshop` command actually do?** [Every command, in its pieces](commands.md): each one is a few calls
 to netlab, NAPALM, the Forward collector, the Forward SDK and Git, and it prints each of them as it runs.
 
+**How does it actually work, and where does it stop?** [How it works](how-it-works.md): what Predict models and what it
+doesn't, what each requirement kind checks exactly, the five result words, what the gates do and don't protect.
+
 The **Your lab** tab (port 8765) always shows where you are and the next command. Stuck? Look in
 [If something goes wrong](stuck.md). In the room, raise a hand. On your own, you can also ask Forward AI in that tab.
 
