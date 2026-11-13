@@ -28,9 +28,10 @@ Forward AI can explain and advise (`workshop ask`, `workshop explain`), and the 
 The **Your lab** tab also keeps a private checklist of **challenges** (the core steps, and stretch ones like `workshop matrix`,
 which predicts every way of retiring r4's statements), with hints you can reveal one level at a time.
 
-## Beta notice
+## What the helpers can see
 
-During the beta, the terminal commands you run in this Codespace, and the result of each `workshop` command, are sent to the
-workshop team's log so we can see where people get stuck. Anything that looks like a password, token or seat code is masked
-before it leaves your Codespace. File contents, editor keystrokes and your pull requests' text are not sent (the pull requests
-are visible on GitHub anyway). It is off in any seat that has no `TELEMETRY_KEY` secret.
+The terminal commands you run in this Codespace, and the result of each `workshop` command, are sent to the workshop
+team so a helper can see where you are stuck (the helpers' desk shows your last few commands). Anything that looks like a
+password, token or seat code is masked before it leaves your Codespace. File contents, editor keystrokes and your pull
+requests' text are not sent (the pull requests are visible on GitHub anyway). It is off in any seat that has no
+`TELEMETRY_KEY` secret.
