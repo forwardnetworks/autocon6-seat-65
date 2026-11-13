@@ -50,7 +50,14 @@ def load(start: Path | None = None) -> Settings:
         if not os.environ.get(name, "").strip():
             missing.append(name)
     if missing:
-        raise SettingsError("missing settings: " + ", ".join(missing) + " (Codespace secrets, or .env for local development)")
+        what = "missing settings: " + ", ".join(missing)
+        if os.environ.get("CODESPACES") == "true":
+            raise SettingsError(
+                what + "\nThis Codespace has no seat settings. That happens when it was opened before the invitation was accepted,"
+                " or from a repository link instead of your seat page. Delete it (github.com/codespaces), accept the invitation,"
+                " and open the Codespace again from your seat page. Still stuck: raise a hand."
+            )
+        raise SettingsError(what + " (Codespace secrets, or .env for local development)")
     state = Path(os.path.expanduser(os.environ.get("WORKSHOP_STATE_DIR", "~/.local/state/autocon6"))) / lab_id
     collector = Path(os.path.expanduser(os.environ.get("FWD_HEADLESS_HOME", "~/.cache/autocon6/collector")))
     return Settings(
