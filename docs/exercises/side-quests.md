@@ -1,0 +1,124 @@
+# Side quests
+
+*For when you're ahead, or just curious. Every one is optional, none blocks the core steps, and each starts from where you already are. Pick any, in any order.*
+
+If you're **behind**, skip this page. The core steps are the only thing that matters.
+
+| You can start this when | Side quest | About |
+|---|---|---|
+| your lab is running | [SQ1 · Walk the route](#sq1--walk-the-route) | 5 min |
+| your baseline is PASS | [SQ2 · Interrogate the model](#sq2--interrogate-the-model) | 10 min |
+| your baseline is PASS | [SQ3 · Ask Forward AI](#sq3--ask-forward-ai-then-check-it) | 5 min |
+| your first check has a verdict | [SQ4 · Write your own test](#sq4--write-your-own-test) | 10 min |
+| you've seen a red check | [SQ5 · Which lines are stale?](#sq5--which-lines-are-stale) | 5 min |
+| you've seen a red check | [SQ6 · Every way of retiring the lines](#sq6--every-way-of-retiring-the-lines) | 10 min |
+| you've seen a red check | [SQ7 · Let an adviser draft it](#sq7--let-an-adviser-draft-it) | 10 min |
+| you've verified (MATCH) | [SQ8 · Cheat the gate](#sq8--cheat-the-gate) | 10 min |
+| you've verified (MATCH) | [SQ9 · Catch the drift](#sq9--catch-the-drift) | 10 min |
+
+Your lab page's **Go further** card tracks SQ3, SQ4, SQ6 and SQ7 for you. The others are for you to notice things.
+
+---
+
+## SQ1 · Walk the route
+
+**Why:** before you ask Forward anything, look at the real routers. You'll recognise this view later.
+
+```
+docker exec -it clab-autocon6-r1 Cli
+show ip route 10.20.20.0/24
+show ip bgp 10.20.20.0/24
+```
+
+(One line, no prompt: `docker exec clab-autocon6-r1 Cli -p15 -c "show ip bgp 10.20.20.0/24"`.)
+
+**You should see:** the route is `B E 10.20.20.0/24 [200/0] via 10.255.0.2`, and the BGP table has **two paths**. The one through
+`65002 65004` has local preference 200 and is marked best. The one through `65003 65004` has local preference 100.
+
+**Think about it:** the diamond has two ways to the service, and local preference picks r2. If r2 failed, which way would traffic go?
+How would you *prove* it with a prediction rather than guess?
+
+## SQ2 · Interrogate the model
+
+**Why:** Forward answers from the snapshot you collected, not from the routers. Ask it the same question as SQ1 and compare.
+
+```
+workshop data inventory
+workshop data routes --prefix 10.20.20.0/24
+workshop data vulns
+```
+
+**You should see:**
+- **inventory:** four devices, with `no data` under END OF SUPPORT. These are lab images, so Forward has no lifecycle dates for them. On a real network that column is filled in.
+- **routes:** `10.20.20.0/24` is in all four routing tables. r1 learns it by BGP via `10.255.0.2` on `et1`, the same answer SQ1 gave you from the router. On r4 it is directly connected.
+- **vulns:** some entries say `none: configuration not affected` and some say `could not be checked`. Matching a version number is not the same as being exposed: Forward reads each device's configuration to decide.
+
+**Think about it:** where did this answer come from, and how stale can it be? (Hint: `workshop baseline` made the snapshot.)
+
+## SQ3 · Ask Forward AI, then check it
+
+```
+workshop ask --list
+workshop ask --prompt baseline-stale
+```
+
+Read the answer, then **check it yourself**: SQ1's commands, or a query from SQ2. AI advises, Predict decides. Does the AI agree with the router?
+
+## SQ4 · Write your own test
+
+r1's access list also blocks HTTPS (TCP 8443), but no requirement says it must stay blocked. Write that requirement. Your lab page's
+**Go further** card has the hints, and [exercise 2](02-pipeline.md) has the full test.
+
+## SQ5 · Which lines are stale?
+
+*Do this after you've seen a red check, or it spoils the surprise.*
+
+**Why:** the red check told you a line was wrong. Now find out *why* those lines are different, from the router itself.
+
+```
+docker exec -it clab-autocon6-r4 Cli
+show running-config section router bgp
+show ip route 10.20.20.0/24
+show ip route 10.20.30.0/24
+```
+
+**You should see:** under `address-family ipv4` there are three `network` statements: `10.20.20.0/24`, `10.20.30.0/24` and `10.20.40.0/24`.
+`10.20.20.0/24` is **directly connected** on `Ethernet3`. `10.20.30.0/24` has **no route at all**. Look higher in the config too:
+r4 has `bgp advertise-inactive`, which tells it to announce a `network` statement even when nothing backs it.
+
+**Think about it:** which statements carry traffic, and which are just text? Which of them could you have known were safe to remove
+*before* anyone predicted it? What would a reviewer reading only the diff have missed?
+
+## SQ6 · Every way of retiring the lines
+
+A regression suite runs the same tests against many changes. **Guess first:** of the seven ways to retire r4's statements, which pass every test?
+Then `workshop matrix` prints the grid (`--all` tries all seven; it takes a minute or two).
+
+## SQ7 · Let an adviser draft it
+
+Forward's assist can draft the change from `intent.md`, review a prediction, or iterate on its own. It never approves.
+
+```
+workshop propose           # then --write to keep the draft
+workshop explain           # after a prediction
+workshop agent             # draft, predict, advise, draft again, stop before approval
+```
+
+Does the draft pass? Would you have written the same lines? The tests are the judge, not the adviser. You are welcome to point your own coding agent at this repository: `AGENTS.md` gives it the rules.
+
+## SQ8 · Cheat the gate
+
+*After MATCH. Start from a fresh baseline: `workshop reset --to 5`.*
+
+Try to deploy a change that was judged against a *different* requirements file. The gate refuses, and the reason is the point.
+The steps are in [exercise 6, "For sceptics", 1 and 2](06-beyond.md#for-sceptics).
+
+## SQ9 · Catch the drift
+
+*After MATCH. Start from a fresh baseline: `workshop reset --to 5`.*
+
+Predict the fixed candidate, then change r4 **by hand** and try to deploy what Predict approved. The steps are in
+[exercise 6, "For sceptics", 3](06-beyond.md#for-sceptics).
+
+**You should see:** `NOT DEPLOYED (STALE): the routers' configs are not what was collected for the prediction`. Nothing was written. The prediction
+was about a router that no longer exists, so the deploy refuses to act on it. Then `workshop restore` and the baseline steps put you back.
