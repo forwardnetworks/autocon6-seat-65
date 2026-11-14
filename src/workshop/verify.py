@@ -18,13 +18,23 @@ from workshop.evidence import Manifest
 from workshop.forward import Forward
 
 
+def deployed_evidence(settings: Settings, evidence: Path) -> Manifest:
+    """The evidence verify judges against, only if it is the prediction of the change that was deployed (a later prediction can overwrite
+    evidence/evidence.json; judging the real network against that would compare it with the wrong forecast)."""
+    m = Manifest.read(evidence)
+    record = settings.state("deploy.json")
+    if record.is_file():
+        sent = json.loads(record.read_text()).get("candidate_sha256", "")
+        if sent and sent != m.candidate_sha256:
+            raise RuntimeError(f"{evidence} is now the prediction of another change ({m.candidate_sha256[:7]}), not the one deployed ({sent[:7]}): "
+                               "a newer `workshop predict` replaced it. Predict the deployed change again (same candidate), then verify")
+    return m
+
+
 def probe(settings: Settings, evidence: Path, log) -> list[dict]:
     """``workshop verify probe``: real packets from the real client, for every flow requirement. Saved for ``compare``."""
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
-    try:
-        predicted = {str(r.get("id")): str(r.get("status")) for r in Manifest.read(evidence).results}
-    except (OSError, ValueError):
-        predicted = {}
+    predicted = {str(r.get("id")): str(r.get("status")) for r in deployed_evidence(settings, evidence).results}
     lab.wait_bgp(settings, log)
     log("probing the real flows from the client ...")
     probes = []
@@ -51,7 +61,7 @@ def probe(settings: Settings, evidence: Path, log) -> list[dict]:
 def compare(settings: Settings, evidence: Path, snapshot_id: str, fp: str, probes: list[dict], log) -> dict:
     """``workshop verify compare``: the candidate requirements on the post-change snapshot, verdict by verdict against the
     prediction, and the probes. MATCH only if every one agrees."""
-    m = Manifest.read(evidence)
+    m = deployed_evidence(settings, evidence)
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
     show.note(log, f"judging {len(reqs.requirements)} requirements on post-change snapshot {snapshot_id}, the same way Predict's were judged")
     with Forward(settings) as fwd:

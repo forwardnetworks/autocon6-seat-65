@@ -51,6 +51,9 @@ def docker(log: Log, container: str, call: str) -> None:
 def napalm(log: Log, device: str, call: str) -> None:
     if log is not None:
         trace.announced("NAPALM", call)
+        for method in ("load_merge_candidate", "compare_config", "commit_config", "discard_config", "cli"):  # a composite line names several
+            if method in call:
+                trace.announced("NAPALM", f"{method}(")
         log(f"    → NAPALM {device:<4} {call}")
 
 

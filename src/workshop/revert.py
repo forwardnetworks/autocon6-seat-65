@@ -50,6 +50,9 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
     if sent[: len(candidate.HEADER)] != candidate.HEADER:
         raise Refused("ERROR", "the deploy record does not start with r4's BGP section: it is not a change this command can revert")
     change = sent[len(candidate.HEADER):]
+    if not (record.get("device_diff") or "").strip():
+        raise Refused("ERROR", "that deploy changed nothing on r4 (the router already held those lines): there is nothing to revert, "
+                               "and inverting it would add lines the baseline never had")
     inverse = candidate.HEADER + tuple(invert(line) for line in change)
     text = "\n".join(inverse) + "\n"
     target = record.get("baseline_fingerprint") or ""
@@ -57,6 +60,7 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
     base = json.loads(base_path.read_text()) if base_path.is_file() else {}
     if not target:
         target = base.get("fingerprint", "")
+    original = str(record.get("baseline_snapshot_id") or base.get("snapshot", ""))  # the snapshot the deployed change was predicted against
     base_ok = base.get("fingerprint") == target and (base.get("report") or {}).get("status") == "PASS"
     pr = None
     try:
@@ -66,7 +70,8 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
     except Exception:  # noqa: BLE001 - only used to attach the backout record to the same pull request
         pr = None
     out = {"pr": pr, "lines": list(inverse), "sha256": hashlib.sha256(text.encode()).hexdigest(), "deployed": list(sent), "target_fingerprint": target,
-           "baseline_snapshot": base.get("snapshot", ""), "baseline_pass": base_ok, "caveats": record.get("caveats") or []}
+           "baseline_snapshot": original, "baseline_pass": base_ok, "caveats": record.get("caveats") or [],
+           "post_fingerprint": record.get("post_fingerprint", "")}
     if log:
         log("The deploy record says r4 was sent:")
         for line in change:
@@ -93,6 +98,10 @@ def apply(settings: Settings, confirm: str, log: Callable[[str], None]) -> dict:
         show.napalm(log, candidate.DEVICE, "cli('show running-config section router bgp')   does r4 still hold what was deployed?")
         now = executor.show(settings, host, "show running-config section router bgp")
         drift = deploy.readback_problems(tuple(p["deployed"]), now)
+        if not drift and p.get("post_fingerprint"):
+            live_now = fingerprint.of(lab.live_configs(settings))
+            if live_now != p["post_fingerprint"]:
+                drift = [f"the network's fingerprint is {live_now[:12]}, not {p['post_fingerprint'][:12]} as the deploy left it (a router changed since)"]
         if drift:
             raise Refused("STALE", "r4 no longer holds what was deployed (" + "; ".join(drift) + "): it changed since. Reverting would be a guess. "
                                    "Use `workshop restore` (the break-glass path), then the baseline steps")
@@ -136,18 +145,19 @@ def compare(settings: Settings, log: Callable[[str], None]) -> dict:
         show.note(log, f"Forward's routing diff: the original baseline ({original}) against the snapshot taken after the revert ({snapshot_id})")
         diff = data.diff(fwd.c, original, snapshot_id)
     same_fp = fp == record.get("target_fingerprint")
+    routing_changed = not diff.summary.startswith("Forward reports no routing changes")  # Forward's own counts decide, not whether rows came back
     reasons = []
     if report.status.value != "PASS":
         reasons.append(f"the baseline requirements are {report.status.value} on the new snapshot")
     if not same_fp:
         reasons.append(f"its fingerprint ({fp[:12]}) is not the original baseline's ({str(record.get('target_fingerprint'))[:12]})")
-    if diff.rows:
+    if routing_changed:
         reasons.append(f"Forward finds routing differences from the original baseline ({diff.summary})")
     result = {"outcome": "MATCH" if not reasons else "MISMATCH", "snapshot": snapshot_id, "original": original, "fingerprint": fp,
-              "requirements": report.status.value, "routing_changes": len(diff.rows), "reasons": reasons}
+              "requirements": report.status.value, "routing_changes": len(diff.rows) if routing_changed else 0, "reasons": reasons}
     record["verified"] = result
     path.write_text(json.dumps(record, indent=2) + "\n")
     log(f"  {'✓' if report.status.value == 'PASS' else '✗'} the baseline requirements on the new snapshot: {report.status.value}")
     log(f"  {'✓' if same_fp else '✗'} its fingerprint is the original baseline's ({fp[:12]})")
-    log(f"  {'✓' if not diff.rows else '✗'} Forward's routing diff from the original baseline: {diff.summary if diff.rows else 'no route differs anywhere'}")
+    log(f"  {'✓' if not routing_changed else '✗'} Forward's routing diff from the original baseline: {diff.summary if routing_changed else 'no route differs anywhere'}")
     return result

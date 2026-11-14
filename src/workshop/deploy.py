@@ -41,8 +41,13 @@ def lab_lock(settings: Settings):
 
 
 def failing(m: Manifest) -> list[str]:
-    """The requirements a prediction did not pass, in the evidence's order."""
-    return [str(r.get("id")) for r in m.results or [] if str(r.get("status")) != "PASS"]
+    """The requirements the prediction judged FAIL, in the evidence's order (not ones it could not judge)."""
+    return [str(r.get("id")) for r in m.results or [] if str(r.get("status")) == "FAIL"]
+
+
+def unjudged(m: Manifest) -> list[str]:
+    """Requirements that are neither PASS nor FAIL: nobody knows what they would do."""
+    return [f"{r.get('id')} ({r.get('status')})" for r in m.results or [] if str(r.get("status")) not in ("PASS", "FAIL")]
 
 
 def caveats_problem(m: Manifest, caveats: list[str]) -> str:
@@ -58,6 +63,9 @@ def caveats_problem(m: Manifest, caveats: list[str]) -> str:
         return f"the evidence is {m.status}: caveats are only for a FAIL, where Predict says exactly what breaks (nobody knows what an {m.status} would do)"
     if (m.git or {}).get("pr"):
         return "this evidence is a pull request's: a red check cannot merge, so it cannot deploy. Caveats are for a local prediction (--evidence)"
+    if unjudged(m):
+        return ("Predict could not judge " + ", ".join(unjudged(m)) + ": a caveat must be a failure Predict named, not one nobody knows. "
+                "Predict again until every requirement is PASS or FAIL")
     want = failing(m)
     if sorted(set(caveats)) != sorted(set(want)):
         return f"name every failing requirement you are accepting, exactly: --with-caveats {','.join(want)}"
@@ -146,8 +154,13 @@ def apply(settings: Settings, evidence: Path, confirm: str, log: Callable[[str],
                 log(f"    {line}")
         else:
             log(f"  {candidate.DEVICE}: no difference, the router already matches the candidate")
+        try:  # the whole network after the write: a revert refuses unless it still matches (any drift, on any router)
+            post_fingerprint = fingerprint.of(lab.live_configs(settings))
+        except Exception:  # noqa: BLE001 - only the revert's drift check uses it; without it the revert falls back to r4's lines
+            post_fingerprint = ""
         record = {
             "evidence": str(evidence), "candidate_sha256": m.candidate_sha256, "baseline_snapshot_id": m.baseline_snapshot_id,
+            "post_fingerprint": post_fingerprint,
             "predicted_snapshot_id": m.predicted_snapshot_id, "started_at": started.isoformat(timespec="seconds"),
             "finished_at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(applied.lines), "device_diff": applied.output,
             "readback_problems": None, "predicted_status": m.status, "caveats": list(caveats or []),

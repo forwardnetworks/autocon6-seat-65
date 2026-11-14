@@ -25,7 +25,7 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-QUIET = frozenset({"close"})  # lifecycle calls: kept on the lab page's feed, not printed
+QUIET = frozenset({"close", "processing_queue", "progress"})  # lifecycle and polling calls: kept on the feed, not printed (a wait polls every few seconds)
 SLOW = 2.0  # seconds: a call slower than this gets a "took" line after it
 MAXARG = 90  # characters per argument
 FEED = 300  # events kept for the lab page
@@ -75,7 +75,7 @@ def reset() -> None:
 
 def announced(kind: str, call: str) -> None:
     """``show.sdk(log, "devices.file(...)")`` calls this: the next calls to that method, for a few seconds, are already on screen."""
-    m = re.match(r"\s*([A-Za-z_][\w.]*)\(", call)
+    m = re.match(r"\s*([A-Za-z_][\w.-]*)\(", call)
     if m:
         with _lock:
             _announced[(kind, m.group(1))] = time.monotonic()

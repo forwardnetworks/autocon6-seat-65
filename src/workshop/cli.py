@@ -371,8 +371,12 @@ def _predict(settings: config.Settings, args) -> int:
     if getattr(args, "step", None) == "history":  # read-only: the trail of every prediction finished on this seat
         from workshop import history
 
-        for line in history.render(history.entries(settings)):
-            log(line)
+        try:
+            for line in history.render(history.entries(settings)):
+                log(line)
+        except Exception as exc:  # noqa: BLE001 - a damaged record: say so, never a traceback
+            log(f"workshop predict history: could not read the trail ({type(exc).__name__}: {str(exc)[:160]})")
+            return EXIT["ERROR"]
         return 0
     banner(settings, "predict" + (f" {args.step}" if getattr(args, "step", None) else ""))
     root = settings.repo_root
@@ -435,20 +439,6 @@ def _predict(settings: config.Settings, args) -> int:
     summary = evidence.markdown(m, routing)
     (out / "summary.md").write_text(summary)
     _append_summary(summary)
-    if m.predicted_snapshot_id and m.results:  # the change analysis: Predict's analysis page as a report, attached to the ticket
-        with contextlib.suppress(Exception):  # display only: the verdict and the exit code never depend on it
-            from workshop import reports
-
-            log("")
-            log("writing the change analysis (Predict's analysis, section by section, with where each part came from) ...")
-            with Forward(settings, quick=True) as fwd:
-                text = reports.analysis(fwd.c, m, baseline_results=_requirements_on_baseline(settings, fwd, m, inputs.requirements),
-                                        ai=os.environ.get("WORKSHOP_REPORT_AI", "1") != "0", log=log)
-            (out / "change-analysis.md").write_text(text)
-            _append_summary("\n\n" + text)
-            log(f"Artifact: {out / 'change-analysis.md'}")
-            log("  What it is for: the change record a reviewer reads before approving. In a pull request it is on the check's summary page and in")
-            log("  its artifact, next to evidence.json. It shows what Predict found (routing, reachability, checks, other diffs) and Forward AI's reading.")
     log(f"{m.status}: {m.reason}")
     with contextlib.suppress(Exception):  # display only: whatever happens below, the verdict above and the exit code stand
         if m.predicted_snapshot_id and m.results:
@@ -482,7 +472,43 @@ def _predict(settings: config.Settings, args) -> int:
     if m.deployable:
         target = f"--pr {args.pr}" if args.pr else f"--evidence {out / 'evidence.json'}"
         log(f"to deploy after merging, one step at a time: workshop deploy gates {target} --confirm {m.candidate_sha256[:7]}, then render, apply, readback")
+    if m.predicted_snapshot_id and m.results:
+        _change_analysis(settings, m, out, inputs.requirements)
     return EXIT.get(m.status, EXIT["ERROR"])
+
+
+def _change_analysis(settings: config.Settings, m, out: Path, requirements_path: Path) -> None:
+    """The change analysis: Predict's analysis page as a report, attached to the ticket. After the verdict, and time-boxed
+    (WORKSHOP_REPORT_SECONDS, default 90): in a pull request check under load it must never delay or fail the check."""
+    import threading
+
+    from workshop import reports
+    from workshop.forward import Forward
+
+    done: dict[str, str] = {}
+
+    def build() -> None:
+        try:
+            with Forward(settings, quick=True) as fwd:
+                done["text"] = reports.analysis(fwd.c, m, baseline_results=_requirements_on_baseline(settings, fwd, m, requirements_path),
+                                                ai=os.environ.get("WORKSHOP_REPORT_AI", "1") != "0", log=log)
+        except Exception as exc:  # noqa: BLE001 - display only
+            done["error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
+
+    budget = float(os.environ.get("WORKSHOP_REPORT_SECONDS", "90"))
+    log("")
+    log(f"writing the change analysis (Predict's analysis, section by section, with where each part came from; at most {budget:.0f} s) ...")
+    worker = threading.Thread(target=build, daemon=True)
+    worker.start()
+    worker.join(budget)
+    if "text" not in done:
+        log(f"  (the change analysis was skipped: {done.get('error') or f'Forward did not answer within {budget:.0f} s'}. The verdict above stands.)")
+        return
+    (out / "change-analysis.md").write_text(done["text"])
+    _append_summary("\n\n" + done["text"])
+    log(f"Artifact: {out / 'change-analysis.md'}")
+    log("  What it is for: the change record a reviewer reads before approving. In a pull request it is on the check's summary page and in")
+    log("  its artifact, next to evidence.json. It shows what Predict found (routing, reachability, checks, other diffs) and Forward AI's reading.")
 
 
 def _deploy(settings: config.Settings, args) -> int:
@@ -556,7 +582,10 @@ def _requirements_on_baseline(settings: config.Settings, fwd, m, requirements_pa
     try:
         reqs = requirements.load(requirements_path, root=settings.repo_root)
         show.note(log, f"judging the same requirements on the baseline ({m.baseline_snapshot_id}), for the report's before-and-after columns")
-        report = evaluate(reqs, fwd.observer(str(m.baseline_snapshot_id)), str(m.baseline_snapshot_id), root=settings.repo_root)
+        from workshop.forward import SnapshotObserver
+
+        observer = SnapshotObserver(fwd.c, str(m.baseline_snapshot_id), sink=None)  # no sink: the baseline's own raw answers stay as they are
+        report = evaluate(reqs, observer, str(m.baseline_snapshot_id), root=settings.repo_root)
         return [r.to_json() for r in report.results]
     except Exception as exc:  # noqa: BLE001 - display only
         log(f"  (report: the baseline column is unavailable: {type(exc).__name__}: {str(exc)[:120]})")
@@ -895,6 +924,7 @@ def _matrix(settings: config.Settings, args) -> int:
 def _ui(settings: config.Settings, args) -> int:
     from workshop import ui
 
+    trace.set_sink(None)  # the page polls Docker and GitHub in the background: its calls go to its "What just ran" card, not this terminal
     ui.serve(settings, settings.repo_root / args.evidence, args.port, log)
     return 0
 
@@ -936,6 +966,9 @@ def _revert(settings: config.Settings, args) -> int:
     except deploy.Refused as exc:
         log(f"NOT REVERTED ({exc.status}): {exc}")
         return EXIT[exc.status]
+    except Exception as exc:  # noqa: BLE001 - a missing step, Forward or a file: a sentence and ERROR, never a traceback or a FAIL
+        log(f"workshop revert {args.step}: {type(exc).__name__}: {str(exc)[:240]}")
+        return EXIT["ERROR"]
     log("")
     log("What this means: the deployed change is backed out, and the routers' configs are exactly the baseline's again (checked over NAPALM).")
     log("Now let Forward confirm it with a fresh collection: `workshop baseline collect`, `upload`, `wait`, then `workshop revert compare`.")
@@ -1070,6 +1103,8 @@ def _data(settings: config.Settings, args) -> int:
     from workshop import data
     from workshop.forward import Forward
 
+    if args.json:
+        trace.set_sink(None)  # --json is for a program (`| jq`): only the JSON on stdout. The query is in the JSON.
     evidence = settings.repo_root / args.evidence
     try:
         snap = data.snapshot_for(settings, evidence, args.snapshot)
