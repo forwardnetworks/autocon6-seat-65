@@ -52,6 +52,10 @@ Every exercise has a core part (everyone) and **Finished early?** extras. You ne
 You never need to leave the editor: the file Explorer, **Source Control** and **GitHub Pull Requests** panels on the
 left, and the terminal at the bottom. Each Git step also has the equivalent terminal commands, folded away.
 
+**What does each step leave behind, and what is it for?** [Artifacts](artifacts.md): every file and Forward record the loop makes, which are evidence a later step checks, and which are records for people (the change analysis, the pre- and post-change reports, the backout).
+
+**Ahead of the room?** [Side quests](side-quests.md).
+
 **What does a `workshop` command actually do?** [Every command, in its pieces](commands.md): each one is a few calls
 to netlab, NAPALM, the Forward collector, the Forward SDK and Git, and it prints each of them as it runs.
 

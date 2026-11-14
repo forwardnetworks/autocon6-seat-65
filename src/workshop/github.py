@@ -91,6 +91,12 @@ def can_push(root: Path | None = None) -> str:
     return "ADMIN" if perms.admin else "MAINTAIN" if getattr(perms, "maintain", False) else "WRITE" if perms.push else "READ" if perms.pull else "NONE"
 
 
+def comment(number: int, body: str) -> None:
+    """Add a comment to a pull request: how the change record (pre- and post-change reports) is attached to the ticket."""
+    pr = _call(f"reading PR #{number}", repo().get_pull, number)
+    _call(f"commenting on PR #{number}", pr.create_issue_comment, body[:65000])
+
+
 def merged_pr(number: int) -> MergedPR:
     pr = _call(f"reading PR #{number}", repo().get_pull, number)
     if not pr.merged:

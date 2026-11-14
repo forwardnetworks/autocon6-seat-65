@@ -62,12 +62,15 @@ ARTIFACTS: dict[str, list[tuple[str, str, str, bool]]] = {
                ("The change you are making (the exact lines Predict judges and the router receives)", "candidate/r4-bgp.eos", "text", True)],
     "predict": [("The change being predicted", "candidate/r4-bgp.eos", "text", True),
                 ("The requirements the prediction is judged against", "requirements/candidate.yml", "yaml", False),
-                ("The verdict, as evidence.json", "evidence:", "json", False),
+                ("The verdict, as evidence.json (the only file deploy accepts)", "evidence:", "json", False),
+                ("The change analysis: Predict's findings as a report, attached to the pull request", "evidence:change-analysis.md", "text", False),
                 ("What Forward said about the predicted network (structured)", "forward:predicted", "json", False)],
     "approve": [("The pipeline that runs on your pull request", ".github/workflows/forward-predict.yml", "yaml", True)],
     "deploy": [("The change that will be sent to r4", "candidate/r4-bgp.eos", "text", True),
+               ("The pre-change readiness record (written by deploy gates)", "state:reports/pre-change.md", "text", False),
                ("What was deployed, with the router's own diff", "state:deploy.json", "json", False)],
-    "verify": [("The result compared with the prediction", "state:verify.json", "json", False),
+    "verify": [("The post-change report (written by verify compare)", "state:reports/post-change.md", "text", False),
+               ("The result compared with the prediction", "state:verify.json", "json", False),
                ("What Forward said about the real network afterwards (structured)", "forward:post", "json", False)],
 }
 # "Catch me up": put the lab and Forward's baseline into the state a step expects. It never skips a gate: Predict,
@@ -516,6 +519,8 @@ class Board:
                 path = self.settings.state(ref[6:])
             elif ref == "evidence:":
                 path = self.shown_evidence()
+            elif ref.startswith("evidence:"):  # a file written next to the evidence (the change analysis)
+                path = self.shown_evidence().parent / ref[9:]
             elif ref.startswith("forward:"):
                 try:
                     name = f"forward-{self.snapshot_for(ref[8:])}.json"

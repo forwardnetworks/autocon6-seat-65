@@ -435,6 +435,20 @@ def _predict(settings: config.Settings, args) -> int:
     summary = evidence.markdown(m, routing)
     (out / "summary.md").write_text(summary)
     _append_summary(summary)
+    if m.predicted_snapshot_id and m.results:  # the change analysis: Predict's analysis page as a report, attached to the ticket
+        with contextlib.suppress(Exception):  # display only: the verdict and the exit code never depend on it
+            from workshop import reports
+
+            log("")
+            log("writing the change analysis (Predict's analysis, section by section, with where each part came from) ...")
+            with Forward(settings, quick=True) as fwd:
+                text = reports.analysis(fwd.c, m, baseline_results=reports.baseline_results(settings),
+                                        ai=os.environ.get("WORKSHOP_REPORT_AI", "1") != "0", log=log)
+            (out / "change-analysis.md").write_text(text)
+            _append_summary("\n\n" + text)
+            log(f"Artifact: {out / 'change-analysis.md'}")
+            log("  What it is for: the change record a reviewer reads before approving. In a pull request it is on the check's summary page and in")
+            log("  its artifact, next to evidence.json. It shows what Predict found (routing, reachability, checks, other diffs) and Forward AI's reading.")
     log(f"{m.status}: {m.reason}")
     with contextlib.suppress(Exception):  # display only: whatever happens below, the verdict above and the exit code stand
         if m.predicted_snapshot_id and m.results:
@@ -502,7 +516,8 @@ def _deploy(settings: config.Settings, args) -> int:
             log("NOT DEPLOYED (ERROR): caveats are for a local prediction (--evidence): a red pull request cannot merge")
             return EXIT["ERROR"]
         if step == "gates":
-            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            m = deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            _pre_change_report(settings, m, deploy.GATES_PASSED(m, not args.no_github, caveats), caveats, args.pr)
             src = f"--pr {args.pr}" if args.pr else f"--evidence {args.evidence}"
             log(f"Every gate holds; nothing was sent. Next: workshop deploy render {src} (Forward's change next to r4's own dry run), then apply")
             return 0
@@ -530,6 +545,42 @@ def _deploy(settings: config.Settings, args) -> int:
         return EXIT["ERROR"]
     log("deployed. Next: workshop verify probe")
     return 0
+
+
+def _pre_change_report(settings: config.Settings, m, gates_passed: list[str], caveats: list[str], pr: int | None) -> None:
+    """The pre-change readiness record: baseline, testing, approval, the gates, the backout plan. Display only."""
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from workshop import candidate, reports, revert
+
+        change = candidate.normalize(m.candidate_text)
+        plan = {"lines": list(candidate.HEADER) + [revert.invert(line) for line in change[len(candidate.HEADER):]],
+                "target_fingerprint": m.baseline_fingerprint}
+        path = reports.save(settings, "pre-change.md", reports.pre_change(m, gates_passed, plan, caveats=caveats, pr=pr))
+        log("")
+        log(f"Artifact: {path}")
+        log("  What it is for: the pre-change readiness record: the baseline, the test result, the approval, every gate that held, and the")
+        log("  backout plan, written before anything is sent. It is what a change board signs off.")
+        reports.attach(pr, "Pre-change readiness", path.read_text(), log)
+
+
+def _post_change_report(settings: config.Settings, evidence: Path, result: dict, routing) -> None:
+    """The post-change report: what was sent, read back, probed and re-collected, judged against the prediction. Display only."""
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        from workshop import reports
+        from workshop.evidence import Manifest
+
+        record = json.loads((settings.state_dir / "deploy.json").read_text())
+        pr = (Manifest.read(evidence).git or {}).get("pr")
+        path = reports.save(settings, "post-change.md", reports.post_change(record, result, routing=routing, pr=int(pr) if pr else None))
+        log("")
+        log(f"Artifact: {path}")
+        log("  What it is for: the post-change report: proof the change is what was approved and the network does what was predicted.")
+        log("  It closes the ticket. If it says MISMATCH, it is the start of an investigation (and the backout plan is in the pre-change record).")
+        reports.attach(int(pr) if pr else None, "Post-change report", path.read_text(), log)
 
 
 def _verify(settings: config.Settings, args) -> int:
@@ -596,6 +647,7 @@ def _verify(settings: config.Settings, args) -> int:
         log("Each requirement in detail:")
         for line in report_.requirement_lines(result["rows"], compare=True):
             log(line)
+    table = None
     with contextlib.suppress(Exception):  # display only: the verdict above never depends on this
         before = Manifest.read(Path(evidence)).baseline_snapshot_id
         with Forward(settings, quick=True) as fwd:
@@ -604,6 +656,7 @@ def _verify(settings: config.Settings, args) -> int:
         log(f"What really changed in the routing tables (baseline {before} -> the network now, snapshot {result['post_snapshot_id']}):")
         for line in report_.routing_lines(table):
             log(line)
+    _post_change_report(settings, Path(evidence), result, table)
     log("")
     log(f"verify: {result['outcome']} (post-change snapshot {result['post_snapshot_id']})")
     with _display_only():
@@ -831,6 +884,8 @@ def _ui(settings: config.Settings, args) -> int:
 
 
 def _revert(settings: config.Settings, args) -> int:
+    import contextlib
+
     from workshop import deploy, revert
 
     banner(settings, f"revert {args.step}")
@@ -840,6 +895,16 @@ def _revert(settings: config.Settings, args) -> int:
             return 0
         if args.step == "compare":
             result = revert.compare(settings, log)
+            with contextlib.suppress(Exception):  # display only
+                from workshop import reports
+
+                record = json.loads(settings.state("revert.json").read_text())
+                path = reports.save(settings, "backout.md", reports.backout(record))
+                log("")
+                log(f"Artifact: {path}")
+                log("  What it is for: the backout record: what was undone, proof the configs are the baseline's, and Forward's confirmation from a fresh")
+                log("  collection. It goes on the same ticket as the change.")
+                reports.attach(record.get("pr"), "Backout", path.read_text(), log)
             log("")
             if result["outcome"] == "MATCH":
                 log(f"revert: MATCH (snapshot {result['snapshot']}). What this means: Forward agrees the network is the one you started with:")

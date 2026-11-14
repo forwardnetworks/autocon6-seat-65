@@ -22,6 +22,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 
 from workshop import candidate, deploy, executor, fingerprint, lab, show
 from workshop.config import Settings
@@ -57,7 +58,14 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
     if not target:
         target = base.get("fingerprint", "")
     base_ok = base.get("fingerprint") == target and (base.get("report") or {}).get("status") == "PASS"
-    out = {"lines": list(inverse), "sha256": hashlib.sha256(text.encode()).hexdigest(), "deployed": list(sent), "target_fingerprint": target,
+    pr = None
+    try:
+        from workshop.evidence import Manifest
+
+        pr = (Manifest.read(Path(record["evidence"])).git or {}).get("pr")
+    except Exception:  # noqa: BLE001 - only used to attach the backout record to the same pull request
+        pr = None
+    out = {"pr": pr, "lines": list(inverse), "sha256": hashlib.sha256(text.encode()).hexdigest(), "deployed": list(sent), "target_fingerprint": target,
            "baseline_snapshot": base.get("snapshot", ""), "baseline_pass": base_ok, "caveats": record.get("caveats") or []}
     if log:
         log("The deploy record says r4 was sent:")
@@ -98,7 +106,7 @@ def apply(settings: Settings, confirm: str, log: Callable[[str], None]) -> dict:
         back = bool(p["target_fingerprint"]) and live == p["target_fingerprint"]
         record = {"at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(lines), "sha256": p["sha256"],
                   "reverted": p["deployed"], "caveats": p["caveats"], "fingerprint": live, "back_to_baseline": back,
-                  "baseline_snapshot": p["baseline_snapshot"], "target_fingerprint": p["target_fingerprint"]}
+                  "baseline_snapshot": p["baseline_snapshot"], "target_fingerprint": p["target_fingerprint"], "pr": p.get("pr")}
         settings.state("revert.json").write_text(json.dumps(record, indent=2) + "\n")
         for name in ("deploy.json", "verify.json", "steps/collect-post.json", "steps/upload-post.json", "steps/probes.json"):
             settings.state(name).unlink(missing_ok=True)  # the deployed change is gone: its records no longer describe the network
