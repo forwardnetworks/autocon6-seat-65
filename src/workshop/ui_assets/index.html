@@ -449,7 +449,7 @@ function renderLane(s) {
   const item = (it) => {
     let body = "";
     if (it.kind === "explore") {
-      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option></select>
+      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
         <select id="ex-snap"><option value="baseline">baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
         <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option></select></div>
         <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
@@ -691,6 +691,7 @@ function tableHtml(t, limit) {
   const more = t.truncated ? `<div class="dnote">Showing the first ${t.rows.length}. Narrow it with a device or a prefix.</div>`
     : (t.rows || []).length > rows.length ? `<div class="dnote">Showing ${rows.length} of ${t.rows.length}. The explorer in <b>Go further</b> has them all, with filters.</div>` : "";
   return `<div class="dsum">${esc(t.summary)}</div>${body}${more}${t.note ? `<div class="dnote">${esc(t.note)}</div>` : ""}
+    ${t.query ? `<details class="raw"><summary>Show the ${esc(t.query_kind || "query")} behind this</summary><pre>${esc(t.query)}</pre></details>` : ""}
     <details class="raw"><summary>Show what Forward returned (raw JSON)</summary><pre>${esc(JSON.stringify(t.raw, null, 2).slice(0, 40000))}</pre></details>`;
 }
 async function askData(item) {

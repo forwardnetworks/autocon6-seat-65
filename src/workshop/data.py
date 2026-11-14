@@ -34,6 +34,7 @@ TOPICS = {
     "diff": "Route changes: what the change did to the routing tables",
     "vulns": "CVEs: which published vulnerabilities actually affect your devices",
     "blast": "Blast radius: which addresses traffic from one place can reach",
+    "checks": "Posture: Forward's own checks on the network, and which ones a change moves",
 }
 
 
@@ -47,6 +48,8 @@ class Table:
     note: str = ""
     truncated: bool = False
     raw: Any = field(default=None, repr=False)
+    query: str = ""  # the exact NQE query, or the SDK call, behind this table: shown so nothing is a black box
+    query_kind: str = ""  # "NQE query" | "SDK call"
 
     def to_json(self, *, with_raw: bool = True) -> dict[str, Any]:
         out = asdict(self)
@@ -138,7 +141,7 @@ def inventory(client, snapshot_id: str) -> Table:
     no_lifecycle = all(r["end of support"] == "no data" for r in rows)
     note = ("Forward has no end-of-support dates for these devices: they are lab images, not hardware or a released OS in "
             "Forward's lifecycle table. On a real network this column lists the OS maintenance and support dates.") if rows and no_lifecycle else ""
-    return Table("inventory", TOPICS["inventory"], summary, ["name", "vendor", "model", "os", "version", "end of support"], rows, note, raw=forward_rows)
+    return Table("inventory", TOPICS["inventory"], summary, ["name", "vendor", "model", "os", "version", "end of support"], rows, note, raw=forward_rows, query=_INVENTORY, query_kind="NQE query")
 
 
 def _support_text(support: Any) -> str:
@@ -204,6 +207,49 @@ def vulns(client, snapshot_id: str) -> Table:
                  truncated=len(rows) > MAX_ROWS, raw=_dump(response, alias=True))
 
 
+# ---- posture: Forward's own checks ---------------------------------------------------------
+
+
+def _check_rows(client, snapshot_id: str) -> list[dict[str, Any]]:
+    out = []
+    for c in client.checks.get_checks(snapshot_id=snapshot_id):
+        d = _dump(c, alias=True)
+        out.append({"check": d.get("name") or "", "type": (d.get("definition") or {}).get("checkType") or "", "status": d.get("status") or "",
+                    "priority": str(d.get("priority") or "").replace("NOT_SET", "").lower(), "what it checks": d.get("description") or ""})
+    return out
+
+
+def checks(client, snapshot_id: str, against: str = "") -> Table:
+    """Forward's own checks (predefined, NQE and intent checks) as they stand on one snapshot, and with ``against``, which moved.
+
+    Forward evaluates the checks while it processes a snapshot, so this is a read, not a run. It is Forward's own posture view,
+    separate from the workshop's requirements: those are what the gate judges."""
+    rows = _check_rows(client, snapshot_id)
+    after = {(r["check"], r["type"]): r["status"] for r in _check_rows(client, against)} if against else {}
+    for r in rows:
+        if against:
+            now = after.get((r["check"], r["type"]), "not on that snapshot")
+            r["then"] = now
+            r["moved"] = "" if now == r["status"] else f"{r['status']} -> {now}"
+    order = {"FAIL": 0, "ERROR": 1, "TIMEOUT": 1}
+    rows.sort(key=lambda r: (not r.get("moved"), order.get(r["status"], 2), r["check"]))
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    tally = ", ".join(f"{n} {s}" for s, n in sorted(counts.items(), key=lambda kv: order.get(kv[0], 2))) or "none"
+    moved = [r for r in rows if r.get("moved")]
+    if not rows:
+        summary = "Forward has no checks on this snapshot."
+    elif against:
+        summary = f"{plural(len(rows), 'check')} on the first snapshot ({tally}); {plural(len(moved), 'check')} move{'' if len(moved) != 1 else 's'} on the second."
+    else:
+        summary = f"{plural(len(rows), 'check')} on this snapshot: {tally}."
+    cols = ["check", "type", "status"] + (["then", "moved"] if against else []) + ["what it checks"]
+    note = ("Forward evaluates these while it processes a snapshot. They are Forward's own checks, a different list from the workshop's "
+            "requirements: the requirements are what the gate judges, and these are what Forward would tell you about the network anyway.")
+    return Table("checks", TOPICS["checks"], summary, cols, rows[:MAX_ROWS], note, truncated=len(rows) > MAX_ROWS, raw=rows)
+
+
 # ---- blast radius: from one place, how far can traffic reach? ----------------------------------
 
 DEFAULT_SOURCE = "r1"
@@ -258,8 +304,12 @@ def blast(client, snapshot_id: str, source: str = "", destination: str = "") -> 
         summary = f"From {source}, traffic can reach {reach}{of} addresses in {destination}."
     note = ("This is reachability, not an application test: it says where packets can get to, using Forward's model of the network. "
             "Run it on the baseline, then on the predicted snapshot, and compare.")
+    import json
+
+    body = json.dumps({"source": where, "dstSubnets": [destination]}, indent=2)
     return Table("blast", TOPICS["blast"], summary, ["from", "can reach", "addresses", "for example"], rows[:MAX_ROWS], note,
-                 truncated=len(rows) > MAX_ROWS, raw=raw)
+                 truncated=len(rows) > MAX_ROWS, raw=raw, query=f"client.blast_radius.get_blast_radius(snapshot_id={snapshot_id!r}, body={body})",
+                 query_kind="SDK call")
 
 
 # ---- the before/after question --------------------------------------------------------------
@@ -322,19 +372,29 @@ def _route_text(route: dict[str, Any]) -> str:
     return f"{route.get('routeType', '').lower()} via {via}" + (f" out {ports}" if ports else "")
 
 
+def _with_query(table: Table, kind: str, text: str) -> Table:
+    table.query, table.query_kind = text, kind
+    return table
+
+
 def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str = "", prefix: str = "") -> Table:
+    """The table for one topic, with the exact query or call behind it attached (so the terminal and the page can show it)."""
     if topic == "inventory":
-        return inventory(client, snapshot_id)
+        return _with_query(inventory(client, snapshot_id), "NQE query", _INVENTORY)
     if topic == "routes":
-        return routes(client, snapshot_id, device, prefix)
+        return _with_query(routes(client, snapshot_id, device, prefix), "NQE query", _ROUTES)
     if topic == "vulns":
-        return vulns(client, snapshot_id)
+        return _with_query(vulns(client, snapshot_id), "SDK call", f"client.vulnerability_analysis.get_os_vulnerabilities(snapshot_id={snapshot_id!r})")
     if topic == "blast":
-        return blast(client, snapshot_id, device, prefix)
+        return blast(client, snapshot_id, device, prefix)  # sets its own: the request body
+    if topic == "checks":
+        return _with_query(checks(client, snapshot_id, against), "SDK call", f"client.checks.get_checks(snapshot_id={snapshot_id!r})")
     if topic == "diff":
         if not against:
             raise DataError("route changes need two snapshots: the baseline and what to compare it with")
-        return diff(client, snapshot_id, against, device, prefix)
+        return _with_query(diff(client, snapshot_id, against, device, prefix), "SDK call",
+                           f"d = client.snapshot_diff_details\nd.get_routing_diff_stats(before_snapshot_id={snapshot_id!r}, after_snapshot_id={against!r})\n"
+                           f"d.get_routing_diff_summary(before_snapshot_id={snapshot_id!r}, after_snapshot_id={against!r})")
     raise DataError(f"unknown topic '{topic}': choose one of {', '.join(TOPICS)}")
 
 
@@ -350,4 +410,6 @@ def render(table: Table) -> str:
         lines.append(f"... showing the first {MAX_ROWS} rows; filter with --device or --prefix")
     if table.note:
         lines += ["", table.note]
+    if table.query:
+        lines += ["", f"The {table.query_kind or 'query'} behind this:", *(f"  {line}" for line in table.query.strip().splitlines())]
     return "\n".join(lines)

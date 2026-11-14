@@ -10,7 +10,7 @@ makes, and ends with its evidence and the next step.
 
 Looking inside Forward's model:
 
-    workshop data inventory | routes | vulns | diff | blast   what Forward knows
+    workshop data inventory | routes | vulns | diff | blast | checks   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
     workshop probe                                       real packets from the client, right now
@@ -136,9 +136,9 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
-    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff", "blast"])
+    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff", "blast", "checks"])
     dt.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | <snapshot id> (diff: the 'before' side)")
-    dt.add_argument("--against", help="diff only: the 'after' side (default: predicted if there is one, else post)")
+    dt.add_argument("--against", help="diff and checks: the 'after' side (diff defaults to predicted if there is one, else post; checks only compares if you give one)")
     dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
     dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff); for blast, where traffic is going (default 10.20.20.0/24)")
     dt.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
@@ -910,6 +910,10 @@ def _nqe(settings: config.Settings, args) -> int:
         log(f"workshop nqe: Forward did not run the query: {str(exc)[:400]}")
         return EXIT["ERROR"]
     log("")
+    log("The query, exactly as Forward ran it:")
+    for line in query.strip().splitlines():
+        log(f"  {line}")
+    log("")
     log(f"{len(rows)} row(s) on {args.snapshot} snapshot {snap}")
     if rows:
         cols = list(rows[0])
@@ -945,6 +949,8 @@ def _data(settings: config.Settings, args) -> int:
                     continue  # that step has not run: try the next (a stale prediction is an error, not a reason to skip)
             if not against:
                 raise data.NoSuchSnapshot("there is nothing to compare yet: run workshop predict (or deploy and verify) first")
+        elif args.topic == "checks" and args.against:
+            against = data.snapshot_for(settings, evidence, args.against)
         with Forward(settings) as fwd:
             table = data.ask(fwd.c, args.topic, snap, against=against, device=args.device, prefix=args.prefix)
     except data.DataError as exc:
