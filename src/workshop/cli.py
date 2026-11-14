@@ -442,7 +442,7 @@ def _predict(settings: config.Settings, args) -> int:
             log("")
             log("writing the change analysis (Predict's analysis, section by section, with where each part came from) ...")
             with Forward(settings, quick=True) as fwd:
-                text = reports.analysis(fwd.c, m, baseline_results=reports.baseline_results(settings),
+                text = reports.analysis(fwd.c, m, baseline_results=_requirements_on_baseline(settings, fwd, m, inputs.requirements),
                                         ai=os.environ.get("WORKSHOP_REPORT_AI", "1") != "0", log=log)
             (out / "change-analysis.md").write_text(text)
             _append_summary("\n\n" + text)
@@ -545,6 +545,22 @@ def _deploy(settings: config.Settings, args) -> int:
         return EXIT["ERROR"]
     log("deployed. Next: workshop verify probe")
     return 0
+
+
+def _requirements_on_baseline(settings: config.Settings, fwd, m, requirements_path: Path) -> list[dict]:
+    """The change's own requirements judged on the baseline snapshot: "was this true before the change?" for each row of the change analysis.
+    The same evaluation Predict's are judged with, so it reads the same in CI and in a Codespace. Display only; [] if Forward cannot answer."""
+    from workshop import requirements, show
+    from workshop.evaluate import evaluate
+
+    try:
+        reqs = requirements.load(requirements_path, root=settings.repo_root)
+        show.note(log, f"judging the same requirements on the baseline ({m.baseline_snapshot_id}), for the report's before-and-after columns")
+        report = evaluate(reqs, fwd.observer(str(m.baseline_snapshot_id)), str(m.baseline_snapshot_id), root=settings.repo_root)
+        return [r.to_json() for r in report.results]
+    except Exception as exc:  # noqa: BLE001 - display only
+        log(f"  (report: the baseline column is unavailable: {type(exc).__name__}: {str(exc)[:120]})")
+        return []
 
 
 def _pre_change_report(settings: config.Settings, m, gates_passed: list[str], caveats: list[str], pr: int | None) -> None:
