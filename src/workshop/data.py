@@ -33,6 +33,7 @@ TOPICS = {
     "routes": "Routes: every IPv4 route, per device",
     "diff": "Route changes: what the change did to the routing tables",
     "vulns": "CVEs: which published vulnerabilities actually affect your devices",
+    "blast": "Blast radius: which addresses traffic from one place can reach",
 }
 
 
@@ -203,6 +204,64 @@ def vulns(client, snapshot_id: str) -> Table:
                  truncated=len(rows) > MAX_ROWS, raw=_dump(response, alias=True))
 
 
+# ---- blast radius: from one place, how far can traffic reach? ----------------------------------
+
+DEFAULT_SOURCE = "r1"
+DEFAULT_DESTINATION = "10.20.20.0/24"
+
+
+def _addresses(blocks: str) -> int:
+    """How many addresses a Forward header list covers: "10.20.20.1, 10.20.20.2/31, ..." is a comma-separated list of CIDR blocks."""
+    import ipaddress
+
+    total = 0
+    for block in (b.strip() for b in blocks.split(",") if b.strip()):
+        try:
+            total += ipaddress.ip_network(block, strict=False).num_addresses
+        except ValueError:
+            continue
+    return total
+
+
+def blast(client, snapshot_id: str, source: str = "", destination: str = "") -> Table:
+    """Forward's blast radius: sample connectivity from one location to a destination subnet.
+
+    ``source`` is a device (``r1``) or one interface (``r1 Ethernet3``). The answer is the packet-header regions that get through, so
+    after a change that cuts the service off it is empty: that is the change's blast radius on this path."""
+    source, destination = (source or DEFAULT_SOURCE).strip(), (destination or DEFAULT_DESTINATION).strip()
+    where = {"type": "InterfaceFilter" if " " in source else "DeviceFilter", "value": source}
+    response = client.blast_radius.get_blast_radius(body={"source": where, "dstSubnets": [destination]}, snapshot_id=snapshot_id)
+    raw = _dump(response, alias=True)
+    if raw.get("invalidSource"):
+        raise DataError(f"Forward does not know '{source}' in this snapshot: use a device name (r1) or a device and interface (r1 Ethernet3)")
+    rows = []
+    for d in raw.get("details") or []:
+        headers = d.get("headers") or {}
+        to = headers.get("ipv4_dst", "")
+        example = ""
+        for h in ((d.get("sampleQuery") or {}).get("to") or {}).get("headers") or []:
+            example = ", ".join((h.get("values") or {}).get("ipv4_dst") or []) or example
+        rows.append({"from": headers.get("ipv4_src") or source, "can reach": to, "addresses": _addresses(to), "for example": example})
+    try:
+        import ipaddress
+
+        size = ipaddress.ip_network(destination, strict=False).num_addresses
+    except ValueError:
+        size = 0
+    reach = sum(r["addresses"] for r in rows)
+    if raw.get("timedOut"):
+        summary = f"Forward ran out of time working out what {source} can reach in {destination}."
+    elif not rows:
+        summary = f"From {source}, Forward finds no packet that can reach any address in {destination}: the whole subnet is cut off from there."
+    else:
+        of = f" of the {size}" if size else ""
+        summary = f"From {source}, traffic can reach {reach}{of} addresses in {destination}."
+    note = ("This is reachability, not an application test: it says where packets can get to, using Forward's model of the network. "
+            "Run it on the baseline, then on the predicted snapshot, and compare.")
+    return Table("blast", TOPICS["blast"], summary, ["from", "can reach", "addresses", "for example"], rows[:MAX_ROWS], note,
+                 truncated=len(rows) > MAX_ROWS, raw=raw)
+
+
 # ---- the before/after question --------------------------------------------------------------
 
 
@@ -270,6 +329,8 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
         return routes(client, snapshot_id, device, prefix)
     if topic == "vulns":
         return vulns(client, snapshot_id)
+    if topic == "blast":
+        return blast(client, snapshot_id, device, prefix)
     if topic == "diff":
         if not against:
             raise DataError("route changes need two snapshots: the baseline and what to compare it with")

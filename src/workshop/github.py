@@ -14,6 +14,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+from workshop import trace
+
 
 class GitHubError(RuntimeError):
     pass
@@ -55,7 +57,7 @@ def repo_name(root: Path | None = None) -> str:
 def _repo(name: str):
     from github import Auth, Github, GithubRetry
 
-    return Github(auth=Auth.Token(_token()), timeout=20, retry=GithubRetry(total=3)).get_repo(name)
+    return trace.github(Github(auth=Auth.Token(_token()), timeout=20, retry=GithubRetry(total=3)).get_repo(name))
 
 
 def repo(root: Path | None = None):

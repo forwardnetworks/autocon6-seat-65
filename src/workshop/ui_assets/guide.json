@@ -64,7 +64,53 @@
     }
    ],
    "catchup": "Starts the lab if it isn't running (netlab builds and configures it). A running lab is left as it is.",
-   "why": "Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today."
+   "why": "Every later step depends on starting from a state you can name and rebuild. A lab of your own, with its own Forward network, means you can break things on purpose today.",
+   "trail": [
+    {
+     "id": "lab-doctor",
+     "label": "Check",
+     "levels": [
+      "Checks that everything the workshop needs is ready. It changes nothing.",
+      "It asks Forward who you are (`networks.list`), looks for docker, containerlab, sshpass and Netmiko, checks the collector is downloaded, and counts the six containers (Docker SDK `containers.list`). Each line says OK or FAIL.",
+      "Run it as often as you like. By hand: `docker ps` shows the containers, `containerlab inspect --all` shows the lab."
+     ],
+     "hints": [
+      "Read the last line: READY or NOT READY.",
+      "A FAIL line names what is missing. \"settings missing\" means the Codespace was opened from the wrong place: delete it, accept the invitation, reopen from your seat page.",
+      "`workshop doctor`. If only the containers line fails, run `workshop up`."
+     ],
+     "step": "doctor"
+    },
+    {
+     "id": "lab-up",
+     "label": "Build",
+     "levels": [
+      "Builds your four routers, a client and a service, and gives each router its starting configuration.",
+      "netlab turns `lab/topology.yml` into a containerlab topology, starts six containers, renders each router's config and pushes it over SSH with Netmiko. Then it waits until eAPI and SSH answer and every BGP session is up. netlab configures a router only while building the lab: every later change goes through NAPALM.",
+      "Look at it with netlab itself, from `lab/`: `netlab status`, `netlab inspect --node r1`, `netlab connect r1`, and `ls node_files/r4` for the pieces it sent."
+     ],
+     "hints": [
+      "It takes 3 to 10 minutes. Watch for the lines about BGP.",
+      "If it says the lab was stopped, it rebuilds it: that is normal after a Codespace restart.",
+      "`workshop up`. It is safe to run again: a running lab is left as it is."
+     ],
+     "step": "up"
+    },
+    {
+     "id": "lab-look",
+     "label": "Look around",
+     "levels": [
+      "Look at the real routers before you ask Forward anything.",
+      "r1 has two BGP paths to the service, and local preference picks one of them. This is the view Forward's model should agree with later.",
+      "`docker exec -it clab-autocon6-r1 Cli`, then `show ip route 10.20.20.0/24` and `show ip bgp 10.20.20.0/24`. More like this on the side quests page."
+     ],
+     "hints": [
+      "The routers are containers, so docker can open a CLI on them.",
+      "The router CLI is called `Cli`: `docker exec -it clab-autocon6-r1 Cli`.",
+      "Then `show ip bgp 10.20.20.0/24`: two paths, and the best one has local preference 200."
+     ]
+    }
+   ]
   },
   "baseline": {
    "title": "Give Forward a baseline",
@@ -146,7 +192,69 @@
      "limit": 5
     }
    ],
-   "why": "A prediction only means something against a known \"before\". Pipelines usually go straight to the change; this step is what makes a prediction mean something."
+   "why": "A prediction only means something against a known \"before\". Pipelines usually go straight to the change; this step is what makes a prediction mean something.",
+   "trail": [
+    {
+     "id": "bl-collect",
+     "label": "Collect",
+     "levels": [
+      "Reads every router's configuration and state into one snapshot file.",
+      "The headless collector logs in to r1 to r4 over SSH, runs show commands and writes a ZIP. First the step hashes each router's running config through NAPALM, a fingerprint of the network as it is. After collecting it hashes the ZIP's copy again, and collects again if they differ.",
+      "Look inside the ZIP: `unzip -l <the path it prints> | head`. The collector's own log is the path the output names."
+     ],
+     "hints": [
+      "The lab must be up first: `workshop doctor` says READY.",
+      "If the routers change while it collects, it retries up to three times and says why.",
+      "`workshop baseline collect`. About 15 seconds."
+     ],
+     "step": "baseline collect"
+    },
+    {
+     "id": "bl-upload",
+     "label": "Upload",
+     "levels": [
+      "Sends the snapshot to your Forward network, with a note saying what it is.",
+      "`snapshots.upload(zip, note=\"autocon6:baseline lab=… fp=<fingerprint>\")`. The note is how every later step finds your baseline and knows what it holds. If Forward is still processing an earlier upload it waits for that one instead of queueing another.",
+      "The call is printed above as a → Forward SDK line. The snapshot id it ends with is the evidence."
+     ],
+     "hints": [
+      "Collect must have finished: the ZIP has to exist.",
+      "If an upload fails partway, it checks whether Forward already got it before sending again.",
+      "`workshop baseline upload`."
+     ],
+     "step": "baseline upload"
+    },
+    {
+     "id": "bl-wait",
+     "label": "Wait",
+     "levels": [
+      "Forward builds its model of your network from the snapshot.",
+      "`snapshots.wait_until_processed` shows the queue position and processing stage. Forward models the forwarding behaviour of the collected devices: every route, ACL and path. About a minute.",
+      "If it runs out of time, run it again: it waits for the same upload. Then `workshop data inventory` shows what Forward found."
+     ],
+     "hints": [
+      "A minute or so is normal. The output says which stage it is in.",
+      "If it times out nothing is lost: run it again and it waits for the same upload.",
+      "`workshop baseline wait`."
+     ],
+     "step": "baseline wait"
+    },
+    {
+     "id": "bl-check",
+     "label": "Check",
+     "levels": [
+      "Confirms the baseline is yours and trustworthy, then judges your requirements against it.",
+      "Three integrity checks: the note says baseline and your lab; Forward's copy of the four configs (`devices.file`) matches the fingerprint; the live routers still match it. Then each requirement in `requirements/baseline.yml` becomes a question to Forward (`path_search.get_paths` for a flow, `nqe.query` for the rest) and is compared with the YAML.",
+      "Open `requirements/baseline.yml` and match each requirement to a call printed above. Every line should say PASS."
+     ],
+     "hints": [
+      "Every line should say PASS. If one does not, read the line under it: it says what Forward saw.",
+      "A FAIL here usually means the baseline ran before the lab finished building. Run `workshop up` again, then the baseline steps from the start.",
+      "`workshop baseline check`. To start over, `workshop baseline collect`."
+     ],
+     "step": "baseline check"
+    }
+   ]
   },
   "change": {
    "title": "Write the change",
@@ -180,7 +288,51 @@
    ],
    "run": [],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It also clears your candidate, so you start the change from nothing.",
-   "why": "The change is a few lines in a file under version control. Nothing reaches a router until later steps approve it, so you can propose a change you suspect is bad and find out safely."
+   "why": "The change is a few lines in a file under version control. Nothing reaches a router until later steps approve it, so you can propose a change you suspect is bad and find out safely.",
+   "trail": [
+    {
+     "id": "ch-intent",
+     "label": "Read the intent",
+     "levels": [
+      "Start from what the change is for.",
+      "`intent.md` is the change request: retire r4's stale BGP advertisements and keep the one that carries live traffic. It is the desired state, kept in Git like code, and `requirements/candidate.yml` says what must still be true afterwards.",
+      "Open both in the Explorer. The first says what you want; the second is five tests the change must pass."
+     ],
+     "hints": [
+      "The change request is a file in your repository.",
+      "Open `intent.md` in the Explorer.",
+      "Then `requirements/candidate.yml`: five tests the change has to pass."
+     ]
+    },
+    {
+     "id": "ch-choose",
+     "label": "Choose what to retire",
+     "levels": [
+      "r4 advertises three prefixes. Decide which to retire.",
+      "They look alike in the configuration, which is the point: what a line does is not in its text. Some `network` statements have a route behind them and some do not.",
+      "Compare r4's configuration with its routing table: `show running-config section router bgp`, then `show ip route <prefix>` for each prefix. What is different?"
+     ],
+     "hints": [
+      "Not every `network` statement is doing the same job.",
+      "A statement with no route behind it advertises nothing useful.",
+      "Retiring only 10.20.30.0/24 and 10.20.40.0/24 keeps the service. Try retiring all three first if you want to see the gate catch it."
+     ]
+    },
+    {
+     "id": "ch-write",
+     "label": "Write the candidate",
+     "levels": [
+      "Write your decision into `candidate/r4-bgp.eos`.",
+      "Only `no network <prefix>` lines under `router bgp 65004`, `address-family ipv4` are in scope. Nothing reaches a router: this edits a file in Git, to be judged first.",
+      "The button below writes the file for you, or edit it by hand. `git diff` shows exactly what changed."
+     ],
+     "hints": [
+      "Tick the prefixes to retire, then press Write.",
+      "By hand, a line looks like `no network 10.20.30.0/24` under `address-family ipv4`.",
+      "Press \"Write candidate/r4-bgp.eos\", then open the file in the Explorer."
+     ]
+    }
+   ]
   },
   "predict": {
    "title": "Predict it",
@@ -242,7 +394,54 @@
      "against": "predicted"
     }
    ],
-   "why": "This puts a test inside the review. Most teams already review changes in pull requests; Predict adds a judge that asks what the network will do, not whether the syntax is legal."
+   "why": "This puts a test inside the review. Most teams already review changes in pull requests; Predict adds a judge that asks what the network will do, not whether the syntax is legal.",
+   "trail": [
+    {
+     "id": "pr-changeset",
+     "label": "Change set",
+     "levels": [
+      "Checks your baseline, then hands Forward your change as a change set.",
+      "It reads `candidate/r4-bgp.eos` (its sha256 identifies the change from here on), checks your newest baseline is yours and still passes (`snapshots.latest_processed`), then creates the change set: `change_sets.create`, `set_commands(\"r4\", your lines)`, `commit`. Nothing is predicted yet.",
+      "The evidence is the change set's id. The raw calls are in `examples/predict_by_hand.py`."
+     ],
+     "hints": [
+      "You need a baseline that PASSes first.",
+      "STALE means your baseline no longer matches the lab or the requirements: take a fresh one.",
+      "`workshop predict changeset`."
+     ],
+     "step": "predict changeset"
+    },
+    {
+     "id": "pr-run",
+     "label": "Predict",
+     "levels": [
+      "Forward builds the network your change would produce, without touching it.",
+      "`predict(…)` then `wait_until_processed`: Forward applies the change set to its model of r4 and builds a new snapshot. The result includes Forward's routing diff: what the change adds and removes. Your real network is not touched.",
+      "About a minute. The predicted snapshot's id is the evidence, and `workshop data diff` shows the routing diff."
+     ],
+     "hints": [
+      "About a minute.",
+      "Nothing on your routers changes during this step.",
+      "`workshop predict run`."
+     ],
+     "step": "predict run"
+    },
+    {
+     "id": "pr-check",
+     "label": "Check",
+     "levels": [
+      "Judges your requirements against the predicted network.",
+      "evaluate.py asks each requirement in `requirements/candidate.yml` of the predicted snapshot, and writes `evidence/evidence.json`: the verdict, every answer Forward gave, the candidate's hash and the baseline's id. Only PASS can ever deploy.",
+      "Open `evidence/evidence.json` and find `candidate_sha256`. Deploy will only accept this file."
+     ],
+     "hints": [
+      "Read each requirement's line: PASS, FAIL, ERROR, INCONCLUSIVE or STALE.",
+      "A FAIL says what Forward saw and what was required. Find the requirement's id in `requirements/candidate.yml`.",
+      "`workshop predict check`."
+     ],
+     "step": "predict check"
+    }
+   ]
   },
   "approve": {
    "title": "Review and approve",
@@ -285,7 +484,51 @@
      "against": "predicted"
     }
    ],
-   "why": "The code and the requirements come from main, not from your pull request, because a test the author can edit isn't a gate. Nobody gets a shortcut around it: not you, not a deadline, not an AI draft."
+   "why": "The code and the requirements come from main, not from your pull request, because a test the author can edit isn't a gate. Nobody gets a shortcut around it: not you, not a deadline, not an AI draft.",
+   "trail": [
+    {
+     "id": "ap-pr",
+     "label": "Open the pull request",
+     "levels": [
+      "Open a pull request so the pipeline judges your change on GitHub.",
+      "Only `candidate/r4-bgp.eos` is committed, on a new branch, never main. The forward/predict check starts by itself and runs the same three predict steps, taking its code and tests from main so a pull request cannot weaken its own test.",
+      "The Predict step's \"Open pull request\" button does it. Or: `git switch -c my-change`, commit, `git push -u origin HEAD`, `gh pr create --fill`."
+     ],
+     "hints": [
+      "The change lives on a branch, not on main.",
+      "The Predict step has a button that does the branch, the commit, the push and the pull request.",
+      "Press \"Open pull request\" on the Predict step, then watch the check in the GitHub Pull Requests panel."
+     ]
+    },
+    {
+     "id": "ap-read",
+     "label": "Read the check",
+     "levels": [
+      "Read the forward/predict result before you trust it.",
+      "The check's summary lists each requirement, what Forward observed and the routing changes, and has the four deploy commands written out with your values. A red check cannot merge.",
+      "On GitHub: the pull request, Checks, forward/predict, Summary. It should agree with `workshop predict check` run in your terminal."
+     ],
+     "hints": [
+      "The check can queue for a few minutes while GitHub starts it.",
+      "Red means a requirement failed on the predicted network. Read which one.",
+      "Pull request, Checks, forward/predict, Summary."
+     ]
+    },
+    {
+     "id": "ap-merge",
+     "label": "Merge when green",
+     "levels": [
+      "Only a green check can merge.",
+      "Branch protection requires forward/predict to pass. Merging is the human approval, and it is bound to the exact candidate bytes: a later edit would not be deployed under it.",
+      "Squash and Merge on GitHub, then bring main up to date: `git switch main` and pull. Deploy needs the merged pull request's number."
+     ],
+     "hints": [
+      "If the Merge button is disabled, the check is not green yet.",
+      "Fix the change on the same branch: the check runs again.",
+      "Squash and Merge once it is green."
+     ]
+    }
+   ]
   },
   "deploy": {
    "title": "Deploy exactly what was predicted",
@@ -328,7 +571,69 @@
      "against": "predicted"
     }
    ],
-   "why": "Approval is only worth something if what gets deployed is what was approved. Deploy checks the pull request, the candidate, the requirements, the baseline and the routers before it writes anything."
+   "why": "Approval is only worth something if what gets deployed is what was approved. Deploy checks the pull request, the candidate, the requirements, the baseline and the routers before it writes anything.",
+   "trail": [
+    {
+     "id": "dp-gates",
+     "label": "Gates",
+     "levels": [
+      "Every safety check, and nothing is sent.",
+      "You say which change you reviewed with `--confirm <first 7 characters of the candidate hash>`. The evidence must be a live PASS for this lab, the candidate and requirements must be the ones predicted, the pull request must be merged with a green check at that commit, your baseline must still be the newest, and the routers must still match it (nobody changed one by hand).",
+      "Try `--confirm 0000000`: it refuses and prints the value it expects."
+     ],
+     "hints": [
+      "You need the pull request's number and the 7 characters.",
+      "Both are at the top of the green check's summary.",
+      "`workshop deploy gates --pr <N> --confirm <sha7>`."
+     ],
+     "step": "deploy gates"
+    },
+    {
+     "id": "dp-render",
+     "label": "Render",
+     "levels": [
+      "One change, applied twice, so you can see Forward and the router agree.",
+      "Inside Forward: the commands the change set holds for r4, and r4's configuration before and after. On the router: NAPALM `load_merge_candidate`, `compare_config` (r4's own diff), then `discard_config`. Nothing on r4 changes. Then it checks the two diffs change the same lines.",
+      "If they differed, stop: what Predict judged would not be what the router does."
+     ],
+     "hints": [
+      "It only needs the pull request's number.",
+      "It is a dry run: nothing on r4 changes.",
+      "`workshop deploy render --pr <N>`."
+     ],
+     "step": "deploy render"
+    },
+    {
+     "id": "dp-apply",
+     "label": "Apply",
+     "levels": [
+      "Writes the predicted lines to r4, and nothing else.",
+      "An exclusive lock on the lab, the gates again, then NAPALM on r4: `load_merge_candidate`, `compare_config`, `commit_config` with the exact bytes Predict judged. A line the router refuses aborts the whole session, so a change never half applies.",
+      "The router's own diff is printed. Compare it with what render showed."
+     ],
+     "hints": [
+      "This is the one step that writes. You type the hash.",
+      "A refusal means a gate failed: read which one.",
+      "`workshop deploy apply --pr <N> --confirm <sha7>`."
+     ],
+     "step": "deploy apply"
+    },
+    {
+     "id": "dp-readback",
+     "label": "Read back",
+     "levels": [
+      "Asks r4 what it holds now and checks every line that was sent.",
+      "NAPALM runs `show running-config section router bgp` on r4 and compares it line by line with what apply sent.",
+      "By hand: `docker exec clab-autocon6-r4 Cli -p15 -c \"show running-config section router bgp\"`."
+     ],
+     "hints": [
+      "Run it right after apply.",
+      "It takes no flags.",
+      "`workshop deploy readback`."
+     ],
+     "step": "deploy readback"
+    }
+   ]
   },
   "verify": {
    "title": "Verify on the real network",
@@ -403,7 +708,84 @@
      "against": "post"
     }
    ],
-   "why": "Verify closes the loop: it compares what was predicted with what is really there. A MATCH is a measurement of how good the prediction was, and that is what lets you trust the next one."
+   "why": "Verify closes the loop: it compares what was predicted with what is really there. A MATCH is a measurement of how good the prediction was, and that is what lets you trust the next one.",
+   "trail": [
+    {
+     "id": "vf-probe",
+     "label": "Probe",
+     "levels": [
+      "Real packets, from the real client.",
+      "Docker SDK `exec_run(['nc', '-z', '-w', '3', '10.20.20.20', <port>])` inside the client container, for each flow requirement: 8080 should work and 2222 must be refused. The same in the service container tells a blocked port from a service that is not listening.",
+      "By hand: `docker exec clab-autocon6-client nc -z -w 3 10.20.20.20 8080; echo $?` (0 means open)."
+     ],
+     "hints": [
+      "The deploy has to have happened first.",
+      "8080 open and 2222 refused is the expected answer.",
+      "`workshop verify probe`."
+     ],
+     "step": "verify probe"
+    },
+    {
+     "id": "vf-collect",
+     "label": "Collect",
+     "levels": [
+      "Collect the network again, as it is now.",
+      "The same collector and the same steps as the baseline, on the real network after the change.",
+      "r4's configuration changed, so this snapshot's fingerprint differs from the baseline's."
+     ],
+     "hints": [
+      "Same as the baseline's collect.",
+      "About 15 seconds.",
+      "`workshop verify collect`."
+     ],
+     "step": "verify collect"
+    },
+    {
+     "id": "vf-upload",
+     "label": "Upload",
+     "levels": [
+      "Send the new snapshot to Forward.",
+      "`snapshots.upload` again, with a note that says `autocon6:post …`, so it can never be mistaken for the baseline.",
+      "The → Forward SDK line above is the call; the snapshot id is the evidence."
+     ],
+     "hints": [
+      "Collect must have finished.",
+      "The note says post, not baseline.",
+      "`workshop verify upload`."
+     ],
+     "step": "verify upload"
+    },
+    {
+     "id": "vf-wait",
+     "label": "Wait",
+     "levels": [
+      "Forward models the network after the change.",
+      "The same wait as the baseline: about a minute while Forward builds its model of the new snapshot.",
+      "If it runs out of time, run it again: it waits for the same upload."
+     ],
+     "hints": [
+      "About a minute.",
+      "Run it again if it times out.",
+      "`workshop verify wait`."
+     ],
+     "step": "verify wait"
+    },
+    {
+     "id": "vf-compare",
+     "label": "Compare",
+     "levels": [
+      "Does reality match the prediction?",
+      "evaluate.py asks the candidate requirements of the new snapshot and compares each verdict with Predict's. MATCH means every verdict and every probe agrees. Then it shows Forward's routing diff from the baseline to the network now, and writes `verify.json`.",
+      "Open `verify.json`, and compare `evidence/evidence.json`'s predicted results with these."
+     ],
+     "hints": [
+      "MATCH is the goal.",
+      "A MISMATCH means the prediction and reality disagreed. That is exactly what verify exists to catch.",
+      "`workshop verify compare`."
+     ],
+     "step": "verify compare"
+    }
+   ]
   },
   "done": {
    "title": "Loop closed",
@@ -458,7 +840,38 @@
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. It clears your candidate, ready for another go.",
-   "why": "The loop you just ran is the habit to keep, whatever tools you use: write down what must stay true, predict the change, approve it, deploy exactly that, and check reality against the prediction."
+   "why": "The loop you just ran is the habit to keep, whatever tools you use: write down what must stay true, predict the change, approve it, deploy exactly that, and check reality against the prediction.",
+   "trail": [
+    {
+     "id": "dn-restore",
+     "label": "Restore r4",
+     "levels": [
+      "Put r4 back to how it started.",
+      "NAPALM reads r4's advertisements and applies `lab/restore/r4-bgp.eos`, plus `no network` for anything extra. There is no prediction and no gate: this is the break-glass path, which is why a fresh baseline must follow.",
+      "`workshop restore`, then the baseline steps."
+     ],
+     "hints": [
+      "Use it to start another loop.",
+      "It changes r4 only.",
+      "`workshop restore`."
+     ],
+     "step": "restore"
+    },
+    {
+     "id": "dn-baseline",
+     "label": "A fresh baseline",
+     "levels": [
+      "A new baseline for the next change.",
+      "The four baseline steps again: collect, upload, wait, check. Every change starts from a baseline taken after the last one.",
+      "Run them one at a time, as the first time."
+     ],
+     "hints": [
+      "It is the same four steps as before.",
+      "Start with collect.",
+      "`workshop baseline collect`, then upload, wait and check."
+     ]
+    }
+   ]
   }
  },
  "terms": {

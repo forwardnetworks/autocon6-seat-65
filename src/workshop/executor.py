@@ -22,6 +22,7 @@ from napalm import get_network_driver
 from napalm.base.exceptions import ConnectionException, MergeConfigException, NapalmException
 from pyeapi.eapilib import EapiError
 
+from workshop import trace
 from workshop.config import Settings
 
 # pyeapi logs every refused connection as an exception, and with no handler Python prints those tracebacks to the terminal. While
@@ -52,7 +53,17 @@ def connect(settings: Settings, host: str):
         driver.open()
     except (ConnectionException, NapalmException, EapiError, OSError) as exc:
         raise DeployError(f"cannot reach {host} over eAPI: {exc}") from exc
-    return driver
+    return trace.napalm(driver, _device_name(settings, host))
+
+
+def _device_name(settings: Settings, host: str) -> str:
+    """r1..r4 for a management address, for the trace line; the address itself if the inventory can't say."""
+    try:
+        from workshop import lab  # local: lab imports this module
+
+        return next((n for n, ip in lab.mgmt_ips(settings).items() if ip == host), host)
+    except Exception:  # noqa: BLE001 - a label only
+        return host
 
 
 def _clear_stale_sessions(conn) -> None:

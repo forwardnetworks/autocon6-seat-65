@@ -31,7 +31,7 @@ from forward_sdk.errors import (
     ForwardTransportError,
 )
 
-from workshop import __version__, fingerprint, show
+from workshop import __version__, fingerprint, show, trace
 from workshop.candidate import Candidate
 from workshop.config import Settings
 from workshop.evaluate import ObserverTimeout
@@ -189,7 +189,7 @@ class Forward:
         retries, so a slow Forward costs a few seconds and a note, never a stuck command or a CI job past its limit."""
         self.settings = settings
         extra = {"timeout": 30, "retries": 0} if quick else {}
-        self.c = ForwardClient.from_env(network_id=settings.network_id, user_agent=f"autocon6-workshop/{__version__}", **extra)
+        self.c = trace.forward(ForwardClient.from_env(network_id=settings.network_id, user_agent=f"autocon6-workshop/{__version__}", **extra))
 
     def __enter__(self) -> Self:
         return self
@@ -268,7 +268,7 @@ class Forward:
         Each status check gets 30 seconds (not the SDK's five minutes): on a slow network one stalled request must not
         silence the wait for minutes. A check that doesn't answer is said and asked again, and a heartbeat thread prints a
         line every 20 seconds whatever the network does, so the person waiting always sees it is still going."""
-        polls = ForwardClient.from_env(network_id=self.settings.network_id, user_agent=f"autocon6-workshop/{__version__}", timeout=30, retries=1)
+        polls = trace.forward(ForwardClient.from_env(network_id=self.settings.network_id, user_agent=f"autocon6-workshop/{__version__}", timeout=30, retries=1))
         watch = ProcessingWatch(polls, log, what) if log else None
         beat = show.Heartbeat(log, f"waiting for Forward ({what})", every=20, usual=180, give_up=600)
         stop = threading.Event()

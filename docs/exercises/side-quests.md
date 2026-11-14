@@ -13,10 +13,12 @@ If you're **behind**, skip this page. The core steps are the only thing that mat
 | you've seen a red check | [SQ5 · Which lines are stale?](#sq5--which-lines-are-stale) | 5 min |
 | you've seen a red check | [SQ6 · Every way of retiring the lines](#sq6--every-way-of-retiring-the-lines) | 10 min |
 | you've seen a red check | [SQ7 · Let an adviser draft it](#sq7--let-an-adviser-draft-it) | 10 min |
+| you've seen a red check | [SQ10 · Blast radius, before and after](#sq10--blast-radius-before-and-after) | 10 min |
+| your baseline is PASS | [SQ11 · Ask Forward anything (NQE)](#sq11--ask-forward-anything-nqe) | 10 min |
 | you've verified (MATCH) | [SQ8 · Cheat the gate](#sq8--cheat-the-gate) | 10 min |
 | you've verified (MATCH) | [SQ9 · Catch the drift](#sq9--catch-the-drift) | 10 min |
 
-Your lab page's **Go further** card tracks SQ3, SQ4, SQ6 and SQ7 for you. The others are for you to notice things.
+Your lab page's **Go further** card tracks SQ3, SQ4, SQ6 and SQ7 for you, and its **Explore what Forward knows** box runs SQ2 and SQ10 from the page. The others are for you to notice things.
 
 ---
 
@@ -105,6 +107,39 @@ workshop agent             # draft, predict, advise, draft again, stop before ap
 ```
 
 Does the draft pass? Would you have written the same lines? The tests are the judge, not the adviser. You are welcome to point your own coding agent at this repository: `AGENTS.md` gives it the rules.
+
+## SQ10 · Blast radius, before and after
+
+*After you've seen a red check. You need a baseline and a prediction of a change that failed (the one that retires all three prefixes).*
+
+**Why:** a requirement tells you *that* a change is bad. Blast radius tells you *how much* it cuts off.
+
+```
+workshop data blast --snapshot baseline  --device r1 --prefix 10.20.20.0/24
+workshop data blast --snapshot predicted --device r1 --prefix 10.20.20.0/24
+```
+
+**You should see:** on the baseline, "From r1, traffic can reach 254 of the 256 addresses in 10.20.20.0/24" (the network and broadcast addresses are the two that
+are not). On the predicted snapshot of the bad change, "no packet that can reach any address in 10.20.20.0/24: the whole subnet is cut off from there."
+
+**Think about it:** that is a before-and-after you got without touching a router. Try a different start, `--device "r1 Ethernet3"` (a device and an interface, quoted), or a
+smaller destination like `10.20.20.20/32`. Which of the three network statements on r4 does the answer depend on?
+Add `--json` to see Forward's own answer, including a sample packet it would send.
+
+## SQ11 · Ask Forward anything (NQE)
+
+**Why:** every table in `workshop data` is a query. NQE is Forward's query language, and you can write your own.
+
+```
+workshop nqe nqe/stale_bgp_advertisements.nqe
+workshop nqe 'foreach d in network.devices select {name: d.name, os: d.platform.os, version: d.platform.osVersion}'
+```
+
+**You should see:** the first prints r4's two stale `network` statements: this is exactly the question the STALE-KNOWN requirement asks. The second lists your four routers.
+Open `nqe/stale_bgp_advertisements.nqe` and read how it decides a statement is stale.
+
+**Think about it:** change the second query to list something else about the devices. What would you ask Forward about your own network? Use `--snapshot predicted` to ask the
+same question of the network a change *would* produce.
 
 ## SQ8 · Cheat the gate
 

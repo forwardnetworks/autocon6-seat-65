@@ -16,6 +16,8 @@ from __future__ import annotations
 import shlex
 from collections.abc import Callable, Sequence
 
+from workshop import trace
+
 Log = Callable[[str], None] | None
 
 
@@ -26,6 +28,7 @@ def shell(log: Log, argv: Sequence[str], cwd: str = "") -> None:
 
 def sdk(log: Log, call: str) -> None:
     if log is not None:
+        trace.announced("Forward SDK", call)
         log(f"    → Forward SDK  {call}")
 
 
@@ -41,11 +44,13 @@ def git(log: Log, call: str) -> None:
 
 def docker(log: Log, container: str, call: str) -> None:
     if log is not None:
+        trace.announced("Docker SDK", f"{container}.{call}")
         log(f"    → Docker SDK   {container}: {call}")
 
 
 def napalm(log: Log, device: str, call: str) -> None:
     if log is not None:
+        trace.announced("NAPALM", call)
         log(f"    → NAPALM {device:<4} {call}")
 
 

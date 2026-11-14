@@ -141,6 +141,13 @@ select { font: inherit; padding: 5px; border-radius: var(--radius); border: 1px 
 .bubble p { margin: 4px 0; }
 .tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .tool { font-size: 10.5px; background: var(--raised); color: var(--txt-2); border: 1px solid var(--divider); border-radius: 10px; padding: 1px 7px; }
+.trail { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:10px 0 6px; } .trail .sep { color:var(--txt-3); }
+.crumb { border:1px solid var(--divider); background:var(--raised); color:var(--txt); border-radius:999px; padding:3px 11px; font-size:12.5px; cursor:pointer; }
+.crumb .n { color:var(--txt-3); margin-right:5px; } .crumb.done { border-color:var(--ok); } .crumb.done .n { color:var(--ok); }
+.crumb.cur { outline:2px solid var(--accent); outline-offset:1px; } .crumb.sel { background:var(--accent-bg); }
+.cdetail { border:1px solid var(--divider); border-left:4px solid var(--accent); border-radius:8px; padding:10px 12px; margin:6px 0 12px; background:var(--raised); }
+.cdetail h4 { margin:0 0 6px; font-size:14px; } .clevel { margin:6px 0; font-size:13.5px; } .clevel b { color:var(--accent); margin-right:6px; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em; }
+.cdetail .crow { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; } .cdetail .hint-line { font-size:12.5px; color:var(--txt-2); background:var(--group); border-radius:6px; padding:5px 8px; margin-top:5px; } .cdetail .hint-line b { color:var(--accent); margin-right:6px; }
 .hint { font-size: 12px; border-left: 3px solid var(--accent); padding: 4px 8px; margin-top: 8px; color: var(--txt-2); }
 .composer { border-top: 1px solid var(--divider); padding: 10px 16px 12px; }
 .composer textarea { min-height: 44px; }
@@ -176,6 +183,8 @@ details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padd
 .quiz .why { font-size:13px; background:var(--group); border-radius:var(--radius); padding:8px 10px; margin-top:6px; }
 .runrow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
 .runrow .note { font-size:12px; color:var(--txt-2); flex-basis:100%; margin-top:-2px; }
+.out .call { color:#7fb0ff; } .out .callbad { color:#ff8a80; } .out .callnote { color:#8aa0a8; }
+.calls-card .out { max-height:220px; } .calls-card summary { cursor:pointer; } .calls-card h2 { display:inline; margin:0; }
 .out { background:#0f1416; color:#d6d6d6; border-radius:var(--radius); padding:10px; max-height:300px; overflow:auto; white-space:pre-wrap; font-size:12px; margin-top:8px; }
 .facts { margin:0; padding-left:18px; } .facts li { margin:3px 0; }
 .builder label { display:flex; gap:8px; align-items:flex-start; padding:6px 0; }
@@ -242,6 +251,11 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
         <details id="chal-stretch"><summary>Stretch challenges <span class="muted" id="stretch-sum"></span></summary><ul class="chals" id="chals-stretch"></ul></details>
       </section>
       <section class="card" id="lane"></section>
+      <details class="card calls-card" id="calls-card" open>
+        <summary><h2>What just ran <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0" id="calls-n"></span></h2></summary>
+        <div class="muted" style="font-size:12px;margin:6px 0">Every call this page makes for itself: to Forward, your routers, Docker or GitHub. A step you run shows its own calls in its Output, each marked <code>→</code> or <code>$</code>.</div>
+        <pre class="out" id="calls-out">nothing yet</pre>
+      </details>
       <details class="optai" id="optai"><summary>Optional: Forward AI explains and advises (it never decides)</summary>
       <div class="col" style="margin-top:10px">
       <section class="card">
@@ -435,7 +449,7 @@ function renderLane(s) {
   const item = (it) => {
     let body = "";
     if (it.kind === "explore") {
-      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option></select>
+      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option></select>
         <select id="ex-snap"><option value="baseline">baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
         <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option></select></div>
         <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
@@ -522,11 +536,48 @@ function facts(key, s) {
   return f;
 }
 
+// The trail: each lab (stage) is a breadcrumb of its steps. A crumb opens one level at a time (what it does, why and which calls it makes,
+// how to do it by hand) and has three hints that reveal one by one. Ticks come from steps this page ran, or a stage that is done.
+let trailOpen = null, trailState = {}, trailDone = {};
+try { trailState = JSON.parse(localStorage.getItem("wsa4-trail") || "{}"); } catch { trailState = {}; }
+try { trailDone = JSON.parse(localStorage.getItem("wsa4-trail-done") || "{}"); } catch { trailDone = {}; }
+const saveTrail = () => { try { localStorage.setItem("wsa4-trail", JSON.stringify(trailState)); localStorage.setItem("wsa4-trail-done", JSON.stringify(trailDone)); } catch { /* private window: lasts this page view */ } };
+function markTrailDone(step) {
+  if (!guide || !step) return;
+  for (const st of Object.values(guide.steps)) for (const c of st.trail || []) if (c.step === step) trailDone[c.id] = true;
+  saveTrail();
+}
+const TRAIL_LEVELS = ["What it does", "Why, and what it calls", "By hand"];
+function trailHtml(g, stageDone) {
+  const tr = g.trail || [];
+  if (!tr.length) return "";
+  const isDone = (c) => stageDone || trailDone[c.id];
+  const cur = tr.findIndex((c) => !isDone(c));
+  const chips = tr.map((c, i) => `<button type="button" class="crumb${isDone(c) ? " done" : ""}${i === cur ? " cur" : ""}${c.id === trailOpen ? " sel" : ""}" data-crumb="${esc(c.id)}" aria-expanded="${c.id === trailOpen}"><span class="n">${isDone(c) ? "✓" : i + 1}</span>${esc(c.label)}</button>`).join('<span class="sep" aria-hidden="true">›</span>');
+  const open = tr.find((c) => c.id === trailOpen);
+  let detail = "";
+  if (open) {
+    const st = trailState[open.id] || { lv: 1, h: 0 };
+    const lv = Math.min(st.lv || 1, 3), h = Math.min(st.h || 0, 3);
+    detail = `<div class="cdetail" role="region" aria-label="${esc(open.label)}"><h4>${esc(open.label)}</h4>
+      ${open.levels.slice(0, lv).map((x, i) => `<div class="clevel"><b>${TRAIL_LEVELS[i]}</b>${inline(esc(x))}</div>`).join("")}
+      ${open.hints.slice(0, h).map((x, i) => `<div class="hint-line"><b>Hint ${i + 1}</b>${inline(esc(x))}</div>`).join("")}
+      <div class="crow">${lv < 3 ? `<button type="button" class="ghost" data-deeper="${esc(open.id)}">Go deeper</button>` : ""}${h < 3 ? `<button type="button" class="ghost" data-chint="${esc(open.id)}">${h ? "More help" : "I'm stuck: a hint"}</button>` : ""}</div></div>`;
+  }
+  return `<nav class="trail" aria-label="Steps in this lab">${chips}</nav>${detail}`;
+}
+function wireTrail(key) {
+  const again = () => { saveTrail(); guideSig = ""; renderGuide(state, key); };
+  document.querySelectorAll("#next .crumb").forEach((b) => b.onclick = () => { trailOpen = trailOpen === b.dataset.crumb ? null : b.dataset.crumb; again(); });
+  document.querySelectorAll("#next [data-deeper]").forEach((b) => b.onclick = () => { const id = b.dataset.deeper; trailState[id] = { ...(trailState[id] || { lv: 1, h: 0 }), lv: Math.min(((trailState[id] || {}).lv || 1) + 1, 3) }; again(); });
+  document.querySelectorAll("#next [data-chint]").forEach((b) => b.onclick = () => { const id = b.dataset.chint; trailState[id] = { ...(trailState[id] || { lv: 1, h: 0 }), h: Math.min(((trailState[id] || {}).h || 0) + 1, 3) }; again(); });
+}
+
 let guideSig = "";
 function renderGuide(s, key) {
   if (!guide) { $("next").innerHTML = ""; return; }
   const g = guide.steps[key] || guide.steps.done;
-  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s), s.updates]);
+  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s), s.updates, trailOpen, trailState, trailDone]);
   if (sig === guideSig) return;
   const a = document.activeElement;
   if (a && $("next").contains(a) && a.tagName === "INPUT" && a.type === "text" && a.value) return;  // never rebuild the card under someone's typing
@@ -581,6 +632,7 @@ function renderGuide(s, key) {
     <h2>${esc(g.title)}${failed ? " — something needs attention" : ""}</h2>
     <div class="nafrow">Framework block: ${naf}</div>
     ${failed ? `<div class="banner bad">${esc(stage.detail)}</div>` : ""}
+    ${trailHtml(g, stage && stage.state === "done")}
     <div>${esc(g.what)}</div>
     ${g.why ? `<div class="why-it-matters"><b>Why this matters.</b> ${esc(g.why)}</div>` : ""}
     <div class="gsec" id="arts"><h3>What you're working with</h3><div class="muted">loading…</div></div>
@@ -592,6 +644,7 @@ function renderGuide(s, key) {
     ${fl.length ? `<div class="gsec"><h3>What you're seeing</h3><ul class="facts">${fl.map((x) => `<li>${x}</li>`).join("")}</ul></div>` : ""}
     ${(g.after || []).length && fl.length ? `<div class="gsec"><h3>Check yourself</h3>${quiz(g.after, "a")}</div>` : ""}
     ${catchBlock}`;
+  wireTrail(key);
   glossarize($("next"));
   const cb = $("catch-btn"); if (cb) cb.onclick = () => { catchAsk = key; guideSig = ""; renderGuide(state, key); };
   const cn = $("catch-no"); if (cn) cn.onclick = () => { catchAsk = null; guideSig = ""; renderGuide(state, key); };
@@ -693,7 +746,7 @@ function pollJob() {
       else { if (v.lines.length) lastLineAt = Date.now(); outLines.push(...v.lines); job = { ...job, ...v }; }
     } catch { /* retry */ }
     showOut();
-    if (job && !job.done) pollJob(); else { for (const k in dataCache) delete dataCache[k]; guideSig = ""; laneSig = ""; refresh(); }
+    if (job && !job.done) pollJob(); else { if (job && job.code === 0) markTrailDone(job.step); for (const k in dataCache) delete dataCache[k]; guideSig = ""; laneSig = ""; refresh(); }
   }, 1000);
 }
 
@@ -724,6 +777,28 @@ function progressHtml(lines, done) {
   return `<div class="muted" style="margin:4px 0">${esc(stepLine)}</div>${bar}${latest && !done ? `<div class="muted" style="font-size:.9em">${esc(latest)}</div>` : ""}`;
 }
 
+// a line a step prints for each call it makes: "    → Forward SDK  …", "    → NAPALM r4  …", "    $ command"
+const isCall = (l) => /^\s+(→|\$)\s/.test(l);
+const outHtml = (lines) => lines.map((l) => (isCall(l) ? `<span class="call">${esc(l)}</span>` : esc(l))).join("\n");
+
+// the calls this page makes for itself (the explorer, the chat, the pull-request list), newest last; repeats are folded
+let callsNext = 0, callRows = [];
+async function pollCalls() {
+  try {
+    const v = await (await fetch(`/api/calls?since=${callsNext}`)).json();
+    if (!v.calls || !v.calls.length) return;
+    callsNext = v.next;
+    for (const c of v.calls) {
+      const last = callRows[callRows.length - 1];
+      if (last && last.kind === c.kind && last.text === c.text && last.ok === c.ok) { last.n++; last.ms = c.ms; } else callRows.push({ ...c, n: 1 });
+    }
+    callRows = callRows.slice(-60);
+    $("calls-out").innerHTML = callRows.map((c) => `<span class="${c.ok ? "call" : "callbad"}">→ ${esc(c.kind)}  ${esc(c.text)}${c.ms >= 1000 ? ` · ${(c.ms / 1000).toFixed(1)} s` : ""}${c.n > 1 ? ` · ×${c.n}` : ""}${c.ok ? "" : " · failed"}</span>`).join("\n");
+    $("calls-n").textContent = `(${callRows.reduce((a, c) => a + c.n, 0)} so far)`;
+    const pre = $("calls-out"); pre.scrollTop = pre.scrollHeight;
+  } catch { /* the feed is an extra: never stop the page */ }
+}
+
 function showOut() {
   const box = $(job && job.home === "lane" ? "lane-out" : "outbox");
   if (!box || !job) return;
@@ -731,7 +806,8 @@ function showOut() {
   const quiet = !job.done && Date.now() - lastLineAt > QUIET_AFTER;
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : `<span class="spinner"></span>running… ${job.secs ? job.secs + "s" : ""}`;
   const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.<br><em class="muted">${esc(WAITING[Math.floor(Date.now() / 15000) % WAITING.length])}</em></div>` : "";
-  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}</span></h3>${progressHtml(outLines, job.done)}${patience}<pre class="out" id="outpre">${esc(outLines.join("\n"))}</pre></div>`;
+  const nCalls = outLines.filter(isCall).length;
+  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}${nCalls ? ` · ${nCalls} call${nCalls === 1 ? "" : "s"} made` : ""}</span></h3>${progressHtml(outLines, job.done)}${patience}<pre class="out" id="outpre">${outHtml(outLines)}</pre></div>`;
   const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
 }
 
@@ -914,6 +990,7 @@ async function refresh() {
   if (state.job && !job) { job = { id: state.job.id, done: state.job.done, word: state.job.word, cmd: "workshop " + state.job.step, step: state.job.step, next: 0 }; outLines = []; if (!state.job.done) pollJob(); else fetch(`/api/job?id=${job.id}&since=0`).then((r) => r.json()).then((v) => { if (!v.error) { outLines = v.lines; job = { ...job, ...v }; showOut(); } }); }
   renderBadges(state); renderLoop(state.stages); try { renderTopo(state); } catch (e) { /* the picture is an extra: never stop the cards below it */ } renderPrediction(state); renderVerify(state); renderAdvice(state); renderChat(state); renderChallenges(state); renderLane(state);
   $("intent").innerHTML = md(state.intent);
+  pollCalls();
 }
 loadGuide().then(refresh); rotateTip();
 setInterval(refresh, 3000); setInterval(rotateTip, 15000);

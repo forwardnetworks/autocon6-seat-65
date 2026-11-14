@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from workshop import ai, candidate, github, gitrepo, progress
+from workshop import ai, candidate, github, gitrepo, progress, trace
 from workshop.config import Settings
 from workshop.evidence import Manifest
 
@@ -751,6 +751,15 @@ def handler_for(board: Board) -> type[BaseHTTPRequestHandler]:
                     self._json(HTTPStatus.BAD_GATEWAY, {"error": f"Forward could not answer just now ({type(exc).__name__}). Try again in a moment."})
             elif route == "/api/guide":
                 self._send(HTTPStatus.OK, (ASSETS / "guide.json").read_bytes(), "application/json")
+            elif route == "/api/calls":
+                # what this page itself just asked Forward, a router, Docker or GitHub (a command you run shows its calls in its own output)
+                q = parse_qs(urlparse(self.path).query)
+                try:
+                    since = max(int((q.get("since") or ["0"])[0]), 0)
+                except ValueError:
+                    since = 0
+                calls = trace.recent(since)
+                self._json(HTTPStatus.OK, {"calls": calls, "next": calls[-1]["id"] if calls else since})
             elif route == "/api/job":
                 q = parse_qs(urlparse(self.path).query)
                 try:

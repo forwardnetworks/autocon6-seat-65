@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from workshop import executor, fingerprint, show
+from workshop import executor, fingerprint, show, trace
 from workshop.config import Settings
 
 CLIENT, SERVICE = "clab-autocon6-client", "clab-autocon6-service"
@@ -63,7 +63,7 @@ def mgmt_ips(settings: Settings) -> dict[str, str]:
 def _docker():
     import docker  # the Docker SDK for Python: the same API the docker CLI uses, without parsing its output
 
-    return docker.from_env(timeout=20)
+    return trace.docker(docker.from_env(timeout=20))
 
 
 def containers() -> dict[str, str]:

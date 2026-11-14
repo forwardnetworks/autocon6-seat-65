@@ -211,11 +211,12 @@ The one command that does several things, because it's for getting unstuck:
 ### `workshop nqe <file or query>`: ask Forward anything
 **SDK** `nqe.query(<query>, snapshot_id=…)`, and the rows as a table. Try `workshop nqe nqe/stale_bgp_advertisements.nqe`.
 
-### `workshop data inventory|routes|vulns|diff`
+### `workshop data inventory|routes|vulns|diff|blast`
 - `inventory`: **SDK** `nqe.query`, a query over Forward's device inventory.
 - `routes`: **SDK** `nqe.query`, the routes query.
 - `vulns`: **SDK** `vulnerability_analysis`: the CVEs that match the lab's EOS version.
 - `diff`: **SDK** `snapshot_diff_details`, Forward's routing diff between two snapshots.
+- `blast`: **SDK** `blast_radius.get_blast_radius`: from a device (`--device r1`) or an interface (`--device "r1 Ethernet3"`), how many addresses in a prefix (`--prefix 10.20.20.0/24`) traffic can reach. Run it on the baseline and on the predicted snapshot to see how much a change cuts off. Needs no internet node; the answer for a cut-off subnet is empty.
 
 ### `workshop probe`
 **Docker SDK** `exec_run(['nc', '-z', '-w', '3', '10.20.20.20', <port>])` in the client container for 8080, 8443 and 2222,

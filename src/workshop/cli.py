@@ -10,7 +10,7 @@ makes, and ends with its evidence and the next step.
 
 Looking inside Forward's model:
 
-    workshop data inventory | routes | vulns | diff      what Forward knows
+    workshop data inventory | routes | vulns | diff | blast   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
     workshop probe                                       real packets from the client, right now
@@ -39,13 +39,16 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from workshop import config
+from workshop import config, trace
 from workshop import report as report_
 from workshop.evidence import EXIT
 
 
 def log(message: str) -> None:
     print(message, flush=True)
+
+
+trace.set_sink(log)  # every Forward, router, Docker and GitHub call prints one line (workshop.trace)
 
 
 STEPS = {
@@ -133,11 +136,11 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
-    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff"])
+    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff", "blast"])
     dt.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | <snapshot id> (diff: the 'before' side)")
     dt.add_argument("--against", help="diff only: the 'after' side (default: predicted if there is one, else post)")
-    dt.add_argument("--device", default="", help="only this device (routes, diff)")
-    dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff)")
+    dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
+    dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff); for blast, where traffic is going (default 10.20.20.0/24)")
     dt.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     dt.add_argument("--json", action="store_true", help="the structured answer as JSON, including Forward's raw response")
     rs = sub.add_parser("reset", help="start an exercise again from a known point (keeps your work in git stash)")
