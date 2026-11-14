@@ -5,17 +5,20 @@ makes, and ends with its evidence and the next step.
     workshop up                                          netlab builds and configures the lab
     workshop baseline collect | upload | wait | check    Forward gets a model of the network, then the requirements are checked
     workshop predict changeset | run | check             (the PR check runs these three) predict a change and judge it
+    workshop predict history                             every prediction you finished, and what each attempt moved
     workshop deploy gates | render | apply | readback    send exactly what was predicted, with NAPALM
+                    --with-caveats ID,ID,...             deploy a FAIL on purpose (local evidence only), naming every failing requirement
+    workshop revert plan | apply | compare               back out exactly what was deployed, checked; Forward confirms it after a collection
     workshop verify probe | collect | upload | wait | compare    did the network do what Forward predicted?
 
 Looking inside Forward's model:
 
-    workshop data inventory | routes | vulns | diff | blast | checks   what Forward knows
+    workshop data inventory | topology | interfaces | routes | vulns | diff | blast | checks   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
     workshop probe                                       real packets from the client, right now
 
-Recovery: workshop restore (r4 back to its baseline, over NAPALM) · workshop reset --to N (a netlab redeploy) · workshop status
+Recovery: workshop revert (checked, the inverse of the deploy) · workshop restore (break-glass: r4 back to its baseline, over NAPALM) · workshop reset --to N (a netlab redeploy) · workshop status
 
 Forward AI advisers (optional; they advise, Predict and the requirements decide):
 
@@ -85,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="collect: run the collector · upload: send the ZIP to Forward · wait: Forward builds its model · check: integrity "
                          "checks and the baseline requirements. prepare/judge: you run the collector and upload yourself. No step: all of them")
     p = sub.add_parser("predict", help="one step at a time: changeset, run, check")
-    p.add_argument("step", nargs="?", choices=["changeset", "run", "check"],
+    p.add_argument("step", nargs="?", choices=["changeset", "run", "check", "history"],
                    help="changeset: check the baseline, create the change set in Forward · run: Forward builds the predicted network · "
                         "check: the requirements on it, and the evidence. No step: all three (the PR check runs that)")
     p.add_argument("--candidate", default="candidate/r4-bgp.eos")
@@ -104,12 +107,20 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("--evidence", help="an evidence.json from a local predict (rehearsal)")
     d.add_argument("--confirm", help="the first 7 characters of the candidate sha256 you reviewed (gates, apply)")
     d.add_argument("--no-github", action="store_true", help="skip the merged-PR check (local rehearsal only)")
+    d.add_argument("--with-caveats", default="", metavar="IDS",
+                   help="deploy a FAIL on purpose (local evidence only): name every failing requirement you accept, comma-separated. "
+                        "For the exercise that shows Predict was right; back it out with `workshop revert`")
     v = sub.add_parser("verify", help="one step at a time: probe, collect, upload, wait, compare")
     v.add_argument("step", nargs="?", choices=["probe", "collect", "upload", "wait", "compare"],
                    help="probe: real packets from the client · collect/upload/wait: the network after the change, into Forward · "
                         "compare: each requirement against the prediction. No step: all of them")
     v.add_argument("--evidence", help="default: the evidence the last deploy used")
     sub.add_parser("restore", help="restore r4's baseline advertisements")
+    rv = sub.add_parser("revert", help="back out exactly what was deployed, checked, to the baseline (plan, then apply)")
+    rv.add_argument("step", choices=["plan", "apply", "compare"],
+                    help="plan: what would be sent and where it returns to (read-only) · apply: send it · "
+                         "compare: after the baseline steps, Forward confirms the network is the original baseline")
+    rv.add_argument("--confirm", help="apply: the first 7 characters of the revert's hash (plan prints it)")
     a = sub.add_parser("ask", help="ask Forward AI about a snapshot")
     a.add_argument("question", nargs="?", help="your question (or use --prompt)")
     a.add_argument("--prompt", help="a sample prompt id from prompts/")
@@ -136,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
-    dt.add_argument("topic", choices=["inventory", "routes", "vulns", "diff", "blast", "checks"])
+    dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "blast", "checks"])
     dt.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | <snapshot id> (diff: the 'before' side)")
     dt.add_argument("--against", help="diff and checks: the 'after' side (diff defaults to predicted if there is one, else post; checks only compares if you give one)")
     dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
@@ -357,6 +368,12 @@ def _predict(settings: config.Settings, args) -> int:
     from workshop import evidence, predict
     from workshop.forward import Forward
 
+    if getattr(args, "step", None) == "history":  # read-only: the trail of every prediction finished on this seat
+        from workshop import history
+
+        for line in history.render(history.entries(settings)):
+            log(line)
+        return 0
     banner(settings, "predict" + (f" {args.step}" if getattr(args, "step", None) else ""))
     root = settings.repo_root
     git = {k: v for k, v in {"pr": args.pr, "head_sha": args.head_sha, "base_sha": args.base_sha,
@@ -403,6 +420,10 @@ def _predict(settings: config.Settings, args) -> int:
         state.unlink(missing_ok=True)  # the change set step stopped: write that as the evidence, so the PR says why
     out = Path(args.out)
     m.write(out / "evidence.json")
+    with contextlib.suppress(Exception):  # the trail is display only: keeping it never changes the verdict or the exit code
+        from workshop import history
+
+        history.record(settings, m, out=str(args.out))
     routing = None
     if m.predicted_snapshot_id:
         with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # display only: short timeout, no retries
@@ -476,8 +497,12 @@ def _deploy(settings: config.Settings, args) -> int:
             log(f"  {evidence}")
         else:
             evidence = Path(args.evidence)
+        caveats = [c.strip() for c in args.with_caveats.split(",") if c.strip()]
+        if caveats and args.pr:
+            log("NOT DEPLOYED (ERROR): caveats are for a local prediction (--evidence): a red pull request cannot merge")
+            return EXIT["ERROR"]
         if step == "gates":
-            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github)
+            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
             src = f"--pr {args.pr}" if args.pr else f"--evidence {args.evidence}"
             log(f"Every gate holds; nothing was sent. Next: workshop deploy render {src} (Forward's change next to r4's own dry run), then apply")
             return 0
@@ -490,10 +515,10 @@ def _deploy(settings: config.Settings, args) -> int:
                 log(line)
             return 0
         if step == "apply":
-            deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github)
-            log("Sent and committed on r4. Next: workshop deploy readback")
+            deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            log("Sent and committed on r4" + (" WITH CAVEATS (Predict said FAIL)" if caveats else "") + ". Next: workshop deploy readback")
             return 0
-        deploy.run(settings, evidence, args.confirm, log, check_github=not args.no_github)
+        deploy.run(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
     except github.GitHubError as exc:
         log(f"NOT DEPLOYED (ERROR): {exc}")
         return EXIT["ERROR"]
@@ -802,6 +827,37 @@ def _ui(settings: config.Settings, args) -> int:
     from workshop import ui
 
     ui.serve(settings, settings.repo_root / args.evidence, args.port, log)
+    return 0
+
+
+def _revert(settings: config.Settings, args) -> int:
+    from workshop import deploy, revert
+
+    banner(settings, f"revert {args.step}")
+    try:
+        if args.step == "plan":
+            revert.plan(settings, log)
+            return 0
+        if args.step == "compare":
+            result = revert.compare(settings, log)
+            log("")
+            if result["outcome"] == "MATCH":
+                log(f"revert: MATCH (snapshot {result['snapshot']}). What this means: Forward agrees the network is the one you started with:")
+                log("the requirements hold, the configs are the original baseline's, and no route differs. The backout is verified, and that snapshot is your baseline now.")
+                return 0
+            log(f"revert: MISMATCH (snapshot {result['snapshot']}): " + "; ".join(result["reasons"]) + ".")
+            log("The configs may be back, but Forward does not see the same network. Look at the differences above before you change anything else.")
+            return EXIT["FAIL"]
+        if not args.confirm:
+            log("say which revert you reviewed: --confirm <the first 7 characters of its hash> (`workshop revert plan` prints it)")
+            return EXIT["ERROR"]
+        revert.apply(settings, args.confirm, log)
+    except deploy.Refused as exc:
+        log(f"NOT REVERTED ({exc.status}): {exc}")
+        return EXIT[exc.status]
+    log("")
+    log("What this means: the deployed change is backed out, and the routers' configs are exactly the baseline's again (checked over NAPALM).")
+    log("Now let Forward confirm it with a fresh collection: `workshop baseline collect`, `upload`, `wait`, then `workshop revert compare`.")
     return 0
 
 

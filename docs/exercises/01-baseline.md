@@ -84,12 +84,19 @@ you're unsure.
 Before you test anything, look around. Forward now holds a model of your network, and most of you haven't used one
 before. Everything here is a question to Forward through the Python SDK; each command prints the call it makes.
 
-**What did Forward find?**
+**What did Forward find?** Start with the plain facts: what's there, how it's wired, and what each port holds.
 ```
 workshop data inventory
+workshop data topology
+workshop data interfaces --device r1
 ```
-Four routers and their OS. The client and service are small Linux containers the collector doesn't log in to: Forward
-knows them as the subnets on r1's and r4's client- and service-facing interfaces.
+Four routers and their OS; the four links of the diamond (r1-r2, r1-r3, r2-r4, r3-r4), worked out by Forward from what it
+collected; and r1's ports with their addresses, descriptions and the `CLIENT-IN` ACL inbound on the client's port. The client
+and service are small Linux containers the collector doesn't log in to: Forward knows them as the subnets on r1's and r4's
+client- and service-facing interfaces.
+
+If you work with APIs: every one of these is an SDK call or an NQE query, and each table ends with the exact call or query behind it.
+Add `--json` for Forward's own answer. The lab page's **Your lab** tab shows the same tables, from the same code.
 
 **What does each router know?**
 ```

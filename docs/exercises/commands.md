@@ -211,8 +211,14 @@ The one command that does several things, because it's for getting unstuck:
 ### `workshop nqe <file or query>`: ask Forward anything
 **SDK** `nqe.query(<query>, snapshot_id=…)`, and the rows as a table. Try `workshop nqe nqe/stale_bgp_advertisements.nqe`.
 
-### `workshop data inventory|routes|vulns|diff|blast`
+### `workshop data inventory|topology|interfaces|routes|vulns|diff|blast|checks`
 - `inventory`: **SDK** `nqe.query`, a query over Forward's device inventory.
+- `topology`: **SDK** `network_topology.get_topology`: the links Forward inferred between the routers, each once.
+- `interfaces`: **SDK** `device_interfaces.list_device_interfaces` per router (`--device r1` for one): address, description, ACLs, state.
+- `checks`: **SDK** `checks.get_checks`: Forward's own checks on a snapshot; with `--against predicted`, which ones a change moves.
+
+Every table ends with the exact NQE query or SDK call behind it; `--json` adds Forward's raw answer. The lab page shows the same tables
+from the same code.
 - `routes`: **SDK** `nqe.query`, the routes query.
 - `vulns`: **SDK** `vulnerability_analysis`: the CVEs that match the lab's EOS version.
 - `diff`: **SDK** `snapshot_diff_details`, Forward's routing diff between two snapshots.
@@ -240,3 +246,30 @@ It serves the **Your lab** tab on port 8765. Its buttons run the same `workshop`
   Nothing is judged until Predict evaluates it.
 - `workshop agent`: propose → predict → explain, in a loop until the gate passes, stopping before approval.
 - `workshop matrix`: `workshop predict` on every way of retiring r4's advertisements, side by side.
+
+
+---
+
+## Iterating, deploying with caveats, and backing out
+
+### `workshop predict history`
+Read-only. Every prediction you finished on this seat, oldest first: its hash, the lines it retires, the verdict, the requirements that
+did not pass, and what moved since the attempt before ("APP-EXISTING FAIL -> PASS"). Kept in the seat's state folder, outside the
+repository. Deploy never reads it: only `evidence/evidence.json`, the newest, can deploy.
+
+### `workshop deploy gates|apply --evidence evidence/evidence.json --no-github --confirm <sha7> --with-caveats ID,ID,...`
+A deploy **with caveats**: the one way past a FAIL, for showing that Predict was right. Only a live FAIL (never ERROR, INCONCLUSIVE or
+STALE: nobody knows what those would do), only a local prediction (a red pull request cannot merge), and only when you name every
+failing requirement, exactly; a wrong or partial list is refused and the message names the right one. The gates print the caveats
+loudly, and the deploy record keeps them. `workshop verify` then judges the real network against the *prediction*, probes included:
+if the requirements Predict said would fail did fail, that is a MATCH, and it says "Predict was right".
+
+### `workshop revert plan` / `workshop revert apply --confirm <sha7>` / `workshop revert compare`
+Back out exactly what was deployed. `plan` (read-only) shows the inverse lines and the state they return to: the baseline the change was
+predicted against, which `baseline check` already judged PASS. `apply` needs the revert's hash confirmed, refuses if r4 no longer holds
+what was deployed (then it is a job for `restore`), sends the inverse over NAPALM, and proves the whole network is back to the
+baseline's fingerprint, byte for byte (the configs, read over NAPALM). Then Forward confirms it, as `verify` does for a deploy: the
+headless collector takes a fresh snapshot (`workshop baseline collect`, `upload`, `wait`; it becomes your baseline) and `compare` judges it:
+the baseline requirements PASS (**SDK** path searches and NQE, as in `baseline check`), the fingerprint is the original baseline's, and
+Forward's routing diff (**SDK** `snapshot_diff_details`) from the original baseline to the new snapshot is empty. MATCH, or it says what differs.
+`workshop restore` stays the break-glass path: no record, no checks.

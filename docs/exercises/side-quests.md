@@ -17,6 +17,8 @@ If you're **behind**, skip this page. The core steps are the only thing that mat
 | your baseline is PASS | [SQ11 · Ask Forward anything (NQE)](#sq11--ask-forward-anything-nqe) | 10 min |
 | you've verified (MATCH) | [SQ8 · Cheat the gate](#sq8--cheat-the-gate) | 10 min |
 | you've verified (MATCH) | [SQ9 · Catch the drift](#sq9--catch-the-drift) | 10 min |
+| you've verified (MATCH) | [SQ12 · Deploy it anyway, then back it out](#sq12--deploy-it-anyway-then-back-it-out) | 15 min |
+| any time after a prediction | [SQ13 · Your trail of attempts](#sq13--your-trail-of-attempts) | 2 min |
 
 Your lab page's **Go further** card tracks SQ3, SQ4, SQ6 and SQ7 for you, and its **Explore what Forward knows** box runs SQ2 and SQ10 from the page. The others are for you to notice things.
 
@@ -157,3 +159,47 @@ Predict the fixed candidate, then change r4 **by hand** and try to deploy what P
 
 **You should see:** `NOT DEPLOYED (STALE): the routers' configs are not what was collected for the prediction`. Nothing was written. The prediction
 was about a router that no longer exists, so the deploy refuses to act on it. Then `workshop restore` and the baseline steps put you back.
+
+## SQ12 · Deploy it anyway, then back it out
+
+*After MATCH. Start from a fresh baseline: `workshop reset --to 5`. This breaks your lab's service on purpose, then puts it back.*
+
+**Why:** the gate stops a FAIL. Here you deploy one anyway, the way a change goes out "with caveats" in real life, and watch Predict be
+proved right on the real network. Then you back it out the safe way.
+
+```
+workshop predict --candidate solutions/bad-candidate.eos          # retires all three: FAIL, and it names what breaks
+workshop deploy gates --evidence evidence/evidence.json --no-github --confirm <sha7>
+```
+The gate refuses, and tells you the one way past it: `--with-caveats` with every failing requirement named. Name only one and it refuses
+again: you have to accept all of them, by name.
+```
+workshop deploy apply --evidence evidence/evidence.json --no-github --confirm <sha7> --with-caveats APP-EXISTING,ROUTE-SERVICE,PATH-SERVICE
+workshop deploy readback
+workshop verify --evidence evidence/evidence.json
+```
+**You should see:** the live probe says `TCP 8080: blocked (expected blocked, as Predict said: APP-EXISTING FAILs)`, every requirement comes
+out "as predicted", and verify ends with "Predict was right". The service is down, exactly as forecast.
+
+Now back it out:
+```
+workshop revert plan                       # the inverse lines, and the baseline they return to
+workshop revert apply --confirm <sha7>     # the hash plan printed: configs back, checked over NAPALM
+workshop baseline collect                  # the headless collector again, then:
+workshop baseline upload
+workshop baseline wait
+workshop revert compare                    # Forward confirms it: requirements, fingerprint, routing diff
+```
+**You should see:** apply says "the network is back to the baseline, byte for byte" (the configs, read over NAPALM). Then compare, after a
+fresh collection, says Forward agrees: the baseline requirements PASS, the fingerprint is the original baseline's, and "no route differs
+anywhere". That is the backout verified the same way a deploy is: by collecting the real network again, not by trusting the write.
+
+**Think about it:** what did the gate cost you here, and what did it save? In production, who should be allowed to type `--with-caveats`?
+`workshop restore` would also have put r4 back. What does `revert` check that `restore` doesn't?
+
+## SQ13 · Your trail of attempts
+
+```
+workshop predict history
+```
+Every prediction you finished, with what moved between attempts. The Predict step on your lab page shows the same list.

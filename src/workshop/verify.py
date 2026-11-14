@@ -21,6 +21,10 @@ from workshop.forward import Forward
 def probe(settings: Settings, evidence: Path, log) -> list[dict]:
     """``workshop verify probe``: real packets from the real client, for every flow requirement. Saved for ``compare``."""
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
+    try:
+        predicted = {str(r.get("id")): str(r.get("status")) for r in Manifest.read(evidence).results}
+    except (OSError, ValueError):
+        predicted = {}
     lab.wait_bgp(settings, log)
     log("probing the real flows from the client ...")
     probes = []
@@ -29,11 +33,16 @@ def probe(settings: Settings, evidence: Path, log) -> list[dict]:
             continue
         show.docker(log, lab.CLIENT, f"exec_run(['nc', '-z', '-w', '3', '{lab.SERVICE_IP}', '{req.port}'])   real packets from the client")
         p = lab.probe(req.port)
-        want = req.expect == "permit"
+        # The probe checks the prediction, not the requirement: where Predict said a requirement FAILs (a deploy with caveats),
+        # the packet is expected to fail the same way. For a PASS prediction that is the requirement itself.
+        broken = predicted.get(req.id) == "FAIL"
+        want = (req.expect == "permit") != broken
         ok = p.reachable == want and p.trustworthy
         probes.append({"id": req.id, "port": req.port, "expected": "open" if want else "blocked",
-                       "observed": "open" if p.reachable else ("blocked" if p.listener_up else "service down"), "ok": ok})
-        log(f"  {'✓' if ok else '✗'} TCP {req.port}: {probes[-1]['observed']} (expected {probes[-1]['expected']})")
+                       "observed": "open" if p.reachable else ("blocked" if p.listener_up else "service down"), "ok": ok,
+                       "predicted": predicted.get(req.id, "")})
+        why = f", as Predict said: {req.id} FAILs" if broken else ""
+        log(f"  {'✓' if ok else '✗'} TCP {req.port}: {probes[-1]['observed']} (expected {probes[-1]['expected']}{why})")
     settings.state("steps").mkdir(exist_ok=True)
     settings.state("steps/probes.json").write_text(json.dumps({"evidence": str(evidence), "probes": probes}, indent=2) + "\n")
     return probes

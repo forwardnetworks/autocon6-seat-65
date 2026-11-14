@@ -153,13 +153,19 @@ def predict_close(status: str, failing: list[str]) -> list[str]:
 
 
 def verify_close(outcome: str, rows: list[dict[str, Any]]) -> list[str]:
+    broke = [r["id"] for r in rows if r.get("predicted") == "FAIL"]
+    if outcome == "MATCH" and broke:  # a deploy with caveats: the failures Predict named are what happened
+        return ["", f"What this means: Predict was right. It said {', '.join(broke)} would break, you deployed anyway (with caveats),",
+                "and the real network broke exactly that way: every requirement and every live probe came out as predicted.",
+                "That is what the gate would have saved you from. Back it out now: `workshop revert plan`, then `workshop revert apply`."]
     if outcome == "MATCH":
         count = f"all {len(rows)} requirement{'s' if len(rows) != 1 else ''}" if len(rows) != 1 else "the 1 requirement"
         return ["", f"What this means: {count} came out on the real network exactly as Predict said, and the real flows",
                 "agree. What was predicted is what happened. That is the loop closed."]
     differing = [r["id"] for r in rows if r.get("predicted") != r.get("collected")]
     return ["", f"What this means: the real network does not match the prediction ({', '.join(differing) or 'a live probe disagreed'}).",
-            "The model and the network disagree, which is the case this method exists to surface. Investigate, and `workshop restore` if it matters."]
+            "The model and the network disagree, which is the case this method exists to surface. Investigate, and back the change out",
+            "with `workshop revert plan` (checked), or `workshop restore` (break-glass) if r4 was changed by hand."]
 
 
 def tagline(kind: str, outcome: str, failing: int = 0) -> list[str]:

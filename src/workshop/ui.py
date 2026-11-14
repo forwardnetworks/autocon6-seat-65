@@ -465,8 +465,11 @@ class Board:
         cand = self._candidate()
         lab = self.containers.get()
         prs = self.prs.get() or []
+        from workshop import history
+
         return {
             "lab_id": s.lab_id, "network_id": s.network_id,
+            "predictions": history.entries(s, limit=10),
             "stages": _stages(lab, base, cand, m, prs, deployed, verified),
             "lab": lab, "baseline": base, "candidate": cand,
             "prediction": asdict(m) if m else None, "prediction_current": bool(m and cand.get("sha256") == m.candidate_sha256),

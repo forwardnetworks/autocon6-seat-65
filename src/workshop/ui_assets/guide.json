@@ -178,6 +178,19 @@
      "snapshot": "baseline"
     },
     {
+     "topic": "topology",
+     "title": "How Forward sees them connected",
+     "why": "The links Forward worked out between your routers: the diamond, from the data it collected. The client and the service are not devices to Forward, just subnets on r1 and r4.",
+     "snapshot": "baseline"
+    },
+    {
+     "topic": "interfaces",
+     "title": "r1's ports, as Forward modelled them",
+     "why": "Addresses, descriptions, and the ACL on the client's port (CLIENT-IN, inbound). The same facts the router has, read from Forward's model instead of a CLI.",
+     "snapshot": "baseline",
+     "device": "r1"
+    },
+    {
      "topic": "routes",
      "title": "Who can reach the service prefix",
      "why": "Every device's route to 10.20.20.0/24, from Forward's model of the baseline.",

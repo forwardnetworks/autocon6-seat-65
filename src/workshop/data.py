@@ -35,6 +35,8 @@ TOPICS = {
     "vulns": "CVEs: which published vulnerabilities actually affect your devices",
     "blast": "Blast radius: which addresses traffic from one place can reach",
     "checks": "Posture: Forward's own checks on the network, and which ones a change moves",
+    "topology": "Topology: which device ports Forward found linked",
+    "interfaces": "Interfaces: each port's address, description, ACLs and state",
 }
 
 
@@ -205,6 +207,61 @@ def vulns(client, snapshot_id: str) -> Table:
             "Matching the version is not the same as being exposed: Forward reads each device's configuration to decide.")
     return Table("vulns", TOPICS["vulns"], summary, ["cve", "severity", "cvss v3", "affects", "published", "advisory"], rows[:MAX_ROWS], note,
                  truncated=len(rows) > MAX_ROWS, raw=_dump(response, alias=True))
+
+
+# ---- topology and interfaces: the facts to start from ---------------------------------------
+
+
+def _port(text: str) -> tuple[str, str]:
+    device, _, port = str(text).partition(" ")
+    return device, port
+
+
+def topology(client, snapshot_id: str) -> Table:
+    """The links Forward inferred between the collected devices (each appears once, not once per direction)."""
+    links = client.network_topology.get_topology(snapshot_id=snapshot_id)
+    seen, rows = set(), []
+    for link in links:
+        d = _dump(link)
+        a, b = _port(d.get("source_port", "")), _port(d.get("target_port", ""))
+        key = tuple(sorted((a, b)))
+        if key in seen:
+            continue
+        seen.add(key)
+        (a, b) = key
+        rows.append({"device": a[0], "port": a[1], "linked to": b[0], "their port": b[1]})
+    rows.sort(key=lambda r: (r["device"], r["linked to"]))
+    devices = sorted({r["device"] for r in rows} | {r["linked to"] for r in rows})
+    pairs = ", ".join(f"{r['device']}-{r['linked to']}" for r in rows)
+    summary = (f"{plural(len(devices), 'device')} and {plural(len(rows), 'link')}: {pairs}." if rows
+               else "Forward found no links between the collected devices.")
+    note = ("Forward works the links out from what it collected (interface addresses, LLDP and the like). The client and the service are not here: "
+            "the collector does not log in to them, so Forward knows them only as the subnets on r1's and r4's other ports (see interfaces).")
+    return Table("topology", TOPICS["topology"], summary, ["device", "port", "linked to", "their port"], rows, note,
+                 raw=[_dump(x, alias=True) for x in links],
+                 query=f"client.network_topology.get_topology(snapshot_id={snapshot_id!r})", query_kind="SDK call")
+
+
+def interfaces(client, snapshot_id: str, device: str = "") -> Table:
+    """Every routed port Forward modelled on each router (or one): address, description, ACLs, state."""
+    names = [device] if device else sorted(str(r.get("name")) for r in client.nqe.query(_INVENTORY, snapshot_id=snapshot_id))
+    rows, raw = [], {}
+    for name in names:
+        answer = _dump(client.device_interfaces.list_device_interfaces(device_name=name, snapshot_id=snapshot_id), alias=True)
+        raw[name] = answer
+        for i in answer.get("interfaces") or []:
+            if i.get("isLoopback") and not i.get("ipAddresses"):
+                continue
+            acl = ", ".join([f"in {a}" for a in i.get("inAclNames") or []] + [f"out {a}" for a in i.get("outAclNames") or []])
+            rows.append({"device": name, "interface": i.get("name", ""), "address": ", ".join(i.get("ipAddresses") or []),
+                         "description": i.get("description") or "", "ACL": acl, "state": "down" if i.get("isDown") else "up"})
+    with_acl = [f"{r['ACL']} on {r['device']} {r['interface']}" for r in rows if r["ACL"]]
+    summary = f"{plural(len(rows), 'interface')} on {plural(len(names), 'device')}"
+    summary += (": " + "; ".join(with_acl) + "." if with_acl else ".")
+    note = "Each row is one port as Forward modelled it from the collected configuration and state. Add --json to see every field, including the config lines it came from."
+    calls = "\n".join(f"client.device_interfaces.list_device_interfaces(device_name={n!r}, snapshot_id={snapshot_id!r})" for n in names)
+    return Table("interfaces", TOPICS["interfaces"], summary, ["device", "interface", "address", "description", "ACL", "state"], rows[:MAX_ROWS], note,
+                 truncated=len(rows) > MAX_ROWS, raw=raw, query=calls, query_kind="SDK call")
 
 
 # ---- posture: Forward's own checks ---------------------------------------------------------
@@ -387,6 +444,10 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
         return _with_query(vulns(client, snapshot_id), "SDK call", f"client.vulnerability_analysis.get_os_vulnerabilities(snapshot_id={snapshot_id!r})")
     if topic == "blast":
         return blast(client, snapshot_id, device, prefix)  # sets its own: the request body
+    if topic == "topology":
+        return topology(client, snapshot_id)
+    if topic == "interfaces":
+        return interfaces(client, snapshot_id, device)
     if topic == "checks":
         return _with_query(checks(client, snapshot_id, against), "SDK call", f"client.checks.get_checks(snapshot_id={snapshot_id!r})")
     if topic == "diff":
@@ -400,12 +461,11 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
 
 def render(table: Table) -> str:
     """A fixed-width text table for the terminal."""
+    from workshop import term
+
     lines = [table.title, "", table.summary, ""]
     if table.rows:
-        cols = table.columns
-        widths = [min(max(len(c), *(len(str(r.get(c, ""))) for r in table.rows)), 46) for c in cols]
-        lines.append("  ".join(c.upper().ljust(w) for c, w in zip(cols, widths, strict=True)))
-        lines += ["  ".join(str(r.get(c, ""))[:46].ljust(w) for c, w in zip(cols, widths, strict=True)).rstrip() for r in table.rows]
+        lines += term.table(table.columns, [["" if r.get(c) is None else r.get(c) for c in table.columns] for r in table.rows], max_width=46)
     if table.truncated:
         lines.append(f"... showing the first {MAX_ROWS} rows; filter with --device or --prefix")
     if table.note:

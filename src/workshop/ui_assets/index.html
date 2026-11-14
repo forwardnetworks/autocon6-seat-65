@@ -449,7 +449,7 @@ function renderLane(s) {
   const item = (it) => {
     let body = "";
     if (it.kind === "explore") {
-      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
+      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="topology">Topology (links)</option><option value="interfaces">Interfaces</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
         <select id="ex-snap"><option value="baseline">baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
         <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option></select></div>
         <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
@@ -476,7 +476,7 @@ function renderLane(s) {
   if (go) go.onclick = async () => {
     const topic = $("ex-topic").value, out = $("ex-out");
     out.innerHTML = '<span class="spinner"></span>asking Forward…';
-    const t = await askData({ topic, snapshot: $("ex-snap").value, against: topic === "diff" ? $("ex-against").value : "", device: $("ex-device").value.trim(), prefix: $("ex-prefix").value.trim() });
+    const t = await askData({ topic, snapshot: $("ex-snap").value, against: topic === "diff" || topic === "checks" ? $("ex-against").value : "", device: $("ex-device").value.trim(), prefix: $("ex-prefix").value.trim() });
     out.innerHTML = t.error ? `<div class="banner warn">${esc(t.error)}</div>` : tableHtml(t, 200);
   };
   const w = $("rq-write");
@@ -577,7 +577,7 @@ let guideSig = "";
 function renderGuide(s, key) {
   if (!guide) { $("next").innerHTML = ""; return; }
   const g = guide.steps[key] || guide.steps.done;
-  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s), s.updates, trailOpen, trailState, trailDone]);
+  const sig = JSON.stringify([key, s.job, facts(key, s), s.candidate?.sha256, builderSel, s.stages.map((x) => x.state), answered, catchAsk, paceHtml(s), s.updates, trailOpen, trailState, trailDone, (s.predictions || []).length]);
   if (sig === guideSig) return;
   const a = document.activeElement;
   if (a && $("next").contains(a) && a.tagName === "INPUT" && a.type === "text" && a.value) return;  // never rebuild the card under someone's typing
@@ -615,6 +615,14 @@ function renderGuide(s, key) {
       <div class="runrow"><input type="text" id="pr-msg" size="36" maxlength="72" placeholder="what this change does" value="${esc(prMsg)}"> <button id="pr-go">Open pull request</button></div>
       <div id="pr-out" class="muted">${prNote}</div>
       <div class="termline">In the terminal: <code>git switch -c my-change</code>, <code>git commit -am "…"</code>, <code>git push -u origin HEAD</code>, <code>gh pr create --fill</code></div></div>`;
+  }
+  if (key === "predict" && (s.predictions || []).length) {
+    // the trail of attempts: how the change evolved, and what each attempt moved
+    const what = (ls) => { const r = ls.filter((l) => l.startsWith("no ")).map((l) => l.split(" ").pop()), a = ls.filter((l) => !l.startsWith("no ")).map((l) => l.split(" ").pop());
+      return [r.length ? "retire " + r.join(", ") : "", a.length ? "add back " + a.join(", ") : ""].filter(Boolean).join("; ") || "no change lines"; };
+    extra += `<div class="gsec"><h3>Your attempts (${s.predictions.length})</h3><ul class="facts">${s.predictions.slice().reverse().map((e) =>
+      `<li><b>#${e.n}</b> <span class="pill ${esc(e.status)}">${esc(e.status)}</span> <code>${esc(e.sha7)}</code> ${esc(what(e.lines))}${e.kind !== "change" ? ` <span class="muted">(${esc(e.kind)})</span>` : ""}${(e.moved || []).length ? `<div class="muted" style="font-size:12px">since #${e.prev}: ${esc(e.moved.join("; "))}</div>` : ""}</li>`).join("")}</ul>
+      <div class="termline">In the terminal: <code>workshop predict history</code>. Deploy only ever accepts the newest evidence.</div></div>`;
   }
   if (key === "approve") {
     extra = `<div class="gsec"><div class="term">Approving happens on GitHub: open your pull request in the <b>GitHub Pull Requests</b> panel, read the forward/predict result, and <b>Squash and Merge</b> only a green check.</div></div>`;
