@@ -10,6 +10,10 @@ call it makes as an indented line, and ends with its evidence (a file, a snapsho
     → git          switch main   (GitPython)
     $ fwd-headless createsnapshot …                    the one program it runs as a process: the collector has no API
 
+To see the HTTP behind a `→ Forward SDK` line, open it on the lab page: it unfolds to each request the call made (method,
+path, request body, status, time, and the start of the response, secrets masked). In a terminal, `WORKSHOP_TRACE=http`
+before a command prints one line per request under the call, for example `POST /api/nqe?networkId=…&snapshotId=… → 200 · 412 ms · 3.1 KB`.
+
 The workshop calls libraries, not command lines. You can always use the command lines yourself: `netlab status`,
 `netlab connect r1`, `docker exec -it clab-autocon6-r4 Cli`, `git`, `gh`.
 

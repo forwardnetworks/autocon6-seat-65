@@ -184,6 +184,10 @@ details#chal-stretch { margin-top:8px; border-top:1px solid var(--divider); padd
 .runrow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:6px 0; }
 .runrow .note { font-size:12px; color:var(--txt-2); flex-basis:100%; margin-top:-2px; }
 .out .call { color:#7fb0ff; } .out .callbad { color:#ff8a80; } .out .callnote { color:#8aa0a8; }
+.out details.hx > summary { display:block; list-style:none; cursor:pointer; } .out details.hx > summary::-webkit-details-marker { display:none; }
+.out .hxn { color:#8aa0a8; } .out .hxn::before { content:"▸ "; } .out details[open] > summary > .hxn::before { content:"▾ "; }
+.out .hxs { margin:2px 0 4px 3em; padding-left:8px; border-left:2px solid #2b3a40; } .out .hxr { color:#e0c080; }
+.out .hxb { margin:2px 0 6px 1.2em; color:#b8c4c8; } .out .hxh { color:#e0c080; }
 .calls-card .out { max-height:220px; } .calls-card summary { cursor:pointer; } .calls-card h2 { display:inline; margin:0; }
 .out { background:#0f1416; color:#d6d6d6; border-radius:var(--radius); padding:10px; max-height:300px; overflow:auto; white-space:pre-wrap; font-size:12px; margin-top:8px; }
 .facts { margin:0; padding-left:18px; } .facts li { margin:3px 0; }
@@ -253,7 +257,7 @@ footer { text-align: center; font-size: 12px; color: var(--txt-3); margin-top: 2
       <section class="card" id="lane"></section>
       <details class="card calls-card" id="calls-card" open>
         <summary><h2>What just ran <span class="muted" style="text-transform:none;font-weight:400;letter-spacing:0" id="calls-n"></span></h2></summary>
-        <div class="muted" style="font-size:12px;margin:6px 0">Every call this page makes for itself: to Forward, your routers, Docker or GitHub. A step you run shows its own calls in its Output, each marked <code>→</code> or <code>$</code>.</div>
+        <div class="muted" style="font-size:12px;margin:6px 0">Every call this page makes for itself: to Forward, your routers, Docker or GitHub. A step you run shows its own calls in its Output, each marked <code>→</code> or <code>$</code>. Every SDK call opens to the HTTP requests it made: method, path, body, status, time, and the start of the response. Secrets are masked.</div>
         <pre class="out" id="calls-out">nothing yet</pre>
       </details>
       <details class="optai" id="optai"><summary>Optional: Forward AI explains and advises (it never decides)</summary>
@@ -788,7 +792,53 @@ function progressHtml(lines, done) {
 
 // a line a step prints for each call it makes: "    → Forward SDK  …", "    → NAPALM r4  …", "    $ command"
 const isCall = (l) => /^\s+(→|\$)\s/.test(l);
-const outHtml = (lines) => lines.map((l) => (isCall(l) ? `<span class="call">${esc(l)}</span>` : esc(l))).join("\n");
+const isSdkCall = (l) => /^\s+→ Forward SDK\s/.test(l);
+
+// The HTTP under each Forward SDK call (workshop.trace.HttpHooks). A step run from this page prints one "::workshop-http::{json}"
+// line per request (WORKSHOP_HTTP_MARKS=1); the page hides those lines and folds them under the SDK call above them.
+// The "What just ran" feed carries the same records on each call. Folds stay open across the 1-second redraws.
+const HTTP_MARK = "::workshop-http::";
+const isMark = (l) => l.startsWith(HTTP_MARK);
+const openFolds = new Set();
+document.addEventListener("toggle", (e) => { const k = e.target && e.target.dataset && e.target.dataset.k; if (k) { if (e.target.open) openFolds.add(k); else openFolds.delete(k); } }, true);
+const fmtBytes = (n) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
+function httpLine(h) {
+  if (h.retry) return `↻ retry, attempt ${h.attempt} in ${Number(h.delay).toFixed(1)} s (${h.reason})`;
+  if (h.status == null) return `${h.method} ${h.path} → ${h.note || "no response"}`;
+  return `${h.method} ${h.path} → ${h.status} · ${Math.round(h.ms)} ms · ${fmtBytes(h.size || 0)}`;
+}
+function httpFold(h, k) {
+  if (h.retry) return `<div class="hxr">${esc(httpLine(h))}</div>`;
+  const open = openFolds.has(k) ? " open" : "";
+  const req = `<span class="hxh">Request</span>${h.req_type ? " · " + esc(h.req_type) : ""}\n${h.req_body ? esc(h.req_body) : "(no body)"}`;
+  const res = h.status == null ? `<span class="hxh">Response</span>\n${esc(h.note || "none")}`
+    : `<span class="hxh">Response</span> · ${esc(h.status)}${h.type ? " · " + esc(h.type) : ""} · ${fmtBytes(h.size || 0)}\n${h.body ? esc(h.body) : "(empty)"}`;
+  return `<details class="hx" data-k="${esc(k)}"${open}><summary><span class="hxn">${esc(httpLine(h))}</span></summary><div class="hxb">${req}\n\n${res}</div></details>`;
+}
+function callFold(lineHtml, recs, more, k) {
+  const n = recs.filter((h) => !h.retry).length + (more || 0);
+  const open = openFolds.has(k) ? " open" : "";
+  return `<details class="hx" data-k="${esc(k)}"${open}><summary>${lineHtml} <span class="hxn">${n} HTTP request${n === 1 ? "" : "s"}</span></summary>`
+    + `<div class="hxs">${recs.map((h, i) => httpFold(h, `${k}.${i}`)).join("")}${more ? `<div class="hxr">… and ${more} more requests</div>` : ""}</div></details>`;
+}
+// lines of [html, isBlock]: a newline between two text lines, none next to a fold (it is a block of its own)
+const joinOut = (parts) => parts.map(([h, b], i) => (i && !b && !parts[i - 1][1] ? "\n" : "") + h).join("");
+function outHtml(lines, key = "o") {
+  const items = [];
+  for (const l of lines) {
+    if (!isMark(l)) { items.push({ text: l, http: [] }); continue; }
+    let h; try { h = JSON.parse(l.slice(HTTP_MARK.length)); } catch { continue; }
+    let it = null;
+    for (let j = items.length - 1; j >= 0 && !it; j--) if (isSdkCall(items[j].text)) it = items[j];
+    if (!it) { it = { text: "    → Forward SDK  (a call above the lines shown)", http: [] }; items.push(it); }
+    it.http.push(h);
+  }
+  return joinOut(items.map((it, i) => {
+    const line = isCall(it.text) ? `<span class="call">${esc(it.text)}</span>` : esc(it.text);
+    return it.http.length ? [callFold(line, it.http, 0, `${key}:${i}`), true] : [line, false];
+  }));
+}
+const foldsOpen = (prefix) => [...openFolds].some((k) => k.startsWith(prefix));
 
 // the calls this page makes for itself (the explorer, the chat, the pull-request list), newest last; repeats are folded
 let callsNext = 0, callRows = [];
@@ -799,12 +849,16 @@ async function pollCalls() {
     callsNext = v.next;
     for (const c of v.calls) {
       const last = callRows[callRows.length - 1];
-      if (last && last.kind === c.kind && last.text === c.text && last.ok === c.ok) { last.n++; last.ms = c.ms; } else callRows.push({ ...c, n: 1 });
+      if (last && last.kind === c.kind && last.text === c.text && last.ok === c.ok) { last.n++; last.ms = c.ms; last.http = c.http; last.http_more = c.http_more; } else callRows.push({ ...c, n: 1, key: c.id });
     }
     callRows = callRows.slice(-60);
-    $("calls-out").innerHTML = callRows.map((c) => `<span class="${c.ok ? "call" : "callbad"}">→ ${esc(c.kind)}  ${esc(c.text)}${c.ms >= 1000 ? ` · ${(c.ms / 1000).toFixed(1)} s` : ""}${c.n > 1 ? ` · ×${c.n}` : ""}${c.ok ? "" : " · failed"}</span>`).join("\n");
+    const keep = foldsOpen("c:") ? $("calls-out").scrollTop : null;
+    $("calls-out").innerHTML = joinOut(callRows.map((c) => {
+      const line = `<span class="${c.ok ? "call" : "callbad"}">→ ${esc(c.kind)}  ${esc(c.text)}${c.ms >= 1000 ? ` · ${(c.ms / 1000).toFixed(1)} s` : ""}${c.n > 1 ? ` · ×${c.n}` : ""}${c.ok ? "" : " · failed"}</span>`;
+      return c.http && c.http.length ? [callFold(line, c.http, c.http_more, `c:${c.key}`), true] : [line, false];
+    }));
     $("calls-n").textContent = `(${callRows.reduce((a, c) => a + c.n, 0)} so far)`;
-    const pre = $("calls-out"); pre.scrollTop = pre.scrollHeight;
+    const pre = $("calls-out"); pre.scrollTop = keep ?? pre.scrollHeight;
   } catch { /* the feed is an extra: never stop the page */ }
 }
 
@@ -816,8 +870,9 @@ function showOut() {
   const status = job.done ? (job.word ? `<span class="pill ${esc(job.word)}">${esc(job.word)}</span>` : (job.code === 0 ? '<span class="pill PASS">done</span>' : "")) : `<span class="spinner"></span>running… ${job.secs ? job.secs + "s" : ""}`;
   const patience = quiet ? `<div class="banner warn" style="margin:6px 0">No new output for ${Math.round((Date.now() - lastLineAt) / 1000)}s. That is normal: this step is waiting on Forward or on the lab, which can take a minute or two. Nothing is stuck, and the page will show the moment it moves.<br><em class="muted">${esc(WAITING[Math.floor(Date.now() / 15000) % WAITING.length])}</em></div>` : "";
   const nCalls = outLines.filter(isCall).length;
-  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}${nCalls ? ` · ${nCalls} call${nCalls === 1 ? "" : "s"} made` : ""}</span></h3>${progressHtml(outLines, job.done)}${patience}<pre class="out" id="outpre">${outHtml(outLines)}</pre></div>`;
-  const pre = $("outpre"); pre.scrollTop = pre.scrollHeight;
+  const keep = foldsOpen(`o:${job.id}:`) && $("outpre") ? $("outpre").scrollTop : null;  // reading an open fold: do not jump to the end
+  box.innerHTML = `<div class="gsec"><h3 tabindex="-1">Output ${status} <span class="muted" style="text-transform:none">${esc(job.cmd || "")}${nCalls ? ` · ${nCalls} call${nCalls === 1 ? "" : "s"} made` : ""}</span></h3>${progressHtml(outLines.filter((l) => !isMark(l)), job.done)}${patience}<pre class="out" id="outpre">${outHtml(outLines, `o:${job.id}`)}</pre></div>`;
+  const pre = $("outpre"); pre.scrollTop = keep ?? pre.scrollHeight;
 }
 
 function renderTopo(s) {

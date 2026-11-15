@@ -205,7 +205,10 @@ def main(argv: list[str] | None = None) -> int:
         code = EXIT["ERROR"]
         return code
     finally:
-        telemetry.report_workshop(args.command, code, started, EXIT)  # beta activity log; silent when not configured
+        # beta activity log, silent when not configured. The step is included ("workshop baseline check") so the helpers' desk can
+        # match the seat's failure to its fix.
+        step = getattr(args, "step", None)
+        telemetry.report_workshop(f"workshop {args.command}" + (f" {step}" if isinstance(step, str) and step else ""), code, started, EXIT)
 
 
 def _version() -> int:

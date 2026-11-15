@@ -366,8 +366,9 @@ class Jobs:
     def _run_one(self, job: dict[str, Any], argv: list[str]) -> int:
         cmd = [sys.executable, "-c", "import sys; from workshop.cli import main; sys.exit(main(sys.argv[1:]))", *argv]
         try:
+            # WORKSHOP_HTTP_MARKS: the step prints the HTTP under each Forward SDK call as trace.MARK lines, which this page folds under the call
             proc = subprocess.Popen(cmd, cwd=self.settings.repo_root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1)
+                                    stderr=subprocess.STDOUT, text=True, errors="replace", bufsize=1, env={**os.environ, "WORKSHOP_HTTP_MARKS": "1"})
             for line in proc.stdout:  # type: ignore[union-attr]
                 job["lines"].append(ANSI.sub("", line.rstrip("\n")))
                 if len(job["lines"]) > MAX_LINES * 2:  # keep the end: the verdict is there
