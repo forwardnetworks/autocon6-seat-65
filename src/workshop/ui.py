@@ -44,7 +44,7 @@ R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
 # What the page may start. Anything else (down, collector, ask...) stays a typed command.
 STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "matrix", "agent", "deploy", "verify", "restore", "status",
          # one step at a time: what the exercises teach
-         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up",
+         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up", "changes routes", "changes checks",
          "predict changeset", "predict run", "predict check",
          "deploy gates", "deploy render", "deploy apply", "deploy readback",
          "verify probe", "verify collect", "verify upload", "verify wait", "verify compare")
@@ -302,6 +302,8 @@ class Jobs:
     def argv(self, step: str, params: dict[str, Any]) -> list[str]:
         if step not in STEPS:
             raise ValueError(f"'{step}' is not a step this page can start")
+        if step in ("changes routes", "changes checks"):  # exercise 1: the baseline before the newest one, against the newest
+            return ["data", "diff" if step.endswith("routes") else "checks", "--snapshot", "previous", "--against", "baseline"]
         out = step.split()
         stage, sub_step = out[0], (out[1] if len(out) > 1 else "")
         if stage == "deploy" and sub_step == "readback":

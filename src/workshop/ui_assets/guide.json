@@ -175,6 +175,18 @@
      "cmd": "workshop link down"
     },
     {
+     "step": "changes routes",
+     "label": "What changed: routes",
+     "note": "Forward's route diff between your previous baseline and the newest one: every route that moved, on every router.",
+     "cmd": "workshop data diff --snapshot previous --against baseline"
+    },
+    {
+     "step": "changes checks",
+     "label": "What changed: your intent checks",
+     "note": "Forward's checks on both baselines: which ones moved. The diff says what changed; the checks say whether it matters to you.",
+     "cmd": "workshop data checks --snapshot previous --against baseline"
+    },
+    {
      "step": "link up",
      "label": "Undo the change",
      "note": "Bring r2's link to r4 back, exactly as before. Then the four baseline steps once more: that baseline is the one the rest of the day starts from.",

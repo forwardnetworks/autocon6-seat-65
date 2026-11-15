@@ -177,7 +177,8 @@ thinks about every change: two snapshots and what differs between them, judged b
 
 1. **Before.** `workshop path`: the service traffic goes r1 → r2 → r4. Keep that in mind.
 2. **Make a change: shut r2's link to r4.** Pick your track:
-   - *I'm Too Young to Die:* on the Your lab page, **Make a change: shut r2's link to r4** (or `workshop link down`).
+   - *I'm Too Young to Die:* on the Your lab page, click **Baseline** in the loop at the top (the page has moved on to the
+     next stage), then **Make a change: shut r2's link to r4** (or `workshop link down`).
      It goes through NAPALM, like every change after bring-up, and prints r2's own diff.
    - *Hold My Beer:* on the router itself, with no workshop tool in between. In the editor's **Containerlab** panel
      (left bar), open the lab's **Graph** to see the link you're about to cut (r2 to r4), then right-click **r2** →
@@ -192,7 +193,8 @@ thinks about every change: two snapshots and what differs between them, judged b
    workshop data checks --snapshot previous --against baseline   # which intent checks moved: PATH-SERVICE PASS -> FAIL
    workshop path                                                 # the service traffic now goes r1 -> r3 -> r4
    ```
-   *previous* is the baseline before your newest one. The diff is the pre/post view; the checks say which of the
+   On the Your lab page (Baseline stage): **What changed: routes** and **What changed: your intent checks** run the
+   first two. *previous* is the baseline before your newest one. The diff is the pre/post view; the checks say which of the
    moves matter to you. It works, but not the way your intent says it must: nothing else would have told you.
 6. **Undo it.** *I'm Too Young to Die:* **Undo the change** (or `workshop link up`). *Hold My Beer:* `no shutdown` on
    r2's Ethernet2, the same way you shut it (Containerlab panel → r2 → Connect to SSH). Then the four baseline steps once more: every requirement **PASS**. That

@@ -458,8 +458,8 @@ function renderLane(s) {
     let body = "";
     if (it.kind === "explore") {
       body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="topology">Topology (links)</option><option value="interfaces">Interfaces</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
-        <select id="ex-snap"><option value="baseline">baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
-        <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option></select></div>
+        <select id="ex-snap"><option value="baseline">baseline</option><option value="previous">previous baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
+        <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option><option value="baseline">compared with your newest baseline</option></select></div>
         <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
         <div class="termline">In the terminal: <code>workshop data routes --prefix 10.20.20.0/24</code> (add <code>--json</code> for the raw answer)</div><div id="ex-out"></div>`;
     } else if (it.kind === "own") {
