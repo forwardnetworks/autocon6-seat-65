@@ -86,6 +86,13 @@ cleans up NAPALM's own leftover sessions, not yours). To clear it:
 docker exec clab-autocon6-r4 Cli -p 15 -c "configure session preview abort"
 ```
 
+**In a change window.** A real change goes in at an agreed time, not the moment it's approved. Try it on a later
+loop (or read it now): **Apply at the window** on the Your lab page, or
+`workshop deploy apply --pr <N> --confirm <sha7> --at HH:MM` (the room's time; the page allows up to 15 minutes ahead). It checks every gate now, waits, and checks them all
+again when the window opens, against Forward's newest snapshot and the live routers. Change a router in between
+(`workshop link down` in a second terminal) and nothing is sent: the approval was for the network Forward predicted, not
+whatever it has become.
+
 ### Verify, one step at a time (10 min)
 
 ```

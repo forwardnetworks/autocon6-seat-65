@@ -42,6 +42,7 @@ import shutil
 import sys
 import time
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 
 from workshop import config, trace
@@ -112,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--with-caveats", default="", metavar="IDS",
                    help="deploy a FAIL on purpose (local evidence only): name every failing requirement you accept, comma-separated. "
                         "For the exercise that shows Predict was right; back it out with `workshop revert`")
+    d.add_argument("--at", metavar="HH:MM",
+                   help="apply in a change window: the gates are checked now, then again at that time against Forward's newest "
+                        "snapshot; if anything changed by then, nothing is sent (apply only; at most 3 hours ahead)")
     v = sub.add_parser("verify", help="one step at a time: probe, collect, upload, wait, compare")
     v.add_argument("step", nargs="?", choices=["probe", "collect", "upload", "wait", "compare"],
                    help="probe: real packets from the client · collect/upload/wait: the network after the change, into Forward · "
@@ -505,7 +509,8 @@ def _change_analysis(settings: config.Settings, m, out: Path, requirements_path:
     def build() -> None:
         try:
             with Forward(settings, quick=True) as fwd:
-                done["text"] = reports.analysis(fwd.c, m, baseline_results=_requirements_on_baseline(settings, fwd, m, requirements_path),
+                pr = (os.environ.get("GITHUB_REF", "").split("/") + ["", "", ""])[2] if os.environ.get("GITHUB_REF", "").startswith("refs/pull/") else ""
+                done["text"] = reports.analysis(fwd.c, m, pr=pr, baseline_results=_requirements_on_baseline(settings, fwd, m, requirements_path),
                                                 ai=os.environ.get("WORKSHOP_REPORT_AI", "1") != "0", log=log)
         except Exception as exc:  # noqa: BLE001 - display only
             done["error"] = f"{type(exc).__name__}: {str(exc)[:160]}"
@@ -579,6 +584,26 @@ def _deploy(settings: config.Settings, args) -> int:
             for line in render.lines_for(rendered):
                 log(line)
             return 0
+        if getattr(args, "at", None):
+            if step != "apply":
+                log("--at is for `workshop deploy apply`: the window is when it sends the change")
+                return EXIT["ERROR"]
+            try:
+                when = deploy.window(args.at)
+            except ValueError as exc:
+                log(f"NOT SCHEDULED (ERROR): {exc}")
+                return EXIT["ERROR"]
+            log(f"Change window {when:%H:%M %Z}. Checking every gate now, so you know it is ready:")
+            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            log(f"Every gate holds now. Nothing is sent before {when:%H:%M}. Then every gate runs again, against Forward's newest")
+            log("snapshot and the live routers: if someone changes a router or takes a newer baseline in the meantime, nothing is sent")
+            log("(STALE), and you predict again. The approval is for this network, not for whatever it becomes.")
+            try:
+                deploy.wait_until(when, log)
+            except KeyboardInterrupt:
+                log("cancelled before the window: nothing was sent")
+                return EXIT["ERROR"]
+            log(f"{datetime.now(deploy.event_tz()):%H:%M:%S}: the window is open. Checking every gate again, then applying:")
         if step == "apply":
             deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
             log("Sent and committed on r4" + (" WITH CAVEATS (Predict said FAIL)" if caveats else "") + ". Next: workshop deploy readback")

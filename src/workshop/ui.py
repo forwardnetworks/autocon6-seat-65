@@ -23,6 +23,7 @@ import threading
 import time
 import uuid
 from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -38,6 +39,8 @@ ASSETS = resources.files("workshop") / "ui_assets"
 MAX_QUESTION = 1000
 MAX_LINES = 1500
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+PAGE_WINDOW_MAX = timedelta(minutes=15)
+WINDOW = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?|\d{1,2}:\d{2}")  # a change window
 SHA7 = re.compile(r"^[0-9a-f]{7}$")
 # The prefixes r4 advertises; the change builder may only retire these.
 R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
@@ -334,6 +337,18 @@ class Jobs:
                 raise ValueError("enter the number of your merged pull request: deploy only ships a change that was approved there")
             out += ["--pr", pr]
             out += ["--confirm", confirm]
+            at = str(params.get("at", "")).strip()
+            if at:
+                if sub_step != "apply":
+                    raise ValueError("a change window is for Apply")
+                if not WINDOW.fullmatch(at):
+                    raise ValueError("pick a time for the change window")
+                from workshop import deploy
+                when = deploy.window(at)  # ValueError (passed, nonsense) goes back to the page as the message
+                if when - datetime.now(UTC) > PAGE_WINDOW_MAX:  # the page runs one job at a time: a long wait would lock it
+                    raise ValueError(f"on this page a window can be at most {int(PAGE_WINDOW_MAX.total_seconds() // 60)} minutes ahead "
+                                     "(the page runs one step at a time); for a later one use the terminal: workshop deploy apply ... --at HH:MM")
+                out += ["--at", at]
         return out
 
     def start(self, step: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -516,9 +531,7 @@ class Board:
             return hit[1]
         with Forward(self.settings) as fwd:
             table = fdata.ask(fwd.c, topic, snap, against=other, device=device, prefix=prefix).to_json()
-        # a snapshot pair never changes, so an answer can be kept; not an empty reachability diff, which may still be computing
-        keep = 0.0 if topic == "reach" and not table.get("rows") else 600.0
-        self._data_cache[key] = (time.monotonic(), table, keep)
+        self._data_cache[key] = (time.monotonic(), table, 600.0)  # a snapshot pair never changes, so an answer can be kept
         return table
 
     def artifacts(self, step: str) -> list[dict[str, Any]]:

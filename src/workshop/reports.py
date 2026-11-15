@@ -16,6 +16,7 @@ cannot be written never changes a verdict, a gate or an exit code.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,19 +118,79 @@ def _every_host(client, b: str, a: str) -> list[str]:
             "| Host | Baseline | Predicted |", "|---|---|---|", *rows, ""]
 
 
-def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None, ai: bool = True, log=None) -> str:
+STALE_QUERY = LAB_TOPOLOGY.parent.parent / "nqe" / "stale_bgp_advertisements.nqe"
+PREFIX_RE = re.compile(r"\b\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}\b")
+
+
+def change_request(client, m, *, pr: str = "") -> list[str]:
+    """The change request a reviewer reads first: why (Forward's finding on the baseline), the risks Forward already shows on
+    the baseline, the exact config, and when it goes in. Each claim comes from Forward or the candidate file; a part Forward
+    can't answer says so."""
+    from workshop.lab import SERVICE_IP
+
+    b = str(m.baseline_snapshot_id)
+    text = m.candidate_text or ""
+    notes = [line.lstrip("!").strip() for line in text.splitlines() if line.strip().startswith("!")]
+    config = [line.rstrip() for line in text.splitlines() if line.strip() and not line.strip().startswith("!")]
+    title = next((n for n in notes if n.lower().startswith("change request")), "Change request")
+    out = ["## 1 · The change request", "", f"**{title}**", ""]
+
+    rows, why = _try(None, "stale advertisements on the baseline", lambda: [dict(r) for r in client.nqe.query(STALE_QUERY.read_text(), snapshot_id=b)])
+    prefixes = sorted({p for r in rows or [] for p in PREFIX_RE.findall(json.dumps(r))})
+    if rows is None:
+        out += [f"**Why.** Forward's stale-advertisement query could not be read on the baseline ({why}).", ""]
+    else:
+        found = (f"finds {len(rows)} BGP `network` statement(s) on r4 for prefixes r4 has no route to: "
+                 + ", ".join(f"`{p}`" for p in prefixes)
+                 + ". They advertise nothing real today, and they are a standing invitation to attract traffic for a prefix that isn't ours.") \
+            if rows else "finds no stale advertisement: on this baseline there is nothing left for this change to retire."
+        out += [(f"**Why: Forward found it.** On the baseline (snapshot `{b}`), the NQE query `{STALE_QUERY.name}` (which "
+                 f"`workshop baseline check` also registers as a Forward intent check) {found}"), ""]
+
+    hosts = lab_hosts()
+    paths = {name: _try(None, f"path {name}", lambda ip=ip: _outcome(client, b, ip, SERVICE_IP, 8080))[0] for name, ip in hosts.items()}
+    via_r4 = [n for n, p in paths.items() if p and p.startswith("✅") and "r4" in p]
+    unanswered = [n for n, p in paths.items() if p is None]
+    out += ["**Risks already identified** before anyone wrote config:", ""]
+    if hosts and unanswered:
+        out.append(f"- **r4 also advertises the live service prefix.** Forward could not trace {len(unanswered)} of {len(hosts)} hosts "
+                   f"on the baseline just now; of the rest, {len(via_r4)} reach the service ({SERVICE_IP}, TCP 8080) through r4.")
+    elif hosts:
+        out.append(f"- **r4 also advertises the live service prefix.** Forward traces {len(via_r4)} of {len(hosts)} hosts to the service "
+                   f"({SERVICE_IP}, TCP 8080) through r4 on the baseline. Retire the wrong `network` line and they lose it.")
+    out.append("- **TCP 2222 must stay blocked** (MGMT-DENY, r1's `CLIENT-IN` ACL). Only r4's BGP advertisements are in scope.")
+    if m.results:
+        def watched() -> set[str]:
+            from workshop import intent, requirements
+            root = LAB_TOPOLOGY.parent.parent
+            return {p["id"] for p in intent.planned(requirements.load(root / "requirements" / "candidate.yml", root=root))}
+        checks = _try(None, "intent checks", watched)[0] or set()
+        out.append("- **Written down as requirements:** " + "; ".join(f"**{_cell(r['id'])}** {_cell(r.get('title', ''))}" for r in m.results) + "."
+                   + (f" {', '.join(sorted(checks))} are also registered as Forward intent checks, so every snapshot (the baseline, this "
+                      "prediction, the network after the deploy) is judged against them." if checks else ""))
+    out += ["", (f"**The config being applied** (`{m.candidate_path}`, sha256 `{m.candidate_sha256[:12]}`): exactly these lines go to r4, "
+                 "over NAPALM, and nothing else. The hash ties the approval to them."), "", "```", *config, "```", ""]
+    sha7, target = m.candidate_sha256[:7], f"--pr {pr}" if pr else "--pr <this PR>"
+    out += [(f"**When.** After approval (a merge, which needs this check green), in a change window: "
+             f"`workshop deploy apply {target} --confirm {sha7} --at HH:MM` (or **Apply at the window** on the lab page). At the "
+             "window every gate runs again against Forward's newest snapshot and the live routers: if the network changed since "
+             "this prediction, nothing is sent."), "",
+            src("NQE (the stale-advertisement intent check) and path analysis, on the baseline; Predict › change set",
+                f"nqe.query · path_search.get_paths · change_sets (id {m.change_set_id})"), ""]
+    return out
+
+
+def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None, ai: bool = True, log=None, pr: str = "") -> str:
     """The Predict analysis page, as markdown. ``client`` is a Forward SDK client; ``m`` the prediction's evidence manifest."""
     b, a = str(m.baseline_snapshot_id), str(m.predicted_snapshot_id)
     sd = client.snapshot_diff_details
-    change = [line.strip() for line in (m.candidate_text or "").splitlines() if "network" in line]
     out = [f"# Change analysis: {MARK.get(m.status, m.status)}", "",
            (f"Candidate `{m.candidate_path}` (sha256 `{m.candidate_sha256[:12]}`) on lab `{m.lab_id}`, predicted against baseline snapshot `{b}`. "
             f"Predicted snapshot `{a}`, change set `{m.change_set_id}`. Generated {_now()}."), "",
            "> This is what Predict shows on its analysis page, collected through the SDK. Every section says where in Forward it came from.",
            "> Nothing here touched a router: it is all Forward's model of the network with the change applied.", ""]
 
-    out += ["## 1 · The change", "", "```", *change, "```", "",
-            src("Predict › change set (its commands for r4)", f"change_sets (id {m.change_set_id})"), ""]
+    out += change_request(client, m, pr=pr)
 
     out += ["## 2 · The requirements (what the gate judges)", "",
             f"Overall: **{MARK.get(m.status, m.status)}**. {m.reason}".rstrip(), "",

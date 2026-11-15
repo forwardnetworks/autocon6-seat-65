@@ -348,7 +348,7 @@ let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
 let prMsg = "Retire r4's stale advertisements", prNote = "";
-let depPr = "", depSha = "";  // what was typed in the deploy form: kept when the page redraws after each step
+let depPr = "", depSha = "", depAt = "";  // what was typed in the deploy form: kept when the page redraws after each step
 let lastLineAt = Date.now();
 const WAITING = ["Good time to refill your coffee.", "Somewhere a very patient computer is doing real work. Hang tight.", "Slow here is the point: a minute of checking beats an outage.", "Routers, models and CI all take a moment. That is the job.", "Predict never guesses. It computes, and computing takes a moment."];
 const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
@@ -387,7 +387,8 @@ function renderLoop(stages) {
       <div class="detail">${esc(s.detail)}</div>
     </div>`).join("");
   document.querySelectorAll(".stage").forEach((el) => {
-    el.onclick = () => { selected = el.dataset.k === nextKey ? null : el.dataset.k; guideSig = ""; renderLoop(state.stages); renderGuide(state, key === el.dataset.k ? key : el.dataset.k); };
+    el.onclick = () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); // a click on a stage is a choice to move, even mid-typing
+      selected = el.dataset.k === nextKey ? null : el.dataset.k; guideSig = ""; renderLoop(state.stages); renderGuide(state, key === el.dataset.k ? key : el.dataset.k); };
     el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } };
   });
   renderGuide(state, key);
@@ -615,6 +616,8 @@ function renderGuide(s, key) {
     extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
       <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric" value="${esc(depPr)}"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(depSha)}"> </div>
       <div class="runrow">${[["deploy gates", "1. Gates"], ["deploy render", "2. Render"], ["deploy apply", "3. Apply"], ["deploy readback", "4. Read back"]].map(([st, lb]) => `<button class="dep-step" data-step="${st}" ${s.job && !s.job.done ? "disabled" : ""}>${lb}</button>`).join(" ")}</div>
+      <div class="runrow"><span class="muted">Or in a change window:</span> <input type="time" id="dep-at" value="${esc(depAt)}"> <button id="dep-at-go" ${s.job && !s.job.done ? "disabled" : ""}>Apply at the window</button></div>
+      <div class="note muted">A real change goes in at an agreed time. <b>Apply at the window</b> checks every gate now, waits, then checks them all again at that time against Forward's newest snapshot and the live routers: if anything changed in between, nothing is sent. (<code>workshop deploy apply --pr N --confirm abc1234 --at 11:30</code>)</div>
       <div class="muted">Gates checks everything and sends nothing. Render shows the change in Forward and on r4, side by side (a dry run). Apply sends it. Read back confirms it on r4.</div>
       <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
   }
@@ -694,6 +697,15 @@ function renderGuide(s, key) {
   };
   if ($("dep-pr")) { $("dep-pr").oninput = (e) => { depPr = e.target.value; }; $("dep-sha").oninput = (e) => { depSha = e.target.value; }; }
   document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => { depPr = $("dep-pr").value.trim(); depSha = $("dep-sha").value.trim(); runStep({ step: b.dataset.step, pr: depPr, confirm: depSha }); }; });
+  if ($("dep-at-go")) {
+    $("dep-at").oninput = (e) => { depAt = e.target.value; };
+    $("dep-at-go").onclick = () => {
+      depPr = $("dep-pr").value.trim(); depSha = $("dep-sha").value.trim(); depAt = $("dep-at").value;
+      if (!depAt) { showMsg("pick the time the change window opens"); return; }
+      const [h, m] = depAt.split(":").map(Number), when = new Date(); when.setHours(h, m, 0, 0);  // this browser's time, sent as an absolute time
+      runStep({ step: "deploy apply", pr: depPr, confirm: depSha, at: when.toISOString() });
+    };
+  }
   showOut();
   loadArts(key);
   loadData(key, g);

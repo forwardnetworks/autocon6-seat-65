@@ -51,7 +51,10 @@ The **forward/predict** check goes red. This time it's not "not done yet": `APP-
 `PATH-SERVICE` fail. The line you changed is on r4, but the damage lands on r1, where the client's traffic enters.
 
 Now scroll down the pull request's **Conversation**: the check posted a **Change analysis** there, Forward's Predict results
-as the change package a reviewer would read before approving. The change; every requirement before and after; the routing
+as the change package a reviewer would read before approving. It opens with **the change request**: *why* (Forward's
+own finding on your baseline: the two stale prefixes), *the risks already identified* (Forward traces every host to the
+service through r4, so one wrong line on r4 cuts them all off; TCP 2222 must stay blocked), *the exact config*, and
+*when* it would go in. You knew the risk before you wrote a line, and so does the reviewer. Then every requirement before and after; the routing
 diff (which router lost which route); **every host in the lab** traced to the service, before and after (the blast radius:
 five hosts, one line on r4); your intent checks as Forward judged them on the prediction (APP-EXISTING and PATH-SERVICE
 fail); Forward's other checks; everything else Predict compared; and Forward AI's reading, marked as

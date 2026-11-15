@@ -389,8 +389,9 @@ def reach(client, before: str, after: str) -> Table:
     """Which subnets can reach which others, compared between two snapshots: Forward's location connectivity diff. Works
     on any two snapshots (two baselines, a baseline and a prediction, a baseline and the network after a deploy).
     Needs the org's location connectivity diffs on, and advanced reachability computed for both snapshots."""
-    # Forward computes this diff on the first ask and answers empty until it is done; the SDK waits for it to settle,
-    # and says when nothing was compared at all (then empty means nothing, not "no change").
+    # Forward computes this diff on the first ask and answers empty until it is done; the SDK waits for it to settle.
+    # Forward pairs only the subnets a route, ACL or NAT change could affect, so "nothing compared" means no forwarding
+    # change (confirmed in Forward's source and measured live: an empty route diff gives 0 pairs).
     rows, counts, nothing_compared = [], {}, False
     for kind in CONNECTIVITY:
         got = client.snapshot_diffs.wait_for_location_pairs(before, after, kind, timeout=120)
@@ -400,9 +401,6 @@ def reach(client, before: str, after: str) -> Table:
         for item in items:
             rows.append({"change": {"DELETED": "lost", "ADDED": "gained", "MODIFIED": "changed"}[kind],
                          "subnet pairs": item.get("count", ""), "from location": item.get("src", ""), "to location": item.get("dst", "")})
-    if nothing_compared and not rows:
-        raise DataError("Forward compared no subnet pairs for these snapshots (no locations, or reachability not computed): "
-                        "this is not an answer, so it is not shown as 'no change'")
     try:
         from workshop import locations
 
@@ -415,6 +413,9 @@ def reach(client, before: str, after: str) -> Table:
     if rows:
         summary = (f"{counts['DELETED']} location pair(s) lost reachability, {counts['ADDED']} gained, {counts['MODIFIED']} changed "
                    f"(snapshot {before} → {after}).")
+    elif nothing_compared:
+        summary = (f"Forward evaluated no subnet pairs between snapshot {before} and {after}: no forwarding state changed, "
+                   "so no reachability could change.")
     else:
         summary = f"Forward reports no location pair gaining or losing reachability between snapshot {before} and {after}."
     cols = ["change", "subnet pairs", "from location", "to location"]
