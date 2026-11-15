@@ -1,4 +1,4 @@
-"""The attendee's lab: four cEOS routers and two Linux endpoints, launched by netlab.
+"""The attendee's lab: four cEOS routers and Linux hosts (the client, the service and four more), launched by netlab.
 
 netlab builds the lab and configures it (``netlab up``: its modules plus the custom templates in lab/*.j2, pushed with
 Netmiko). After that, every change to a router -- a deploy, a restore, a reset -- goes through NAPALM (executor.py).
@@ -41,6 +41,17 @@ class Probe:
 
 def lab_dir(settings: Settings) -> Path:
     return settings.repo_root / "lab"
+
+
+TOPOLOGY = Path(__file__).resolve().parents[2] / "lab" / "topology.yml"
+
+
+def node_count(topology: Path = TOPOLOGY) -> int:
+    """How many containers a running lab has: one per node in lab/topology.yml (the one place the lab is described)."""
+    try:
+        return len((yaml.safe_load(topology.read_text()) or {}).get("nodes") or {})
+    except (OSError, yaml.YAMLError):
+        return 0
 
 
 def mgmt_ips(settings: Settings) -> dict[str, str]:

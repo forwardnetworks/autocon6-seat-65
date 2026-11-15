@@ -32,6 +32,15 @@ addressing:
   services:
     ipv4: 10.20.0.0/16
     prefix: 24
+  # Four more stub subnets with a Linux host each, two behind r2 and two behind r3, so Forward has more to show (paths, routes,
+  # connectivity between subnets). r1 (the CLIENT-IN ACL) and r4 (the three network statements the exercises change)
+  # are untouched, and neither new subnet is one of r4's stale 10.20.30.0/24 or 10.20.40.0/24.
+  branches:
+    ipv4: 10.30.0.0/16
+    prefix: 24
+  datacenter:
+    ipv4: 10.40.0.0/16
+    prefix: 24
   mgmt:
     start: 100
 
@@ -48,6 +57,18 @@ nodes:
   r3: { bgp.as: 65003, config: [ no-mgmt-default ] }
   r4: { bgp.as: 65004, config: [ no-mgmt-default, stale-adverts ] }
   client:
+    device: linux
+    role: host
+  branch:
+    device: linux
+    role: host
+  dc:
+    device: linux
+    role: host
+  branch2:
+    device: linux
+    role: host
+  dc2:
     device: linux
     role: host
   service:
@@ -71,3 +92,11 @@ links:
   r1:     { ipv4: 10.10.10.1/24 }
 - service: { ipv4: 10.20.20.20/24 }
   r4:      { ipv4: 10.20.20.1/24 }
+- branch: { ipv4: 10.30.30.30/24 }
+  r2:     { ipv4: 10.30.30.1/24 }
+- dc: { ipv4: 10.40.40.40/24 }
+  r3: { ipv4: 10.40.40.1/24 }
+- branch2: { ipv4: 10.30.31.30/24 }
+  r2:      { ipv4: 10.30.31.1/24 }
+- dc2: { ipv4: 10.40.41.40/24 }
+  r3:  { ipv4: 10.40.41.1/24 }

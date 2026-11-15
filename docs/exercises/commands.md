@@ -19,7 +19,7 @@ The workshop calls libraries, not command lines. You can always use the command 
 
 | Tool | What it does here | Where it comes from |
 |---|---|---|
-| **netlab** (+ containerlab underneath) | builds the four routers, the client and the service as containers, and gives the routers their starting configuration, pushed with Netmiko. Once. | `lab/topology.yml`, `lab/*.j2`; netlab 26.10 pinned in `pyproject.toml` |
+| **netlab** (+ containerlab underneath) | builds the four routers and the six Linux hosts (client, service, and branch, branch2, dc, dc2) as containers, and gives the routers their starting configuration, pushed with Netmiko. Once. | `lab/topology.yml`, `lab/*.j2`; netlab 26.10 pinned in `pyproject.toml` |
 | **NAPALM** (EOS driver, eAPI) | every config change after that: open a config session, load the lines, ask the router for its diff, commit or discard | `src/workshop/executor.py` |
 | **Forward headless collector** | logs in to r1-r4 over SSH, runs show commands, writes one snapshot ZIP | downloaded from your Forward server |
 | **Forward Python SDK** (`forward-sdk`) | uploads snapshots, runs Predict, path search and NQE, asks Forward AI | `src/workshop/forward.py` |
@@ -51,11 +51,11 @@ How Predict models a change, what each requirement kind really checks, and where
 
 ### `workshop doctor`: is everything ready?
 **SDK** `networks.list()`: does your seat token reach Forward, and see exactly your own network? Then: docker, containerlab
-and sshpass installed, Netmiko importable (netlab configures the routers with it), the collector downloaded, the six
-containers (**Docker SDK** `containers.list`), and whether you can push to your seat repository (**GitHub API**). Changes nothing.
+and sshpass installed, Netmiko importable (netlab configures the routers with it), the collector downloaded, the lab's
+containers against `lab/topology.yml` (**Docker SDK** `containers.list`), and whether you can push to your seat repository (**GitHub API**). Changes nothing.
 
 ### `workshop up`: build the lab and its starting configuration
-1. **netlab** `up -p clab` (in `lab/`): netlab turns `lab/topology.yml` into a containerlab topology and starts the six
+1. **netlab** `up -p clab` (in `lab/`): netlab turns `lab/topology.yml` into a containerlab topology and starts the ten
    containers. Then it renders each router's configuration (its modules: interfaces, routing, BGP and BGP policy, plus
    the workshop's templates `lab/no-mgmt-default.j2`, `lab/client-in.j2`, `lab/stale-adverts.j2`) into
    `lab/node_files/`, and sends it to each router over SSH with **Netmiko**.

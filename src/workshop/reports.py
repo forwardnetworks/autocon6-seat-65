@@ -60,6 +60,63 @@ def _now() -> str:
 # ---- 1. change analysis ---------------------------------------------------------------------
 
 
+LAB_TOPOLOGY = Path(__file__).resolve().parents[2] / "lab" / "topology.yml"
+
+
+def lab_hosts(topology: Path = LAB_TOPOLOGY) -> dict[str, str]:
+    """Every Linux host in the lab but the service, with its address, read from lab/topology.yml (the one description)."""
+    import yaml
+
+    try:
+        topo = yaml.safe_load(topology.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    hosts = {n for n, v in (topo.get("nodes") or {}).items() if (v or {}).get("device") == "linux" and n != "service"}
+    out: dict[str, str] = {}
+    for link in topo.get("links") or []:
+        if isinstance(link, dict):
+            for node, attrs in link.items():
+                if node in hosts and isinstance(attrs, dict) and attrs.get("ipv4"):
+                    out[node] = str(attrs["ipv4"]).split("/")[0]
+    return dict(sorted(out.items(), key=lambda kv: [int(x) for x in kv[1].split(".")]))
+
+
+def _outcome(client, snapshot: str, src_ip: str, dst_ip: str, port: int) -> str:
+    """One host's path to the service on one snapshot: the outcome and the hops, in a table cell."""
+    r = _dump(client.path_search.get_paths(src_ip=src_ip, dst_ip=dst_ip, ip_proto=6, dst_port=port, snapshot_id=snapshot, max_results=1))
+    paths = ((r or {}).get("info") or {}).get("paths") or []
+    if not paths:
+        return "no path"
+    p = paths[0]
+    hops = " → ".join(str(h.get("device_name") or h.get("deviceName") or "?") for h in p.get("hops") or [])
+    outcome = str(p.get("forwarding_outcome") or p.get("forwardingOutcome") or "?")
+    mark = "✅" if outcome == "DELIVERED" else "❌"
+    return f"{mark} {outcome} ({hops})"
+
+
+def _every_host(client, b: str, a: str) -> list[str]:
+    """Beyond the requirements: every host in the lab to the service, before and after. Display only."""
+    from workshop.lab import SERVICE_IP
+
+    hosts = lab_hosts()
+    if not hosts:
+        return []
+    rows, lost = [], 0
+    for name, ip in hosts.items():
+        before, _ = _try(None, f"path {name} before", lambda ip=ip: _outcome(client, b, ip, SERVICE_IP, 8080))
+        after, _ = _try(None, f"path {name} after", lambda ip=ip: _outcome(client, a, ip, SERVICE_IP, 8080))
+        before, after = before or "(no answer)", after or "(no answer)"
+        if before.startswith("✅") and not after.startswith("✅"):
+            lost += 1
+        rows.append(f"| **{_cell(name)}** `{ip}` | {_cell(before)} | {_cell(after)} |")
+    summary = (f"**{lost} of {len(hosts)} hosts lose the service with this change.**" if lost
+               else f"Every one of the {len(hosts)} hosts still reaches the service.")
+    return ["", f"### Every host to the service (TCP 8080, {SERVICE_IP})", "",
+            ("Not a requirement: every host in the lab, traced by Forward on the baseline and on the predicted network. "
+             "This is the blast radius a reviewer wants to see."), "", summary, "",
+            "| Host | Baseline | Predicted |", "|---|---|---|", *rows, ""]
+
+
 def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None, ai: bool = True, log=None) -> str:
     """The Predict analysis page, as markdown. ``client`` is a Forward SDK client; ``m`` the prediction's evidence manifest."""
     b, a = str(m.baseline_snapshot_id), str(m.predicted_snapshot_id)
@@ -115,6 +172,7 @@ def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None,
             continue
         bo = base_obs.get(r["id"], {})
         out.append(f"| **{_cell(r['id'])}** | {_cell(r.get('expected', ''))} | {_cell(bo.get('observed', '·'))} | {_cell(r.get('observed', ''))} |")
+    out += _every_host(client, b, a)
     pairs, why = _try(None, "location connectivity diff", lambda: _dump(sd.get_connectivity_diff_location_pairs(before_snapshot_id=b, after_snapshot_id=a, type="ALL")))
     out += ["", "Forward's location-to-location connectivity diff: " + ("see the raw answer" if pairs else f"not shown ({why})."), "",
             src("Predict › paths (and Reachability, where enabled)", "path_search.get_paths · snapshot_diff_details.get_connectivity_diff_location_pairs"), ""]

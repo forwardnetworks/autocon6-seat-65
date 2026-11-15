@@ -10,9 +10,13 @@ ip routing
 no ipv6 unicast-routing
 !
 !
+ip host branch 10.30.30.30
+ip host branch2 10.30.31.30
 ip host client 10.10.10.10
-ip host r2 10.0.0.2 10.255.0.2 10.255.0.9
-ip host r3 10.0.0.3 10.255.0.6 10.255.0.13
+ip host dc 10.40.40.40
+ip host dc2 10.40.41.40
+ip host r2 10.0.0.2 10.255.0.2 10.255.0.9 10.30.30.1 10.30.31.1
+ip host r3 10.0.0.3 10.255.0.6 10.255.0.13 10.40.40.1 10.40.41.1
 ip host r4 10.0.0.4 10.255.0.10 10.255.0.14 10.20.20.1
 ip host service 10.20.20.20
 !

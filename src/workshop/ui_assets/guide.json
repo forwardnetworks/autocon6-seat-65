@@ -5,7 +5,7 @@
   "Observability": "Keeps the network's actual state and flags what differs from intent. Here: Forward's model and Predict, judged by the requirements.",
   "Orchestrator": "Sequences the other blocks on events and never touches a device. Here: the pull request and its forward/predict check.",
   "Executor": "Makes the change on the network. Here: NAPALM, sending the exact bytes Predict judged.",
-  "Network": "The thing being managed. Here: four cEOS routers, a client and a service, built by netlab and containerlab."
+  "Network": "The thing being managed. Here: four cEOS routers and six Linux hosts (the client, the service and four more), built by netlab and containerlab."
  },
  "steps": {
   "lab": {
@@ -14,7 +14,7 @@
     "Network",
     "Executor"
    ],
-   "what": "Nothing starts until you press the button. netlab reads lab/topology.yml (four routers, a client and a service, and their links), has containerlab start them, then configures each router over SSH with Netmiko: interfaces, BGP, and the workshop's own pieces from lab/*.j2. That is the lab's starting point. After that, every change goes through NAPALM, so there is exactly one way a change gets onto a running router. You can watch the lab in the Containerlab panel in the left bar of VS Code, or with `netlab status` in lab/.",
+   "what": "Nothing starts until you press the button. netlab reads lab/topology.yml (four routers; the client, the service and four more hosts; their links), has containerlab start them, then configures each router over SSH with Netmiko: interfaces, BGP, and the workshop's own pieces from lab/*.j2. That is the lab's starting point. After that, every change goes through NAPALM, so there is exactly one way a change gets onto a running router. You can watch the lab in the Containerlab panel in the left bar of VS Code, or with `netlab status` in lab/.",
    "before": [
     {
      "q": "netlab builds the topology. What gives the routers their starting configuration?",
@@ -42,18 +42,18 @@
      "q": "How many containers should be running?",
      "options": [
       "4: the routers",
-      "6: four routers, a client and a service",
+      "10: four routers and six Linux hosts",
       "2: client and service"
      ],
      "answer": 1,
-     "why": "Six. The client and the service are what the requirements test from: can the client still reach the service?"
+     "why": "Ten. The client and the service are what the requirements test: can the client still reach the service? The four other hosts (behind r2 and r3) show how far a bad change reaches."
     }
    ],
    "run": [
     {
      "step": "up",
      "label": "Start the lab",
-     "note": "Takes 3 to 10 minutes. You will see netlab start the six nodes, then configure the routers. The machine will be busy; that is normal.",
+     "note": "Takes 3 to 10 minutes. You will see netlab start the ten nodes, then configure the routers. The machine will be busy; that is normal.",
      "cmd": "workshop up"
     },
     {
@@ -71,7 +71,7 @@
      "label": "Check",
      "levels": [
       "Checks that everything the workshop needs is ready. It changes nothing.",
-      "It asks Forward who you are (`networks.list`), looks for docker, containerlab, sshpass and Netmiko, checks the collector is downloaded, and counts the six containers (Docker SDK `containers.list`). Each line says OK or FAIL.",
+      "It asks Forward who you are (`networks.list`), looks for docker, containerlab, sshpass and Netmiko, checks the collector is downloaded, and counts the lab's containers against `lab/topology.yml` (Docker SDK `containers.list`). Each line says OK or FAIL.",
       "Run it as often as you like. By hand: `docker ps` shows the containers, `containerlab inspect --all` shows the lab."
      ],
      "hints": [
@@ -85,8 +85,8 @@
      "id": "lab-up",
      "label": "Build",
      "levels": [
-      "Builds your four routers, a client and a service, and gives each router its starting configuration.",
-      "netlab turns `lab/topology.yml` into a containerlab topology, starts six containers, renders each router's config and pushes it over SSH with Netmiko. Then it waits until eAPI and SSH answer and every BGP session is up. netlab configures a router only while building the lab: every later change goes through NAPALM.",
+      "Builds your four routers and six Linux hosts, and gives each router its starting configuration.",
+      "netlab turns `lab/topology.yml` into a containerlab topology, starts ten containers (four routers and six Linux hosts), renders each router's config and pushes it over SSH with Netmiko. Then it waits until eAPI and SSH answer and every BGP session is up. netlab configures a router only while building the lab: every later change goes through NAPALM.",
       "Look at it with netlab itself, from `lab/`: `netlab status`, `netlab inspect --node r1`, `netlab connect r1`, and `ls node_files/r4` for the pieces it sent."
      ],
      "hints": [

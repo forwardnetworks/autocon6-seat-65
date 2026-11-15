@@ -12,7 +12,7 @@ The [Network Automation Forum reference framework](https://reference.networkauto
 | **Orchestrator** | Coordinates the other blocks in response to events, without touching devices | The **GitHub pull-request workflow** (the event is the PR) and the `workshop` command sequence. It decides the order: baseline, predict, approve, deploy, verify. It never writes to a router itself | The PR, the check, `workshop agent` |
 | **Executor** | Makes the change on the network | **NAPALM** (eAPI) stages the exact candidate bytes in a configuration session, shows the router's own diff, then commits. `workshop deploy` and `workshop restore` use it. **netlab/containerlab** builds the lab and gives it its starting configuration (Netmiko), once. Guarded by a lock, a drift check, and an approval bound to the candidate hash | `workshop deploy` |
 | **Presentation** | The user-facing interfaces, with authentication and authorization | The `workshop` CLI, the **Your lab** page (`workshop ui`), GitHub's PR page, the room board, Forward AI chat. Access control is the seat token and the repository invitation | The lab page, the PR |
-| *Network infrastructure* | What the blocks manage | Four cEOS routers (AS 65001 to 65004), a client and a service, in containerlab | `workshop up` |
+| *Network infrastructure* | What the blocks manage | Four cEOS routers (AS 65001 to 65004), the client, the service and four more hosts behind r2 and r3, in containerlab | `workshop up` |
 
 ## One loop, block by block
 

@@ -36,7 +36,7 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
 
    <details><summary>What <code>workshop up</code> is doing (optional)</summary>
 
-   - **netlab** reads `lab/topology.yml` (four routers, a client and a service, and the links between them) and asks
+   - **netlab** reads `lab/topology.yml` (four routers; the client, the service and four more hosts; the links between them) and asks
      **containerlab** to start them.
    - Then netlab configures each router over SSH with **Netmiko**: interfaces, BGP, and the workshop's own pieces (r1's
      ACL, r4's stale advertisements) from the templates in `lab/*.j2`. That is the network's starting point.
@@ -97,11 +97,11 @@ You have an isolated lab and a Forward network that only you can touch. Nothing 
 - Open `intent.md`: the change you've been asked to make today.
 - **Look at what netlab built**, with netlab itself (from the `lab/` folder: `cd lab`, and `cd ..` after):
   ```
-  netlab status          # the lab, its six nodes and their state
+  netlab status          # the lab, its ten nodes and their state
   netlab inspect --node r4 --format yaml | head -40   # everything netlab knows about r4: interfaces, BGP, its custom config
   netlab connect r1      # a CLI on r1 (exit to leave)
   ```
-  `containerlab inspect --all` lists the same lab, `autocon6`, with six nodes
+  `containerlab inspect --all` lists the same lab, `autocon6`, with ten nodes
   (the **Containerlab** icon in the left activity bar shows the same tree; if it stays blank, the terminal is the reliable way):
   - **r1, r2, r3, r4**: Arista cEOS routers in the diamond (AS 65001 to 65004)
   - **client** and **service**: small Linux containers. The client sits behind r1 and the service behind r4, and the

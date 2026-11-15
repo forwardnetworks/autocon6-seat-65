@@ -285,6 +285,6 @@ def by_hand_lines(env: dict[str, str]) -> list[str]:
 
 
 def up_close() -> list[str]:
-    return ["", "What this means: netlab built the six nodes (four cEOS routers, a client and a service) and configured each router",
+    return ["", "What this means: netlab built the nodes (four cEOS routers, the client, the service, and four more hosts behind r2 and r3) and configured each router",
             "(Netmiko, from lab/topology.yml and lab/*.j2). Look at it: `netlab status` (in lab/), `containerlab inspect --all`, or `docker exec -it clab-autocon6-r1 Cli` (then `enable`,",
             "`show ip bgp summary`). Next: `workshop baseline collect` starts giving Forward a model of this network."]

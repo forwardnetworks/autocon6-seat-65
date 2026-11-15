@@ -511,8 +511,9 @@ function facts(key, s) {
   const f = [], m = s.prediction, v = s.verify, b = s.baseline, rs = (m?.results || []);
   if (key === "lab") {
     const l = s.lab || {}, names = Object.keys(l.states || {}).map((n) => n.replace(/^clab-[^-]+-/, "")).sort();
-    f.push(`${l.running ?? 0} of 6 containers are running${names.length ? `: ${names.map((n) => `<code>${esc(n)}</code>`).join(", ")}` : ""}.`);
-    if ((l.running ?? 0) === 6) f.push("Open the Containerlab panel in VS Code to see the same six nodes, open a terminal on any of them, or draw the topology.");
+    const want = l.expected || 10;
+    f.push(`${l.running ?? 0} of ${want} containers are running${names.length ? `: ${names.map((n) => `<code>${esc(n)}</code>`).join(", ")}` : ""}.`);
+    if ((l.running ?? 0) >= want) f.push("Open the Containerlab panel in VS Code to see the same nodes, open a terminal on any of them, or draw the topology.");
   }
   if (key === "baseline" && b) {
     f.push(`Snapshot <code>${esc(b.snapshot)}</code> is your baseline; its requirements: <span class="pill ${esc(b.report?.status)}">${esc(b.report?.status || "?")}</span>.`);

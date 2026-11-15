@@ -1,6 +1,6 @@
 # AutoCon6 — Know Before You Deploy
 
-Your own lab: four routers, a client and a service, and a Forward network that models them.
+Your own lab: four routers, a client and a service (plus four more hosts behind r2 and r3), and a Forward network that models them.
 
 **The loop:** Baseline → Change → Predict → Approve → Deploy → Verify.
 

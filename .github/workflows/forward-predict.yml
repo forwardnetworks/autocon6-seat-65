@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write   # the change analysis is posted on the pull request (one comment, updated on each push)
 
 concurrency:
   group: forward-predict-${{ github.event.pull_request.number }}
@@ -82,6 +83,7 @@ jobs:
           FORWARD_NETWORK_ID: ${{ secrets.FORWARD_NETWORK_ID }}
           WORKSHOP_LAB_ID: ${{ secrets.WORKSHOP_LAB_ID }}
           WORKSHOP_STATE_DIR: ${{ runner.temp }}/workshop-state
+          GITHUB_TOKEN: ${{ github.token }}
         run: uv run --frozen workshop predict check --pr "$PR_NUMBER" --head-sha "$HEAD_SHA" --base-sha "$BASE_SHA" --out evidence
 
       - name: Keep the evidence (workshop deploy reads it)

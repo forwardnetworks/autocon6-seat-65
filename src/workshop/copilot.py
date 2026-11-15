@@ -33,7 +33,8 @@ network ID:
     networkId: {network_id}
 
 Leave `snapshotId` out and Forward uses the network's latest processed snapshot; pass one to be sure which. After a
-prediction, `evidence/evidence.json` holds `baseline_snapshot_id` and `predicted_snapshot_id`. The lab: client 10.10.10.10 behind r1, service 10.20.20.20 behind r4, routers r1 to r4 in an eBGP diamond.
+prediction, `evidence/evidence.json` holds `baseline_snapshot_id` and `predicted_snapshot_id`. The lab: routers r1 to r4 in an eBGP diamond; client 10.10.10.10 behind r1, service 10.20.20.20 behind r4,
+and more hosts: branch 10.30.30.30 and branch2 10.30.31.30 behind r2, dc 10.40.40.40 and dc2 10.40.41.40 behind r3.
 
 **Rules.** The tools are read-only and only advise: the requirements, judged by `workshop predict check`, decide. Don't
 deploy, don't edit routers by hand, don't change `requirements/`, the workflow, or anything outside `candidate/`. When an

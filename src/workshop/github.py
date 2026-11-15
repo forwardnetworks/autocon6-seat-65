@@ -97,6 +97,18 @@ def comment(number: int, body: str) -> None:
     _call(f"commenting on PR #{number}", pr.create_issue_comment, body[:65000])
 
 
+def upsert_comment(number: int, marker: str, body: str) -> None:
+    """One comment per pull request that carries ``marker``: edited in place on later runs, so a pull request pushed five times
+    still has one change analysis, the newest."""
+    pr = _call(f"reading PR #{number}", repo().get_pull, number)
+    text = f"{marker}\n{body}"[:65000]
+    for existing in _call(f"reading PR #{number}'s comments", lambda: list(pr.get_issue_comments())):
+        if marker in (existing.body or ""):
+            _call(f"updating the comment on PR #{number}", existing.edit, text)
+            return
+    _call(f"commenting on PR #{number}", pr.create_issue_comment, text)
+
+
 def merged_pr(number: int) -> MergedPR:
     pr = _call(f"reading PR #{number}", repo().get_pull, number)
     if not pr.merged:

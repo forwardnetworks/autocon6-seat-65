@@ -250,8 +250,11 @@ def _doctor(settings: config.Settings, args) -> int:
     row(True, "headless collector", str(collector[-1].parent.parent.parent.name) if collector else "not downloaded yet (workshop collector)")
     try:  # the Docker SDK reports a missing or stopped docker daemon itself
         states = lab.containers()
-        running = sum(1 for s in states.values() if s == "running")
-        row(running == 6 or not states, "lab containers", f"{running}/6 running" if states else "lab not started (workshop up)")
+        running, expected = sum(1 for s in states.values() if s == "running"), lab.node_count(settings.repo_root / "lab" / "topology.yml")
+        detail = f"{running}/{expected} running" if states else "lab not started (workshop up)"
+        if states and len(states) != expected:  # a lab built from an older topology: a rebuild picks up the new one
+            detail += f" (this lab has {len(states)} nodes, lab/topology.yml has {expected}: workshop reset --to 1)"
+        row(running == expected or not states, "lab containers", detail)
     except Exception as exc:  # noqa: BLE001
         row(False, "docker", str(exc)[:160])
     if os.environ.get("CODESPACES"):
@@ -291,7 +294,7 @@ def _down(settings: config.Settings, args) -> int:
     except lab.LabError as exc:
         log(f"workshop down: {exc}")
         return EXIT["ERROR"]
-    log("lab removed: the six containers and their links are gone. `workshop up` builds it again (your Forward snapshots stay).")
+    log("lab removed: its containers and their links are gone. `workshop up` builds it again (your Forward snapshots stay).")
     return 0
 
 
@@ -511,9 +514,18 @@ def _change_analysis(settings: config.Settings, m, out: Path, requirements_path:
         return
     (out / "change-analysis.md").write_text(done["text"])
     _append_summary("\n\n" + done["text"])
+    pr = (m.git or {}).get("pr")
+    if pr and (os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")):
+        from workshop import github
+
+        try:  # one comment per pull request, updated on each push: the change package on the ticket
+            github.upsert_comment(int(pr), "<!-- workshop:change-analysis -->", done["text"])
+            log(f"  posted on pull request #{pr} (one comment, updated on each push)")
+        except Exception as exc:  # noqa: BLE001 - display only: the verdict above stands
+            log(f"  (could not post it on pull request #{pr}: {str(exc)[:160]}. It is on the check's summary page.)")
     log(f"Artifact: {out / 'change-analysis.md'}")
-    log("  What it is for: the change record a reviewer reads before approving. In a pull request it is on the check's summary page and in")
-    log("  its artifact, next to evidence.json. It shows what Predict found (routing, reachability, checks, other diffs) and Forward AI's reading.")
+    log("  What it is for: the change record a reviewer reads before approving. In a pull request it is a comment on the pull request, on the")
+    log("  check's summary page, and in its artifact. It shows what Predict found (routing, every host's reach, checks, other diffs) and Forward AI's reading.")
 
 
 def _deploy(settings: config.Settings, args) -> int:

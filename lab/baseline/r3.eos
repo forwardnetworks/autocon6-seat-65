@@ -10,9 +10,13 @@ ip routing
 no ipv6 unicast-routing
 !
 !
+ip host branch 10.30.30.30
+ip host branch2 10.30.31.30
 ip host client 10.10.10.10
+ip host dc 10.40.40.40
+ip host dc2 10.40.41.40
 ip host r1 10.0.0.1 10.255.0.1 10.255.0.5 10.10.10.1
-ip host r2 10.0.0.2 10.255.0.2 10.255.0.9
+ip host r2 10.0.0.2 10.255.0.2 10.255.0.9 10.30.30.1 10.30.31.1
 ip host r4 10.0.0.4 10.255.0.10 10.255.0.14 10.20.20.1
 ip host service 10.20.20.20
 !
@@ -39,6 +43,22 @@ interface Ethernet2
 !
  no shutdown
 !
+interface Ethernet3
+ no switchport
+ description r3 -> dc [stub]
+ ip address 10.40.40.1/24
+ mac-address caf0.0003.0003
+!
+ no shutdown
+!
+interface Ethernet4
+ no switchport
+ description r3 -> dc2 [stub]
+ ip address 10.40.41.1/24
+ mac-address caf0.0003.0004
+!
+ no shutdown
+!
 
 ! --- bgp
 !
@@ -62,6 +82,8 @@ router bgp 65003
  address-family ipv4
 
 !
+  network 10.40.40.0/24
+  network 10.40.41.0/24
 !
   neighbor 10.255.0.5 activate
   neighbor 10.255.0.5 next-hop-self

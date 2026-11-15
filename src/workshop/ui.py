@@ -53,7 +53,7 @@ MAX_ARTIFACT = 60_000
 # What each step uses and produces, shown on the page so people see exactly what they are deploying. Paths are
 # repo-relative; "state:" paths live in the seat's state folder; "forward:<which>" is Forward's raw answers.
 ARTIFACTS: dict[str, list[tuple[str, str, str, bool]]] = {
-    "lab": [("The topology netlab builds: four routers, a client, a service and their links", "lab/topology.yml", "yaml", True),
+    "lab": [("The topology netlab builds: four routers, six Linux hosts and their links", "lab/topology.yml", "yaml", True),
             ("r4's baseline configuration, as netlab deploys it", "lab/baseline/r4.eos", "text", False)],
     "baseline": [("What must stay true: the baseline requirements", "requirements/baseline.yml", "yaml", True),
                  ("The NQE query that finds stale advertisements", "nqe/stale_bgp_advertisements.nqe", "text", False),
@@ -147,7 +147,8 @@ def _containers() -> dict[str, Any]:
     from workshop import lab
 
     states = lab.containers()
-    return {"running": sum(1 for s in states.values() if s == "running"), "total": len(states), "states": states}
+    return {"running": sum(1 for s in states.values() if s == "running"), "total": len(states), "states": states,
+            "expected": lab.node_count()}
 
 
 def check_words(check: str) -> str:
@@ -658,8 +659,9 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
 
     out = []
     running = lab.get("running", 0) if isinstance(lab, dict) else 0
-    out.append(stage("lab", "Lab", "done" if running == 6 else ("active" if running else "todo"),
-                     f"{running}/6 containers running" if running else "not started", "workshop up"))
+    expected = (lab.get("expected") if isinstance(lab, dict) else 0) or 10
+    out.append(stage("lab", "Lab", "done" if running >= expected else ("active" if running else "todo"),
+                     f"{running}/{expected} containers running" if running else "not started", "workshop up"))
     if base:
         ok = (base.get("report") or {}).get("status") == "PASS"
         out.append(stage("baseline", "Baseline", "done" if ok else "failed", f"snapshot {base['snapshot']}", "workshop baseline collect, upload, wait, check"))
