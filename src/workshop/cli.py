@@ -1239,7 +1239,8 @@ def _link(settings: config.Settings, args) -> int:
         log("What this means: r2 can't reach r4 directly any more. The service should still work (BGP reroutes through r3), but not")
         log("the way requirements/candidate.yml says it must (PATH-SERVICE: through r2). Now let Forward see it: the four baseline steps")
         log("again (`workshop baseline collect`, `upload`, `wait`, `check`), then what changed: `workshop data diff --snapshot previous")
-        log("--against baseline` (routes) and `workshop data checks --snapshot previous --against baseline` (your intent checks).")
+        log("--against baseline` (routes), `workshop data reach --snapshot previous --against baseline` (which sites lost reach) and")
+        log("`workshop data checks --snapshot previous --against baseline` (your intent checks).")
     else:
         log("What this means: r2's link to r4 is back, its configuration exactly as before. Take the baseline once more (the four steps):")
         log("that one, with every line PASS, is the one the rest of the day starts from.")

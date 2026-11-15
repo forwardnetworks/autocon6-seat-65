@@ -66,11 +66,14 @@ writes the fixed candidate and collects a new baseline).
    with `netlab inspect --node r3` (from `lab/`), and give it an id like `ROUTE-VIA-R3`. Run the three steps, with
    the same flags on each: `workshop predict changeset --requirements requirements/scratch.yml --out evidence/scratch`, then `run` and `check`.
    *Expected: FAIL on your requirement only: r1's route to the service is via r2 (10.255.0.2), which local preference prefers.*
-2. **Try to deploy it.** `workshop deploy gates --evidence evidence/scratch/evidence.json --no-github --confirm <sha7>`
-   with a scratch run that passes (drop your failing requirement).
-   *Expected: `NOT DEPLOYED (STALE): requirements/candidate.yml changed since the prediction; re-run the check`. Deploy
-   compares the evidence with `requirements/candidate.yml`'s hash, so evidence judged against any other file can't
-   deploy. (The message says the file changed; really, the evidence was judged against a different one.)*
+2. **Try to deploy it.** Make the scratch run pass: change your requirement's `next_hop` to r2's address
+   (`10.255.0.2`) and its id to `ROUTE-VIA-R2`, so the file still differs from `requirements/candidate.yml`. Run the
+   three predict steps again (same flags), then
+   `workshop deploy gates --evidence evidence/scratch/evidence.json --no-github --confirm <sha7>`.
+   *Expected: `NOT DEPLOYED (STALE): the evidence was judged against different requirements than
+   requirements/candidate.yml on this branch`, exit 4. Deploy compares the evidence with `requirements/candidate.yml`'s
+   hash, so evidence judged against any other file can't deploy, even a stricter one that passed. (Delete the
+   requirement instead and the two files are byte for byte the same: then there is nothing to refuse.)*
 3. **Drift.** Predict the fixed candidate (`workshop predict changeset`, `run`, `check`). Then change r4 by hand:
    `docker exec -it clab-autocon6-r4 Cli`, then `enable`, `configure`, `router bgp 65004`, `address-family ipv4`,
    `no network 10.20.40.0/24`, `end`. Now `workshop deploy gates --evidence evidence/evidence.json --no-github --confirm <sha7>`.

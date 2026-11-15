@@ -130,7 +130,9 @@ def change_request(client, m, *, pr: str = "") -> list[str]:
 
     b = str(m.baseline_snapshot_id)
     text = m.candidate_text or ""
-    notes = [line.lstrip("!").strip() for line in text.splitlines() if line.strip().startswith("!")]
+    # the evidence keeps the candidate's commands, not its comments: the change request's title is in the file itself
+    raw = _try(None, "candidate file", lambda: (LAB_TOPOLOGY.parent.parent / m.candidate_path).read_text())[0] or text
+    notes = [line.lstrip("!").strip() for line in raw.splitlines() if line.strip().startswith("!")]
     config = [line.rstrip() for line in text.splitlines() if line.strip() and not line.strip().startswith("!")]
     title = next((n for n in notes if n.lower().startswith("change request")), "Change request")
     out = ["## 1 · The change request", "", f"**{title}**", ""]
