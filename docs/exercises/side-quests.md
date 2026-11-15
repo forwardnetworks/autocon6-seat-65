@@ -75,7 +75,7 @@ workshop ask "If r2 failed, which path would traffic from the client to 10.20.20
 workshop ask --snapshot predicted "Why can't the client reach 10.20.20.20 on TCP 8080?"   # once you've predicted a change
 ```
 
-Read the answer, then **check it yourself**: SQ1's commands, or a query from SQ2. Forward AI shows its work: under each answer, the terminal (and the chat on the Your lab page, in **How it got that**) lists the NQE queries it ran, so you can run the same query with `workshop nqe`. AI advises, Predict decides. Does the AI agree with the router?
+Read the answer, then **check it yourself**: SQ1's commands, or a query from SQ2. Forward AI shows its work: when it ran NQE queries, the terminal (and the chat on the Your lab page, in **How it got that**) lists them under the answer, so you can run the same query with `workshop nqe`. AI advises, Predict decides. Does the AI agree with the router?
 
 ## SQ4 · Write your own test
 
