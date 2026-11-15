@@ -732,9 +732,10 @@ def _snapshot_for(settings: config.Settings, which: str, evidence: str) -> str:
         raise LookupError(f"no predicted snapshot in {evidence}: run the predict steps (`workshop predict changeset`, `run`, `check`)")
     if which == "post":
         path = settings.state_dir / "verify.json"
-        if path.is_file():
-            return str(json.loads(path.read_text())["post_snapshot_id"])
-        raise LookupError("no post-change snapshot yet: run the verify steps, starting with `workshop verify probe`")
+        post = json.loads(path.read_text()).get("post_snapshot_id") if path.is_file() else None
+        if post:
+            return str(post)
+        raise LookupError("no post-change snapshot yet: run the verify steps through `workshop verify compare`")
     raise LookupError(f"unknown snapshot {which!r}: use baseline, predicted, post or a snapshot id")
 
 

@@ -66,6 +66,15 @@ workshop ask --list
 workshop ask --prompt baseline-stale
 ```
 
+Or ask in your own words, about the baseline (the default), the prediction (`--snapshot predicted`, after `workshop
+predict run`) or the network after your change (`--snapshot post`, after `workshop verify compare`):
+
+```
+workshop ask "Which BGP networks does r4 advertise that it has no route for?"
+workshop ask "If r2 failed, which path would traffic from the client to 10.20.20.20 take?"
+workshop ask --snapshot predicted "Why can't the client reach 10.20.20.20 on TCP 8080?"   # once you've predicted a change
+```
+
 Read the answer, then **check it yourself**: SQ1's commands, or a query from SQ2. AI advises, Predict decides. Does the AI agree with the router?
 
 ## SQ4 · Write your own test

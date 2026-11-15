@@ -81,7 +81,14 @@ to netlab, NAPALM, the Forward collector, the Forward SDK and Git, and it prints
 doesn't, what each requirement kind checks exactly, the five result words, what the gates do and don't protect.
 
 The **Your lab** tab (port 8765) always shows where you are and the next command. Stuck? Look in
-[If something goes wrong](stuck.md). In the room, raise a hand. On your own, you can also ask Forward AI in that tab.
+[If something goes wrong](stuck.md). In the room, raise a hand.
+
+**Curious about your network? Ask Forward AI.** Any time, in your own words: `workshop ask "which routers carry
+10.20.20.0/24, and from where?"` asks about your baseline. Add `--snapshot predicted` once you've run `workshop predict
+run`, or `--snapshot post` once `workshop verify compare` has run. Or use the chat under **Optional: Forward AI
+explains and advises**, near the bottom of the Your lab page. Answers take a minute or
+two. It's an adviser: check what it says with `workshop path` or `workshop data`, because the requirements decide,
+not the AI. Nothing in the loop needs it.
 
 **Working on your own?** The clock times in the headings are for the live room: ignore them and take your time. Each
 exercise's **Behind?** line is the shortest way through. When you reach `workshop verify compare` saying **MATCH** you have done
