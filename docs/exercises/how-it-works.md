@@ -142,7 +142,7 @@ from somewhere new: none of that changes the fingerprint. Those show up in a new
 | `lab_id`, `network_id` | yes | must be this lab and this Forward network |
 | `candidate_sha256` | yes | `--confirm` and the candidate file must match it |
 | `candidate_path` | yes, indirectly | where deploy finds the candidate file to hash |
-| `candidate_text` | used, not checked | the lines `deploy apply` sends. Deploy doesn't re-hash it against `candidate_sha256` |
+| `candidate_text` | yes | the lines `deploy apply` sends. Deploy re-hashes them and refuses if they don't match `candidate_sha256` (edited after Predict) |
 | `requirements_sha256` | yes | must equal `requirements/candidate.yml`'s hash |
 | `baseline_snapshot_id` | yes | must still be the newest snapshot |
 | `baseline_fingerprint` | yes | the live routers must hash to it |
