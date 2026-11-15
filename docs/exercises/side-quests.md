@@ -172,13 +172,13 @@ was about a router that no longer exists, so the deploy refuses to act on it. Th
 
 ## SQ12 · Deploy it anyway, then back it out
 
-*After MATCH. Start from a fresh baseline: `workshop reset --to 5`. This breaks your lab's service on purpose, then puts it back.*
+*After MATCH. Start from `workshop reset --to 4`: a fresh baseline, and the breaking change (retire all three) in the candidate. This breaks your lab's service on purpose, then puts it back.*
 
 **Why:** the gate stops a FAIL. Here you deploy one anyway, the way a change goes out "with caveats" in real life, and watch Predict be
 proved right on the real network. Then you back it out the safe way.
 
 ```
-workshop predict --candidate solutions/bad-candidate.eos          # retires all three: FAIL, and it names what breaks
+workshop predict                                                  # the candidate retires all three: FAIL, and it names what breaks
 workshop deploy gates --evidence evidence/evidence.json --no-github --confirm <sha7>
 ```
 The gate refuses, and tells you the one way past it: `--with-caveats` with every failing requirement named. Name only one and it refuses

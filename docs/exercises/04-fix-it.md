@@ -16,7 +16,7 @@ advertisements: delete the `no network 10.20.20.0/24` line and keep these two un
       no network 10.20.30.0/24
       no network 10.20.40.0/24
 ```
-Save. (The answer is in `solutions/fixed-candidate.eos`.) Then, in **Source Control**, commit with the message
+Save. (Stuck on which line? `@wsa4` gives hints, and the answer if you ask for it outright.) Then, in **Source Control**, commit with the message
 `Keep the live service advertisement` and press **Sync Changes** to push. VS Code asks you to confirm it: press **OK**.
 
 <details><summary>Or in the terminal</summary>

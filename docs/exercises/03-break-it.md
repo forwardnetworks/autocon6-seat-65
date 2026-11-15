@@ -31,7 +31,6 @@ In r4's configuration, all three `network` statements look alike. Retire **all**
          no network 10.20.30.0/24
          no network 10.20.40.0/24
    ```
-   (The same lines are in `solutions/bad-candidate.eos`.)
 3. **Source Control:** message `Retire r4's network statements`, then **Commit** and **Publish Branch**.
 4. **GitHub Pull Requests:** **Create Pull Request** from `retire-all` into `main`.
 
