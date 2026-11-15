@@ -190,12 +190,16 @@ thinks about every change: two snapshots and what differs between them, judged b
 5. **What changed, according to Forward:**
    ```
    workshop data diff --snapshot previous --against baseline     # every route that moved, on every router
+   workshop data reach --snapshot previous --against baseline    # which sites lost reachability: Branches <-> Service
    workshop data checks --snapshot previous --against baseline   # which intent checks moved: PATH-SERVICE PASS -> FAIL
    workshop path                                                 # the service traffic now goes r1 -> r3 -> r4
    ```
-   On the Your lab page (Baseline stage): **What changed: routes** and **What changed: your intent checks** run the
-   first two. *previous* is the baseline before your newest one. The diff is the pre/post view; the checks say which of the
-   moves matter to you. It works, but not the way your intent says it must: nothing else would have told you.
+   On the Your lab page (Baseline stage): **What changed: routes**, **What changed: reachability** and **What changed:
+   your intent checks** run them. *previous* is the baseline before your newest one. Three answers, three questions:
+   the route diff says *what moved*; the reachability diff says *which sites lost reach* (each router is a Forward
+   location: Client edge, Branches, Data centre, Service; the pairs lost are the r2-r4 link's own subnet, while the
+   hosts reroute through r3); your intent checks say *whether it matters to you*. The service still works, but not the
+   way your intent says it must: only the last one would have told you.
 6. **Undo it.** *I'm Too Young to Die:* **Undo the change** (or `workshop link up`). *Hold My Beer:* `no shutdown` on
    r2's Ethernet2, the same way you shut it (Containerlab panel → r2 → Connect to SSH). Then the four baseline steps once more: every requirement **PASS**. That
    baseline is the one the rest of the day starts from. (Lost track of what you changed? `workshop restore` puts r2's link and r4 back; then the baseline steps.)

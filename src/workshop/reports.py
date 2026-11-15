@@ -173,8 +173,18 @@ def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None,
         bo = base_obs.get(r["id"], {})
         out.append(f"| **{_cell(r['id'])}** | {_cell(r.get('expected', ''))} | {_cell(bo.get('observed', '·'))} | {_cell(r.get('observed', ''))} |")
     out += _every_host(client, b, a)
-    pairs, why = _try(None, "location connectivity diff", lambda: _dump(sd.get_connectivity_diff_location_pairs(before_snapshot_id=b, after_snapshot_id=a, type="ALL")))
-    out += ["", "Forward's location-to-location connectivity diff: " + ("see the raw answer" if pairs else f"not shown ({why})."), "",
+    from workshop import data as fdata
+
+    table, why = _try(None, "location connectivity diff", lambda: fdata.reach(client, b, a))
+    if table is None:
+        out += ["", f"Forward's location-to-location connectivity diff: not shown ({why}).", ""]
+    else:
+        out += ["", "### Reachability, subnet to subnet (Forward's connectivity diff)", "", table.summary, ""]
+        if table.rows:
+            out += ["| " + " | ".join(table.columns) + " |", "|" + "---|" * len(table.columns)]
+            out += ["| " + " | ".join(_cell(r.get(c, "")) for c in table.columns) + " |" for r in table.rows[:20]]
+            out.append("")
+    out += [
             src("Predict › paths (and Reachability, where enabled)", "path_search.get_paths · snapshot_diff_details.get_connectivity_diff_location_pairs"), ""]
 
     from workshop import intent

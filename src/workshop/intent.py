@@ -157,6 +157,12 @@ def register(settings, snapshot_id: str, log) -> None:
         pass
     files = {vars(r)["id"]: str(vars(r).get("query_file")) for r in reqs.requirements}
     with Forward(settings, quick=True) as fwd:
+        try:  # sites for Forward's connectivity diff (see workshop/locations.py)
+            from workshop import locations
+
+            locations.ensure(fwd.c, settings, log)
+        except Exception as exc:  # noqa: BLE001 - display only
+            log(f"  (Forward locations not set: {type(exc).__name__}: {str(exc)[:120]})")
         log("")
         log("Your critical flows and the NQE finding, as Forward's own intent checks (they judge every snapshot from now on):")
         for r in ensure(fwd.c, str(snapshot_id), reqs, log=log):

@@ -457,7 +457,7 @@ function renderLane(s) {
   const item = (it) => {
     let body = "";
     if (it.kind === "explore") {
-      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="topology">Topology (links)</option><option value="interfaces">Interfaces</option><option value="routes">Routes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
+      body = `<div class="runrow"><select id="ex-topic"><option value="inventory">Devices</option><option value="topology">Topology (links)</option><option value="interfaces">Interfaces</option><option value="routes">Routes</option><option value="reach">Reachability changes</option><option value="diff">Route changes (before and after)</option><option value="vulns">CVEs</option><option value="blast">Blast radius (from a device, to a prefix)</option><option value="checks">Posture: Forward's own checks</option></select>
         <select id="ex-snap"><option value="baseline">baseline</option><option value="previous">previous baseline</option><option value="predicted">predicted</option><option value="post">after deploy</option></select>
         <select id="ex-against"><option value="predicted">compared with predicted</option><option value="post">compared with after deploy</option><option value="baseline">compared with your newest baseline</option></select></div>
         <div class="runrow"><input type="text" id="ex-device" size="8" placeholder="device (r1)"> <input type="text" id="ex-prefix" size="16" placeholder="prefix (10.20.20.0/24)"> <button id="ex-go">Show</button></div>
@@ -484,7 +484,7 @@ function renderLane(s) {
   if (go) go.onclick = async () => {
     const topic = $("ex-topic").value, out = $("ex-out");
     out.innerHTML = '<span class="spinner"></span>asking Forward…';
-    const t = await askData({ topic, snapshot: $("ex-snap").value, against: topic === "diff" || topic === "checks" ? $("ex-against").value : "", device: $("ex-device").value.trim(), prefix: $("ex-prefix").value.trim() });
+    const t = await askData({ topic, snapshot: $("ex-snap").value, against: topic === "diff" || topic === "checks" || topic === "reach" ? $("ex-against").value : "", device: $("ex-device").value.trim(), prefix: $("ex-prefix").value.trim() });
     out.innerHTML = t.error ? `<div class="banner warn">${esc(t.error)}</div>` : tableHtml(t, 200);
   };
   const w = $("rq-write");

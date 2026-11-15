@@ -181,6 +181,12 @@
      "cmd": "workshop data diff --snapshot previous --against baseline"
     },
     {
+     "step": "changes reach",
+     "label": "What changed: reachability",
+     "note": "Forward's connectivity diff: which subnets can still reach which. Routes can move while reachability stays the same: that's rerouting, and only your intent checks say whether it matters.",
+     "cmd": "workshop data reach --snapshot previous --against baseline"
+    },
+    {
      "step": "changes checks",
      "label": "What changed: your intent checks",
      "note": "Forward's checks on both baselines: which ones moved. The diff says what changed; the checks say whether it matters to you.",

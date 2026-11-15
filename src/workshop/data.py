@@ -10,10 +10,14 @@ All calls go through the Forward Python SDK.
 
 from __future__ import annotations
 
+import json
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
+
+from workshop.locations import PLACES  # the one list of sites
 
 MAX_ROWS = 300
 
@@ -35,6 +39,7 @@ TOPICS = {
     "vulns": "CVEs: which published vulnerabilities actually affect your devices",
     "blast": "Blast radius: which addresses traffic from one place can reach",
     "checks": "Posture: Forward's own checks on the network, and which ones a change moves",
+    "reach": "Reachability changes: which subnets can reach which others, before against after",
     "topology": "Topology: which device ports Forward found linked",
     "interfaces": "Interfaces: each port's address, description, ACLs and state",
 }
@@ -82,7 +87,6 @@ class NoSuchSnapshot(DataError):
 
 def snapshot_for(settings, evidence_path, which: str) -> str:
     """baseline | previous | predicted | post | <snapshot id>: the snapshot a question is about."""
-    import json
 
     def read(path: Path) -> dict[str, Any]:
         try:
@@ -369,7 +373,6 @@ def blast(client, snapshot_id: str, source: str = "", destination: str = "") -> 
         summary = f"From {source}, traffic can reach {reach}{of} addresses in {destination}."
     note = ("This is reachability, not an application test: it says where packets can get to, using Forward's model of the network. "
             "Run it on the baseline, then on the predicted snapshot, and compare.")
-    import json
 
     body = json.dumps({"source": where, "dstSubnets": [destination]}, indent=2)
     return Table("blast", TOPICS["blast"], summary, ["from", "can reach", "addresses", "for example"], rows[:MAX_ROWS], note,
@@ -378,6 +381,50 @@ def blast(client, snapshot_id: str, source: str = "", destination: str = "") -> 
 
 
 # ---- the before/after question --------------------------------------------------------------
+
+
+CONNECTIVITY = ("DELETED", "ADDED", "MODIFIED")  # Forward's DiffType for the location connectivity diff ("ALL" is refused)
+
+
+def reach(client, before: str, after: str) -> Table:
+    """Which subnets can reach which others, compared between two snapshots: Forward's location connectivity diff. Works
+    on any two snapshots (two baselines, a baseline and a prediction, a baseline and the network after a deploy).
+    Needs the org's location connectivity diffs on, and advanced reachability computed for both snapshots."""
+    d = client.snapshot_diff_details
+    # Forward computes this diff on the first ask and answers empty until it is done (seen live on fwd.app 26.10), so an
+    # empty answer is asked again before it counts as "nothing changed".
+    for attempt in range(4):
+        rows, counts = [], {}
+        for kind in CONNECTIVITY:
+            got = _dump(d.get_connectivity_diff_location_pairs(before_snapshot_id=before, after_snapshot_id=after, type=kind), alias=True) or {}
+            items = got.get("counts") or []
+            counts[kind] = len(items)
+            for item in items:
+                rows.append({"change": {"DELETED": "lost", "ADDED": "gained", "MODIFIED": "changed"}[kind],
+                             "subnet pairs": item.get("count", ""), "from location": item.get("src", ""), "to location": item.get("dst", "")})
+        if rows or attempt == 3:
+            break
+        time.sleep(3)
+    try:
+        from workshop import locations
+
+        where = locations.names(client)
+    except Exception:  # noqa: BLE001 - ids still say something
+        where = {}
+    for r in rows:
+        r["from location"] = where.get(str(r["from location"]), r["from location"])
+        r["to location"] = where.get(str(r["to location"]), r["to location"])
+    if rows:
+        summary = (f"{counts['DELETED']} location pair(s) lost reachability, {counts['ADDED']} gained, {counts['MODIFIED']} changed "
+                   f"(snapshot {before} → {after}).")
+    else:
+        summary = f"Forward reports no location pair gaining or losing reachability between snapshot {before} and {after} (asked again to be sure)."
+    cols = ["change", "subnet pairs", "from location", "to location"]
+    note = ("Forward's connectivity diff: computed from its reachability model of each snapshot, so it answers 'can these subnets "
+            "still reach each other?', not 'did the path change?'. Routes can move with reachability unchanged (traffic reroutes); "
+            "the route diff and your intent checks say what moved and whether it matters. Each router is a Forward location, "
+            "holding the subnets behind it: " + ", ".join(f"{p[0]} {r}" for r, p in PLACES.items()) + ".")
+    return Table("reach", TOPICS["reach"], summary, cols, rows[:MAX_ROWS], note=note, truncated=len(rows) > MAX_ROWS, raw=rows)
 
 
 def diff(client, before: str, after: str, device: str = "", prefix: str = "") -> Table:
@@ -456,6 +503,12 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
         return topology(client, snapshot_id)
     if topic == "interfaces":
         return interfaces(client, snapshot_id, device)
+    if topic == "reach":
+        if not against:
+            raise DataError("reachability changes need two snapshots: the baseline and what to compare it with")
+        return _with_query(reach(client, snapshot_id, against), "SDK call",
+                           "\n".join(f"client.snapshot_diff_details.get_connectivity_diff_location_pairs(before_snapshot_id={snapshot_id!r}, "
+                                     f"after_snapshot_id={against!r}, type={k!r})" for k in CONNECTIVITY))
     if topic == "checks":
         return _with_query(checks(client, snapshot_id, against), "SDK call", f"client.checks.get_checks(snapshot_id={snapshot_id!r})")
     if topic == "diff":

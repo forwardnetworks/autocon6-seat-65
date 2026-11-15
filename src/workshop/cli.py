@@ -149,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
-    dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "blast", "checks"])
+    dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "reach", "blast", "checks"])
     dt.add_argument("--snapshot", default="baseline", help="baseline | previous | predicted | post | <snapshot id> (diff, checks: the 'before' side)")
     dt.add_argument("--against", help="diff and checks: the 'after' side (diff defaults to predicted if there is one, else post; checks only compares if you give one)")
     dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
@@ -1169,7 +1169,7 @@ def _data(settings: config.Settings, args) -> int:
     try:
         snap = data.snapshot_for(settings, evidence, args.snapshot)
         against = ""
-        if args.topic == "diff":
+        if args.topic in ("diff", "reach"):
             for which in ([args.against] if args.against else ["predicted", "post"]):
                 try:
                     if which == "predicted":  # the prediction's own baseline, and only for the change in the candidate file now
