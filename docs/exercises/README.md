@@ -58,6 +58,18 @@ not in a change window.
 Each exercise starts with **why it matters** and ends with **what you just proved**. If you only have a minute, read those
 two parts. The slides tell the same story: they are linked from your seat page.
 
+## Pick your path
+
+Two ways through, same finish line (`workshop verify compare` says **MATCH**). Switch whenever you like: the page and the
+terminal run the same commands.
+
+- **Click Ops, Certified™** (new to CI, Git or automation): the **Your lab** page, where every step is a button with its
+  command shown underneath; commit and open the pull request from the editor's panels; each exercise's **Behind?** line
+  is your shortcut; ask `@wsa4` in Slack for a hint, then another.
+- **Hold My Beer** (you live in a terminal): every step by hand, reading the `→` calls each one prints (and their HTTP,
+  `WORKSHOP_TRACE=http`); Git from the CLI; `src/workshop/` open beside you; the [side quests](side-quests.md): write
+  your own test, try to cheat the gate, deploy a FAIL on purpose and back it out. `workshop yolo` exists. Try it.
+
 **The critical path** if you fall behind: 0 → 1 → 3 → 4 → 5. Exercise 2 can be skipped. Each exercise says what
 to do if you're behind.
 

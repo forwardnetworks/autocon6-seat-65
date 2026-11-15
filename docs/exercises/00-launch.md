@@ -87,6 +87,8 @@ They match: `lab/baseline/r4.eos` is netlab's rendered configuration, collected 
 
 You have an isolated lab and a Forward network that only you can touch. Nothing you do today affects anyone else, and you can rebuild it in minutes.
 
+**Which path?** *Click Ops, Certified™* (the Your lab page and the editor's panels) or *Hold My Beer* (the terminal, every step by hand, and the side quests): [pick one](README.md#pick-your-path), switch any time.
+
 **Behind?** The one must-do is `workshop up` running. The BGP check on r1 can wait.
 
 ## Finished early?
