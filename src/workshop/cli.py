@@ -744,6 +744,13 @@ def _answer(answer) -> None:
         log(f"  {line}")
     if answer.tools:
         log(f"  (Forward AI used: {', '.join(dict.fromkeys(answer.tools))})")
+    queries = [s for s in getattr(answer, "steps", ()) if s.get("query")]
+    if queries:
+        log(f"\n  How it got that: the {'query' if len(queries) == 1 else f'{len(queries)} queries'} Forward AI ran (check them, don't trust them):")
+        for s in queries:
+            log(f"    -- {s['tool']}")
+            for line in s["query"].splitlines():
+                log(f"    {line}")
 
 
 def _ask(settings: config.Settings, args) -> int:

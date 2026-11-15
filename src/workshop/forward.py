@@ -74,6 +74,7 @@ class AiAnswer:
     insights: tuple[str, ...]
     tools: tuple[str, ...]
     out_of_scope: bool
+    steps: tuple[dict, ...] = ()  # what Forward AI ran to answer: {"tool": "NQE", "query": "..."} (query only when it sent one)
 
 
 @dataclass(frozen=True)
@@ -362,34 +363,39 @@ class Forward:
 
     # --- Forward AI (advisory; see workshop.ai) -------------------------------------------------
 
-    def ask_ai(self, prompt: str, snapshot_id: str, *, timeout: float = 300, busy_timeout: float = 300) -> AiAnswer:
+    def ask_ai(self, prompt: str, snapshot_id: str, *, timeout: float = 300, busy_timeout: float = 300, on_progress=None) -> AiAnswer:
         """One Forward AI chat question grounded in ``snapshot_id``, in a new chat. Forward answers one
         question per user at a time; ``busy_timeout`` waits for this user's other question to finish.
 
         When the model gives up on a turn, Forward records a fixed sentence as an ordinary answer. The same
         question in a fresh chat often works, so it is asked once more (never in the same chat: the sentence
-        is then part of the history)."""
-        answer = self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout)
+        is then part of the history).
+
+        ``on_progress(steps)`` is called while Forward works, with the steps it has taken so far (see ``ai_steps``);
+        without it, this waits the SDK's own way."""
+        answer = self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout, on_progress=on_progress)
         if not gave_up(answer):
             return answer
         try:
-            return self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout)
+            return self._ask_once(prompt, snapshot_id, timeout=timeout, busy_timeout=busy_timeout, on_progress=on_progress)
         except AiUnavailable:
             return answer
 
-    def _ask_once(self, prompt: str, snapshot_id: str, *, timeout: float, busy_timeout: float) -> AiAnswer:
+    def _ask_once(self, prompt: str, snapshot_id: str, *, timeout: float, busy_timeout: float, on_progress=None) -> AiAnswer:
         with _ai_errors("Forward AI chat"):
             conv = self.c.ai.start(prompt, network_id=self.settings.network_id, snapshot_id=snapshot_id, busy_timeout=busy_timeout)
-            conv.wait(timeout=timeout)
+            _wait_for(conv, timeout, on_progress)
             messages = conv.messages()
         return _answer(str(conv.id), messages[-1] if messages else None)
 
-    def ai_follow_up(self, chat_id: str, prompt: str, *, timeout: float = 300, busy_timeout: float = 300) -> AiAnswer:
+    def ai_follow_up(self, chat_id: str, prompt: str, *, timeout: float = 300, busy_timeout: float = 300, on_progress=None) -> AiAnswer:
         """A follow-up question in an existing chat (same snapshot, with the conversation so far)."""
         with _ai_errors("Forward AI chat"):
             conv = self.c.ai.get(chat_id)
-            message = conv.ask_and_wait(prompt, timeout=timeout, busy_timeout=busy_timeout)
-        return _answer(chat_id, message)
+            conv.ask(prompt, busy_timeout=busy_timeout)
+            _wait_for(conv, timeout, on_progress)
+            messages = conv.messages()
+        return _answer(chat_id, messages[-1] if messages else None)
 
     def ai_transcript(self, chat_id: str) -> str:
         with _ai_errors("Forward AI transcript"):
@@ -431,6 +437,51 @@ def gave_up(answer: AiAnswer) -> bool:
     return answer.summary.strip().startswith(GAVE_UP)
 
 
+AI_POLL_MAX = 3.0  # seconds between looks at a chat that is still answering, when someone is watching
+AI_QUERY_CHARS = 4000  # the most of one query an answer keeps
+
+
+def ai_steps(message) -> tuple[dict, ...]:
+    """What Forward AI has run so far on this answer: each tool call's type, and its query when it sent one.
+
+    Forward adds tool calls to the message while it works, before the answer exists, so this is also the progress."""
+    steps = []
+    for tc in (getattr(message, "tool_calls", None) or ()):
+        step = {"tool": str(tc.type or "tool")}
+        result = (tc.model_extra or {}).get("result")
+        query = result.get("query") if isinstance(result, dict) else None
+        if isinstance(query, str) and query.strip():
+            step["query"] = query.strip()[:AI_QUERY_CHARS]
+        steps.append(step)
+    return tuple(steps)
+
+
+def _wait_for(conv, timeout: float, on_progress) -> None:
+    """Wait for the chat's answer. With ``on_progress``, look every few seconds and report the steps so far
+    (a broken callback never stops the wait); without it, the SDK's own wait."""
+    if on_progress is None:
+        conv.wait(timeout=timeout)
+        return
+    deadline, interval, seen = time.monotonic() + timeout, 1.0, None
+    conv.refresh()
+    while not conv.is_done:
+        if time.monotonic() >= deadline:
+            raise ForwardTimeoutError(f"Forward AI chat {conv.id} was still {conv.status or 'pending'} after {timeout:.0f}s")
+        time.sleep(interval)
+        interval = min(AI_POLL_MAX, interval * 1.5)
+        try:
+            messages = conv.messages()
+            steps = ai_steps(messages[-1]) if messages else ()
+            if steps != seen:
+                seen = steps
+                on_progress(steps)
+        except ForwardError:
+            pass  # progress is a nicety: a failed look waits for the next one
+        except Exception:  # noqa: BLE001, S110 - the caller's display must not break the answer
+            pass
+        conv.refresh()
+
+
 def _answer(chat_id: str, message) -> AiAnswer:
     answer = answer_of(message) if message else None
     if answer is None:
@@ -438,6 +489,7 @@ def _answer(chat_id: str, message) -> AiAnswer:
     return AiAnswer(
         chat_id=chat_id, summary=answer.summary or "", insights=tuple(answer.key_insights or ()),
         tools=tuple(str(tc.type) for tc in (message.tool_calls or ())), out_of_scope=bool(answer.out_of_scope),
+        steps=ai_steps(message),
     )
 
 

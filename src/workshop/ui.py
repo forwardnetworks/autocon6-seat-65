@@ -258,7 +258,7 @@ class Chats:
                 thread = {"id": uuid.uuid4().hex[:8], "chat_id": "", "snapshot": snapshot_id, "label": label,
                           "title": question[:80], "turns": []}
                 self.threads.insert(0, thread)
-            turn = {"question": question, "status": "running", "started": time.time()}
+            turn = {"question": question, "status": "running", "started": time.time(), "steps": []}
             thread["turns"].append(turn)
             self._save()
         threading.Thread(target=self._run, args=(thread, turn), daemon=True).start()
@@ -267,12 +267,15 @@ class Chats:
     def _run(self, thread: dict[str, Any], turn: dict[str, Any]) -> None:
         from workshop.forward import Forward
 
+        def progress(steps: tuple[dict, ...]) -> None:
+            turn["steps"] = [dict(s) for s in steps]  # the page shows these while Forward works
+
         try:
             with Forward(self.settings) as fwd:
                 if thread["chat_id"]:
-                    answer = fwd.ai_follow_up(thread["chat_id"], turn["question"])
+                    answer = fwd.ai_follow_up(thread["chat_id"], turn["question"], on_progress=progress)
                 else:
-                    answer = fwd.ask_ai(turn["question"], thread["snapshot"])
+                    answer = fwd.ask_ai(turn["question"], thread["snapshot"], on_progress=progress)
                     thread["chat_id"] = answer.chat_id
             turn.update(status="done", answer=asdict(answer))
         except ai.AiUnavailable as exc:

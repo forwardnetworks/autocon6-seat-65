@@ -140,6 +140,10 @@ select { font: inherit; padding: 5px; border-radius: var(--radius); border: 1px 
 .bubble pre { background: var(--raised); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
 .bubble p { margin: 4px 0; }
 .tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.ai-steps { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--txt-2); }
+.ai-how { margin-top: 8px; font-size: 12px; }
+.ai-how summary { cursor: pointer; }
+.ai-how pre { white-space: pre-wrap; max-height: 260px; overflow: auto; font-size: 11px; margin: 4px 0; }
 .tool { font-size: 10.5px; background: var(--raised); color: var(--txt-2); border: 1px solid var(--divider); border-radius: 10px; padding: 1px 7px; }
 .trail { display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin:10px 0 6px; } .trail .sep { color:var(--txt-3); }
 .crumb { border:1px solid var(--divider); background:var(--raised); color:var(--txt); border-radius:999px; padding:3px 11px; font-size:12.5px; cursor:pointer; }
@@ -959,6 +963,22 @@ function renderAdvice(s) {
 
 let current = null, opened = false;  // the thread on screen; null = a new conversation
 const TOOL_NAMES = { NQE: "NQE query", GET_PATHS: "path search", GET_DEVICE: "device", GET_SUBNET_LOCATIONS: "subnet lookup", TASK_ADD: "plan", TASK_UPDATE: "plan" };
+const TOOL_DOING = { NQE: "queried the model with NQE", GET_PATHS: "searched paths through the network", GET_DEVICE: "looked up a device", GET_SUBNET_LOCATIONS: "looked up where a subnet lives", TASK_ADD: "planned its next steps", TASK_UPDATE: "updated its plan" };
+// While Forward AI works: one line per step it has taken so far (the page polls them from Forward)
+function aiSteps(steps) {
+  if (!steps?.length) return "";
+  return `<ol class="ai-steps">${steps.map((s) => `<li>${esc(TOOL_DOING[s.tool] || s.tool)}</li>`).join("")}</ol>`;
+}
+// After the answer: the queries Forward AI ran, closed until opened, so an answer can be checked rather than trusted
+function aiHow(steps, key, snapshot) {
+  const qs = (steps || []).filter((s) => s.query);
+  if (!qs.length) return "";
+  const open = openAiFolds.has(key) ? " open" : "";
+  return `<details class="ai-how" data-key="${esc(key)}"${open}><summary>How it got that: ${qs.length} ${qs.length === 1 ? "query" : "queries"} it ran</summary>` +
+    qs.map((s) => `<div class="muted" style="font-size:11px;margin-top:6px">${esc(TOOL_NAMES[s.tool] || s.tool)}</div><pre>${esc(s.query)}</pre>`).join("") +
+    `<div class="muted" style="font-size:11px">Run one yourself to check it: save it as <code>check.nqe</code> in your repository's top folder, then <code>workshop nqe check.nqe --snapshot ${esc(snapshot)}</code> (the snapshot this conversation is about).</div></details>`;
+}
+const openAiFolds = new Set();
 
 function renderChat(s) {
   const threads = s.threads || [], byId = Object.fromEntries((s.prompts || []).map((p) => [p.id, p]));
@@ -974,13 +994,14 @@ function renderChat(s) {
     const sample = byId[(thread.label || "").split(" · ")[0]];
     convo.innerHTML = `<div class="muted" style="font-size:11px;text-align:center">grounded in snapshot ${esc(thread.snapshot)}${thread.label ? " · " + esc(thread.label) : ""}</div>` +
       thread.turns.map((turn, i) => {
-        const ai = turn.status === "running" ? `<span class="spinner"></span>Forward is working on it… ${Math.round(Date.now() / 1000 - turn.started)}s`
-          : turn.status === "error" ? `<span style="color:var(--bad)">${esc(turn.error)}</span>` : md(turn.answer?.summary || "");
+        const ai = turn.status === "running" ? `<span class="spinner"></span>Forward is working on it… ${Math.round(Date.now() / 1000 - turn.started)}s${aiSteps(turn.steps)}`
+          : turn.status === "error" ? `<span style="color:var(--bad)">${esc(turn.error)}</span>` : md(turn.answer?.summary || "") + aiHow(turn.answer?.steps, `${thread.id}:${i}`, thread.snapshot);
         const tools = [...new Set(turn.answer?.tools || [])].map((x) => `<span class="tool">${esc(TOOL_NAMES[x] || x)}</span>`).join("");
         const look = i === 0 && sample && turn.status === "done" ? `<div class="hint"><b>What to look for:</b> ${esc(sample.look_for)}<br><b>Why it matters:</b> ${esc(sample.why)}</div>` : "";
         return `<div class="bubble user">${esc(turn.question)}</div><div class="bubble ai"><div class="who">Forward AI${turn.secs ? ` · ${turn.secs}s` : ""}</div>${ai}${tools ? `<div class="tools">${tools}</div>` : ""}${look}</div>`;
       }).join("");
   }
+  convo.querySelectorAll("details.ai-how").forEach((d) => d.ontoggle = () => { d.open ? openAiFolds.add(d.dataset.key) : openAiFolds.delete(d.dataset.key); });
   if (atBottom || thread?.turns.at(-1)?.status === "running") convo.scrollTop = convo.scrollHeight;
   $("prompts").innerHTML = (s.prompts || []).filter((p) => !thread || p.snapshot === (thread.label || "").split(" · ").pop()).slice(0, 6)
     .map((p) => `<button class="chip" data-id="${esc(p.id)}" title="${esc(p.prompt)}">${esc(p.prompt.length > 48 ? p.prompt.slice(0, 46) + "…" : p.prompt)}</button>`).join("");
