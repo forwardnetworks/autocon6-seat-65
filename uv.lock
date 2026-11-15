@@ -399,15 +399,15 @@ wheels = [
 
 [[package]]
 name = "forward-sdk"
-version = "0.1.36"
+version = "0.1.38"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/83/b74abed6ae0751e3406314bee050b223753f7f7e05a03552075ad254fb70/forward_sdk-0.1.36.tar.gz", hash = "sha256:59b800cdc6d6977f1d50d32a26d423eac2acdd6dc6a354dd3f99ae02dd7cef17", size = 1242299, upload-time = "2026-11-07T20:27:35.031Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/b4/8536d4470f25edd5ae6822dd7e8820fed95cb38737a648db7a3fbde7f68e/forward_sdk-0.1.38.tar.gz", hash = "sha256:186e3c3d60d14eaf2dbf3bf13b0a9e9207ce4a78a88836c3415f9e59a36e42e5", size = 1362447, upload-time = "2026-11-15T22:01:49.259Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/66/7b87f9cd9dd8ecde964324c628f94c170cb35834e759abe17f5d1e91f5a2/forward_sdk-0.1.36-py3-none-any.whl", hash = "sha256:20ec4b64222256f4368da0cbc54bc511f50388b2d626b340c0a502b0c30f22e3", size = 611332, upload-time = "2026-11-07T20:27:33.28Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/d0/5ac55f73b98502b2dc563fb4e751e5702d58db707349cf9f5573bb66d87a/forward_sdk-0.1.38-py3-none-any.whl", hash = "sha256:e577e2f5d70563638385b3598bccf0a7547512c0a62db2f48502d8bf42f589ef", size = 676212, upload-time = "2026-11-15T22:01:47.752Z" },
 ]
 
 [[package]]
@@ -1439,7 +1439,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "docker", specifier = ">=7.1" },
-    { name = "forward-sdk", specifier = "==0.1.36" },
+    { name = "forward-sdk", specifier = "==0.1.38" },
     { name = "gitpython", specifier = ">=3.1.45" },
     { name = "napalm", specifier = "==5.2.0" },
     { name = "netmiko", extras = ["par4"], specifier = ">=4.7.0" },

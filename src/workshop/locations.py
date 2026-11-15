@@ -36,21 +36,19 @@ def ensure(client, settings, log=None) -> dict[str, str]:
         if log:
             show.sdk(log, text)
 
-    nl, cd = client.network_locations, client.classic_devices
-    have = {name: lid for lid, name in names(client).items()}
-    for name, lat, lng in PLACES.values():
-        if name not in have:
-            say(f'network_locations.add_location(body={{"name": "{name}", ...}})')
-            have[name] = str(nl.add_location(body={"name": name, "lat": lat, "lng": lng}).id)
+    cd = client.classic_devices
+    say("networks.ensure_locations(" + ", ".join(p[0] for p in PLACES.values()) + ")   creates or fixes them by name; sends nothing when they match")
+    client.networks.ensure_locations({name: {"lat": lat, "lng": lng} for name, lat, lng in PLACES.values()})
     known = {d.name for d in (cd.get_classic_devices().devices or [])}
     missing = [r for r in PLACES if r not in known]
-    if missing:
+    if missing:  # Forward's atlas only places devices it knows as the network's classic devices
         ips = lab.mgmt_ips(settings)
         say(f"classic_devices.add_classic_devices({', '.join(missing)}, collect=False)   names Forward can place; never collected by Forward")
         cd.add_classic_devices(body=[{"name": r, "host": ips[r], "type": "arista_eos_ssh", "collect": False} for r in missing])
-    want = {r: have[name] for r, (name, *_) in PLACES.items()}
-    atlas = {k: str(v) for k, v in (nl.get_atlas() or {}).items()}
-    if any(atlas.get(r) != lid for r, lid in want.items()):
-        say("network_locations.update_atlas(" + ", ".join(f"{r}: {PLACES[r][0]}" for r in PLACES) + ")")
-        nl.update_atlas(body=want)
-    return {r: PLACES[r][0] for r in PLACES}
+    have = names(client)
+    atlas = {k: have.get(str(v), str(v)) for k, v in (client.network_locations.get_atlas() or {}).items()}
+    want = {r: p[0] for r, p in PLACES.items()}
+    if any(atlas.get(r) != name for r, name in want.items()):
+        say("networks.set_device_locations(" + ", ".join(f"{r}: {n}" for r, n in want.items()) + ")")
+        client.networks.set_device_locations(want)
+    return want

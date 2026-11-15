@@ -1,6 +1,6 @@
 {
   "workshop": "0.1.0",
-  "forward_sdk": "0.1.36",
+  "forward_sdk": "0.1.38",
   "napalm": "5.2.0",
   "pyeapi": "1.0.4",
   "collector": {
@@ -14,7 +14,7 @@
   "containerlab": "0.82.0",
   "template_source": {
     "repo": "autocon6-workshop",
-    "commit": "951a63cdad6d7cced342062b59901b15c0a53b99",
+    "commit": "39015f4dbd8a94150c91a949f950bd2fa9eeb9ab",
     "dirty": false
   }
 }

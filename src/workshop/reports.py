@@ -185,7 +185,7 @@ def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None,
             out += ["| " + " | ".join(_cell(r.get(c, "")) for c in table.columns) + " |" for r in table.rows[:20]]
             out.append("")
     out += [
-            src("Predict › paths (and Reachability, where enabled)", "path_search.get_paths · snapshot_diff_details.get_connectivity_diff_location_pairs"), ""]
+            src("Predict › paths (and Reachability, where enabled)", "path_search.get_paths · snapshot_diffs.wait_for_location_pairs"), ""]
 
     from workshop import intent
 

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -390,21 +389,20 @@ def reach(client, before: str, after: str) -> Table:
     """Which subnets can reach which others, compared between two snapshots: Forward's location connectivity diff. Works
     on any two snapshots (two baselines, a baseline and a prediction, a baseline and the network after a deploy).
     Needs the org's location connectivity diffs on, and advanced reachability computed for both snapshots."""
-    d = client.snapshot_diff_details
-    # Forward computes this diff on the first ask and answers empty until it is done (seen live on fwd.app 26.10), so an
-    # empty answer is asked again before it counts as "nothing changed".
-    for attempt in range(4):
-        rows, counts = [], {}
-        for kind in CONNECTIVITY:
-            got = _dump(d.get_connectivity_diff_location_pairs(before_snapshot_id=before, after_snapshot_id=after, type=kind), alias=True) or {}
-            items = got.get("counts") or []
-            counts[kind] = len(items)
-            for item in items:
-                rows.append({"change": {"DELETED": "lost", "ADDED": "gained", "MODIFIED": "changed"}[kind],
-                             "subnet pairs": item.get("count", ""), "from location": item.get("src", ""), "to location": item.get("dst", "")})
-        if rows or attempt == 3:
-            break
-        time.sleep(3)
+    # Forward computes this diff on the first ask and answers empty until it is done; the SDK waits for it to settle,
+    # and says when nothing was compared at all (then empty means nothing, not "no change").
+    rows, counts, nothing_compared = [], {}, False
+    for kind in CONNECTIVITY:
+        got = client.snapshot_diffs.wait_for_location_pairs(before, after, kind, timeout=120)
+        nothing_compared = nothing_compared or bool(got.nothing_compared)
+        items = _dump(got.pairs, alias=True).get("counts") or []
+        counts[kind] = len(items)
+        for item in items:
+            rows.append({"change": {"DELETED": "lost", "ADDED": "gained", "MODIFIED": "changed"}[kind],
+                         "subnet pairs": item.get("count", ""), "from location": item.get("src", ""), "to location": item.get("dst", "")})
+    if nothing_compared and not rows:
+        raise DataError("Forward compared no subnet pairs for these snapshots (no locations, or reachability not computed): "
+                        "this is not an answer, so it is not shown as 'no change'")
     try:
         from workshop import locations
 
@@ -418,7 +416,7 @@ def reach(client, before: str, after: str) -> Table:
         summary = (f"{counts['DELETED']} location pair(s) lost reachability, {counts['ADDED']} gained, {counts['MODIFIED']} changed "
                    f"(snapshot {before} → {after}).")
     else:
-        summary = f"Forward reports no location pair gaining or losing reachability between snapshot {before} and {after} (asked again to be sure)."
+        summary = f"Forward reports no location pair gaining or losing reachability between snapshot {before} and {after}."
     cols = ["change", "subnet pairs", "from location", "to location"]
     note = ("Forward's connectivity diff: computed from its reachability model of each snapshot, so it answers 'can these subnets "
             "still reach each other?', not 'did the path change?'. Routes can move with reachability unchanged (traffic reroutes); "
@@ -507,8 +505,7 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
         if not against:
             raise DataError("reachability changes need two snapshots: the baseline and what to compare it with")
         return _with_query(reach(client, snapshot_id, against), "SDK call",
-                           "\n".join(f"client.snapshot_diff_details.get_connectivity_diff_location_pairs(before_snapshot_id={snapshot_id!r}, "
-                                     f"after_snapshot_id={against!r}, type={k!r})" for k in CONNECTIVITY))
+                           "\n".join(f"client.snapshot_diffs.wait_for_location_pairs({snapshot_id!r}, {against!r}, {k!r})" for k in CONNECTIVITY))
     if topic == "checks":
         return _with_query(checks(client, snapshot_id, against), "SDK call", f"client.checks.get_checks(snapshot_id={snapshot_id!r})")
     if topic == "diff":
