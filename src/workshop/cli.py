@@ -16,6 +16,7 @@ Looking inside Forward's model:
     workshop data inventory | topology | interfaces | routes | vulns | diff | blast | checks   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
+    workshop mcp                                         let Copilot use Forward's read-only MCP tools on this lab (run at Codespace start)
     workshop probe                                       real packets from the client, right now
 
 Recovery: workshop revert (checked, the inverse of the deploy) · workshop restore (break-glass: r4 back to its baseline, over NAPALM) · workshop reset --to N (a netlab redeploy) · workshop status
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     nq.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     sub.add_parser("collector", help="download the headless collector for the server's release")
     sub.add_parser("status", help="where this lab is in the loop")
+    sub.add_parser("mcp", help="let GitHub Copilot (agent mode) use Forward's read-only MCP tools on this lab's network (run at Codespace start)")
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
     sub.add_parser("version", help="print versions")
     sub.add_parser("yolo")  # no help text, so it is not listed: a joke that teaches the gate, and it always refuses
@@ -1143,6 +1145,21 @@ def _data(settings: config.Settings, args) -> int:
         log(f"workshop data: Forward could not answer ({type(exc).__name__}: {str(exc)[:160]})")
         return EXIT["ERROR"]
     log(json.dumps(table.to_json(), indent=2, default=str) if args.json else data.render(table))
+    return 0
+
+
+def _mcp(settings: config.Settings, args) -> int:
+    from workshop import copilot
+
+    try:
+        written = copilot.write(settings.repo_root, settings.network_id)
+    except ValueError as exc:
+        log(f"workshop mcp: {exc}")
+        return EXIT["ERROR"]
+    log("Copilot can now use Forward's MCP tools on your lab's network (read-only):")
+    for path in written:
+        log(f"  {path.relative_to(settings.repo_root)}")
+    log("Open Copilot Chat, pick Agent mode, and start the 'forward' server if VS Code asks. Both files stay out of Git.")
     return 0
 
 

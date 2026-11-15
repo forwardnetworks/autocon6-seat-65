@@ -10,4 +10,5 @@ fi
 if ss -ltn 2>/dev/null | grep -q ':8765 '; then
   exit 0
 fi
+timeout 10 .venv/bin/workshop mcp > /tmp/workshop-mcp.log 2>&1 || true  # Copilot's access to Forward's MCP tools (optional; never blocks the page)
 setsid -f .venv/bin/workshop ui --port 8765 > /tmp/workshop-ui.log 2>&1 < /dev/null

@@ -68,7 +68,8 @@ terminal run the same commands.
   is your shortcut; ask `@wsa4` in Slack for a hint, then another.
 - **Hold My Beer** (you live in a terminal): every step by hand, reading the `→` calls each one prints (and their HTTP,
   `WORKSHOP_TRACE=http`); Git from the CLI; `src/workshop/` open beside you; the [side quests](side-quests.md): write
-  your own test, try to cheat the gate, deploy a FAIL on purpose and back it out. `workshop yolo` exists. Try it.
+  your own test, try to cheat the gate, deploy a FAIL on purpose and back it out, or give Copilot Forward's tools
+  ([SQ14](side-quests.md#sq14--copilot-with-forwards-tools)). `workshop yolo` exists. Try it.
 
 **The critical path** if you fall behind: 0 → 1 → 3 → 4 → 5. Exercise 2 can be skipped. Each exercise says what
 to do if you're behind.
@@ -102,7 +103,7 @@ explains and advises**, near the bottom of the Your lab page. Answers take a min
 two. It's an adviser: check what it says with `workshop path` or `workshop data`, because the requirements decide,
 not the AI. Nothing in the loop needs it.
 
-**Two helpers, different jobs.** *Forward AI* (above) sees your network's model: ask it what the network does.
+**Two helpers, different jobs** (three, if you bring Copilot: [SQ14](side-quests.md#sq14--copilot-with-forwards-tools) gives it Forward's read-only tools on your network). *Forward AI* (above) sees your network's model: ask it what the network does.
 *`@wsa4` in Slack* knows the workshop: the exercises, the commands, what each result means and, once you link your seat
 (`@wsa4 i am CODE`, code on your seat page), your last `workshop` results. Ask it "what next?" or "why did that fail?".
 It suggests the command; you run it. Want another hint? Reply in the same Slack thread with `@wsa4`: it remembers what it

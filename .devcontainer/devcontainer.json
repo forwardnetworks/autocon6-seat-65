@@ -22,7 +22,7 @@
   "portsAttributes": { "8765": { "label": "Your lab (workshop ui)", "onAutoForward": "notify" } },
   "customizations": {
     "vscode": {
-      "extensions": ["ms-python.python", "srl-labs.vscode-containerlab", "GitHub.vscode-pull-request-github"],
+      "extensions": ["ms-python.python", "srl-labs.vscode-containerlab", "GitHub.vscode-pull-request-github", "GitHub.copilot-chat"],
       "settings": {
         "workbench.startupEditor": "readme",
         "files.autoSave": "afterDelay",

@@ -19,6 +19,7 @@ If you're **behind**, skip this page. The core steps are the only thing that mat
 | you've verified (MATCH) | [SQ9 · Catch the drift](#sq9--catch-the-drift) | 10 min |
 | you've verified (MATCH) | [SQ12 · Deploy it anyway, then back it out](#sq12--deploy-it-anyway-then-back-it-out) | 15 min |
 | any time after a prediction | [SQ13 · Your trail of attempts](#sq13--your-trail-of-attempts) | 2 min |
+| your baseline is PASS, and you have Copilot | [SQ14 · Copilot, with Forward's tools](#sq14--copilot-with-forwards-tools) | 10 min |
 
 Your lab page's **Go further** card tracks SQ3, SQ4, SQ6 and SQ7 for you, and its **Explore what Forward knows** box runs SQ2 and SQ10 from the page. The others are for you to notice things.
 
@@ -212,3 +213,29 @@ anywhere". That is the backout verified the same way a deploy is: by collecting 
 workshop predict history
 ```
 Every prediction you finished, with what moved between attempts. The Predict step on your lab page shows the same list.
+
+## SQ14 · Copilot, with Forward's tools
+
+*Any time after your baseline is PASS. Needs GitHub Copilot on your own GitHub account.*
+
+**Why:** an agent you already use, with read-only access to Forward's model of your network. It can trace paths and write
+and run NQE queries, the same tools Forward AI uses. It still only advises: the requirements decide.
+
+**Set up for you:** when your Codespace starts, `workshop mcp` writes `.vscode/mcp.json` (Forward's MCP server, with your
+seat's key) and `.github/copilot-instructions.md` (your lab's network ID, which every tool call needs, and the rules).
+Both stay out of Git. Open **Copilot Chat**, choose **Agent** mode, and in the tools list turn on **forward** (start it if
+VS Code asks).
+
+Try:
+
+- *"Trace a path from the client 10.10.10.10 to the service 10.20.20.20 on TCP 8080."* Then `workshop path --port 8080`
+  (add `--snapshot post` once you've verified, so both read the same snapshot). Same hops?
+- *"Which BGP network statements on r4 have no route behind them?"* It writes an NQE query and runs it. Compare its
+  answer with `STALE-KNOWN` in `workshop baseline check`, and run its query yourself with `workshop nqe`.
+- *"If r4 stopped advertising 10.20.20.0/24, what would break?"* It answers from a snapshot of the network as it is.
+  How would you **prove** the answer instead of trusting it?
+
+Without a snapshot id it reads your network's latest processed snapshot. Give it one to be sure, including your
+prediction's: after a prediction, `evidence/evidence.json` has `baseline_snapshot_id` and `predicted_snapshot_id`. Not working? Run `workshop mcp` again, then **Developer: Reload
+Window**. On a Copilot Business or Enterprise plan, your organization's "MCP servers in Copilot" policy has to be on.
+
