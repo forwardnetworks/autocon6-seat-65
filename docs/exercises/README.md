@@ -63,7 +63,7 @@ two parts. The slides tell the same story: they are linked from your seat page.
 Two ways through, same finish line (`workshop verify compare` says **MATCH**). Switch whenever you like: the page and the
 terminal run the same commands.
 
-- **Click Ops, Certified™** (new to CI, Git or automation): the **Your lab** page, where every step is a button with its
+- **I'm Too Young to Die** (new to CI, Git or automation): the **Your lab** page, where every step is a button with its
   command shown underneath; commit and open the pull request from the editor's panels; each exercise's **Behind?** line
   is your shortcut; ask `@wsa4` in Slack for a hint, then another.
 - **Hold My Beer** (you live in a terminal): every step by hand, reading the `→` calls each one prints (and their HTTP,
