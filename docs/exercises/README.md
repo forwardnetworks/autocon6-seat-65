@@ -90,6 +90,13 @@ explains and advises**, near the bottom of the Your lab page. Answers take a min
 two. It's an adviser: check what it says with `workshop path` or `workshop data`, because the requirements decide,
 not the AI. Nothing in the loop needs it.
 
+**Two helpers, different jobs.** *Forward AI* (above) sees your network's model: ask it what the network does.
+*`@wsa4` in Slack* knows the workshop: the exercises, the commands, what each result means and, once you link your seat
+(`@wsa4 i am CODE`, code on your seat page), your last `workshop` results. Ask it "what next?" or "why did that fail?".
+It suggests the command; you run it. Want another hint? Reply in the same Slack thread with `@wsa4`: it remembers what it
+already told you there and goes one step further, up to the answer if you ask for it. A person comes over only when it's
+something you can't fix yourself.
+
 **Working on your own?** The clock times in the headings are for the live room: ignore them and take your time. Each
 exercise's **Behind?** line is the shortest way through. When you reach `workshop verify compare` saying **MATCH** you have done
 the whole loop. Exercise 6 is optional.

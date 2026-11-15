@@ -989,7 +989,7 @@ function renderChat(s) {
   const thread = threads.find((t) => t.id === current);
   const convo = $("convo"), atBottom = convo.scrollHeight - convo.scrollTop - convo.clientHeight < 40;
   if (!thread) {
-    convo.innerHTML = `<div class="empty"><p><b>Ask Forward AI about your network.</b></p><p>It answers from the snapshot you pick above — running NQE queries and path searches on your lab — not from memory. Try a suggestion below.</p></div>`;
+    convo.innerHTML = `<div class="empty"><p><b>Ask Forward AI about your network.</b></p><p>It answers from the snapshot you pick above — running NQE queries and path searches on your lab — not from memory. Try a suggestion below.</p><p class="muted">It sees your network's model, not the workshop. For "what do I do next?" or a step that failed, ask <code>@wsa4</code> in Slack: it knows the exercises and, once your seat is linked, your last <code>workshop</code> results.</p></div>`;
   } else {
     const sample = byId[(thread.label || "").split(" · ")[0]];
     convo.innerHTML = `<div class="muted" style="font-size:11px;text-align:center">grounded in snapshot ${esc(thread.snapshot)}${thread.label ? " · " + esc(thread.label) : ""}</div>` +

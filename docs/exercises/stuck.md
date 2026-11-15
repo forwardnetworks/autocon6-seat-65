@@ -44,7 +44,7 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 | `workshop verify compare` says **MISMATCH**, or a verify step fails | Something changed after you deployed, or the collection failed | A failed step: run that step again. MISMATCH: `workshop restore`, the baseline steps, and redo from predict |
 | Forward AI says "I wasn't able to produce a complete answer" | The model gave up on that turn | In the browser chat start a **New conversation** and ask again, or ask a narrower question. The `workshop` commands retry once by themselves |
 | Forward AI is "still answering" | One question at a time per person | Wait a minute, or skip it. Nothing in the core loop needs AI |
-| Nothing here matches | | Send Craig your seat number, what you ran, and what it printed. Everything you ran is already logged, so a short description is enough |
+| Nothing here matches | | Ask `@wsa4` in Slack (link your seat first: `@wsa4 i am CODE`, so it can see your last results). Still stuck after `workshop reset --to N`? Raise a hand |
 
 Want to know exactly what a command did before you trust it? [Every `workshop` command, in its pieces](commands.md).
 
