@@ -12,6 +12,7 @@ Rules, because this sits in the middle of a working loop:
 - Display only. A wrapped call returns exactly what the real one returned and raises exactly what it raised.
 - It fails open. If printing breaks, the call still happens.
 - Secrets are masked: arguments with a secret-looking name, and any value that equals a secret in the environment.
+  Email addresses are masked too (Forward returns its users' emails, such as a snapshot's ``creator``).
 - A call a ``show.*`` line has just announced is not printed twice (see ``announced``).
 
 Under each Forward SDK call, the HTTP it made (``HttpHooks``, the SDK's own observation hooks): method, path, request body,
@@ -119,14 +120,18 @@ def _secrets() -> list[str]:
     return [v for k, v in os.environ.items() if v and len(v) >= 6 and _SECRET_ENV.search(k)]
 
 
+_EMAIL = re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}")
+
+
 def scrub(text: str) -> str:
     for s in _secrets():
         text = text.replace(s, "***")
-    return text
+    return _EMAIL.sub("***@***", text)
 
 
 def _short(v: Any) -> str:
     if isinstance(v, str):
+        v = scrub(v)  # before any cut, so a cut never leaves half of something masked
         if "\n" in v:
             first = next((ln.strip() for ln in v.splitlines() if ln.strip() and not ln.strip().startswith(("//", "#"))), "")
             return f"'{first[:48]}…' ({len(v.splitlines())} lines)"
@@ -171,12 +176,12 @@ def emit(kind: str, text: str, *, ms: float | None = None, ok: bool = True, http
         pass
 
 
-def _print(line: str) -> None:
+def _print(line: str, *, clean: bool = False) -> None:
     sink = _sink
     if sink is None or not enabled():
         return
     try:
-        sink(scrub(line))
+        sink(line if clean else scrub(line))
     except Exception:  # noqa: BLE001, S110 - display only
         pass
 
@@ -284,7 +289,7 @@ def _binary(ctype: str, data: bytes) -> bool:
 
 
 def body_excerpt(data: bytes, ctype: str, *, lines: int, chars: int) -> str:
-    """What a body shows: pretty JSON with secret-named keys masked, text, or only its size; always scrubbed of secret values."""
+    """What a body shows: pretty JSON with secret-named keys masked, text, or only its size; always scrubbed of secret values and email addresses."""
     if not data:
         return ""
     if _binary(ctype, data):
@@ -295,7 +300,7 @@ def body_excerpt(data: bytes, ctype: str, *, lines: int, chars: int) -> str:
             text = json.dumps(mask(json.loads(text)), indent=2, ensure_ascii=False)
         except ValueError:
             pass
-    return scrub(_clip(text, lines, chars))
+    return scrub(_clip(scrub(text), lines, chars))  # before the clip too, so a cut never leaves half a secret
 
 
 def _target(url: Any) -> str:
@@ -326,7 +331,7 @@ def _out(call: dict[str, Any] | None, h: dict[str, Any]) -> None:
         return  # past the per-call cap (a long wait polls every few seconds): counted on the feed, not printed line by line
     mode = http_mode()
     if mode == "marks":
-        _print(MARK + json.dumps(_public(h), ensure_ascii=False, separators=(",", ":")))
+        _print(MARK + json.dumps(_public(h), ensure_ascii=False, separators=(",", ":")), clean=True)  # every field is already masked; masking the JSON again could break it
     elif mode == "lines":
         _print("      " + http_line(h))
         if not _hinted:
