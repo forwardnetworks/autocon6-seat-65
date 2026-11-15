@@ -637,7 +637,7 @@ function renderGuide(s, key) {
       ? `<button class="warn" id="catch-yes" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Yes, start a fresh loop" : "Yes, reset to the start of this step"}</button><button class="ghost" id="catch-no">Cancel</button>`
       : `<button class="ghost" id="catch-btn" ${busy ? "disabled" : ""}>${key === "deploy" || key === "verify" || key === "done" ? "Start a fresh loop" : "Catch me up"}</button>`}</div></div></div>`;
   const upd = s.updates && s.updates.available
-    ? `<div class="banner warn"><b>The workshop team pushed an update.</b> In the terminal: <code>git switch main && git pull && uv sync --frozen</code> (your branches and your change are untouched), then carry on. <span class="muted">${esc((s.updates.files || []).join(", "))}</span></div>` : "";
+    ? `<div class="banner warn"><b>The workshop team pushed an update.</b> In the terminal: <code>git switch main && git pull && uv sync --frozen && bash .devcontainer/start-ui.sh --restart</code> (your branches and your change are untouched), then reload this page and carry on. <span class="muted">${esc((s.updates.files || []).join(", "))}</span></div>` : "";
   $("next").innerHTML = `
     ${upd}
     ${paceHtml(s)}
