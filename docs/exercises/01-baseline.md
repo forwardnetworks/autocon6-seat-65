@@ -211,3 +211,7 @@ You know the network's good behavior in a form a machine can check, and Forward 
   `STALE-KNOWN` is the one to read. It lists r4 `network` statements whose prefixes r4 has no route for. These are
   stale advertisements, and retiring them is today's change request.
   </details>
+
+## Go deeper
+
+Forward's [path analysis](https://docs.fwd.app/latest/application/search/path-analysis/overview/) is what `workshop path` and the `flow` requirements ask, and the [NQE tutorial](https://docs.fwd.app/latest/application/nqe/nqe-tutorial/) teaches the language behind `STALE-KNOWN`. More: [Go deeper](go-deeper.md).

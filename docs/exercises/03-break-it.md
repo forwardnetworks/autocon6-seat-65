@@ -144,3 +144,7 @@ A real class of mistake was caught in a pull request, before deploy, by a test s
   Zero rows: no stale advertisements left, so `STALE-CLEARED` passes. If that query were your only check, this change
   would have been approved and the service would be down. The behavioral tests (`APP-EXISTING`, `PATH-SERVICE`) are what
   caught it.
+
+## Go deeper
+
+"Routes removed" comes from Forward's [snapshot diffs](https://docs.fwd.app/latest/application/diffs/); [reviewing Predict results](https://docs.fwd.app/latest/application/predict/reviewing-results/) is the product's view of the same answer. And [a time the model was wrong](how-it-works.md#b-a-time-the-model-was-wrong), so you know what Predict can miss. More: [Go deeper](go-deeper.md).

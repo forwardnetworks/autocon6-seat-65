@@ -184,3 +184,7 @@ workflow later. If you skip it, ignore the later mentions of `retire-one`: you w
   hygiene requirement is an `nqe.query`. Find `MGMT-DENY` and look at the path's hops: "blocked" means a hop on r1
   says the `CLIENT-IN` ACL denied it, not just "no path".
   </details>
+
+## Go deeper
+
+GitHub's [status checks](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/about-status-checks) and [rulesets](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets) are what make `forward/predict` a gate; `.github/workflows/forward-predict.yml` is the job. Forward's side: [Predict overview](https://docs.fwd.app/latest/application/predict/overview/). More: [Go deeper](go-deeper.md).

@@ -47,3 +47,6 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 | Nothing here matches | | Send Craig your seat number, what you ran, and what it printed. Everything you ran is already logged, so a short description is enough |
 
 Want to know exactly what a command did before you trust it? [Every `workshop` command, in its pieces](commands.md).
+
+The platform itself misbehaving (Codespaces, GitHub, netlab, containerlab)? [Go deeper: when it's the tool, not you](go-deeper.md#when-its-the-tool-not-you)
+has their status pages and troubleshooting guides.

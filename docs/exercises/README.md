@@ -41,6 +41,20 @@ Today you put a test stage in front of the deploy. It asks what the **network** 
 Forward builds from the real configs, before any router is touched. The lab is small, but the loop is the one you would run
 on a real change: **Baseline → Change → Predict → Approve → Deploy → Verify**.
 
+**Why it's a closed loop.** Most change automation is open-loop: push the change, then find out from monitoring or
+from users. Here each stage hands the next one a piece of evidence, and the last stage checks the first stage's
+promise: Verify collects the network again and runs your tests on it. **MATCH** means your tests give the same
+verdicts on the real network as they gave on the prediction. **MISMATCH** means reality disagrees: the change is still
+live (nothing rolls back by itself), so you put r4 back with `workshop restore`, take a fresh baseline and work out
+why. No change deploys without a prediction (`workshop restore` is the break-glass exception), and nothing is done
+until reality has been checked against it.
+
+**What that's worth.** Every change leaves evidence you can show someone: what the network would do (your tests, on
+the predicted network), which merged pull request approved exactly which change, proof that what was deployed is what
+was tested, and proof that your tests give the same answers on the real network afterwards. In exercise 3 you'll see the case it's built for: a change that is valid
+config, passes a hygiene check, and still takes the service down two routers away. It gets caught in a pull request,
+not in a change window.
+
 Each exercise starts with **why it matters** and ends with **what you just proved**. If you only have a minute, read those
 two parts. The slides tell the same story: they are linked from your seat page.
 
@@ -55,6 +69,10 @@ left, and the terminal at the bottom. Each Git step also has the equivalent term
 **What does each step leave behind, and what is it for?** [Artifacts](artifacts.md): every file and Forward record the loop makes, which are evidence a later step checks, and which are records for people (the change analysis, the pre- and post-change reports, the backout).
 
 **Ahead of the room?** [Side quests](side-quests.md).
+
+**Want to read further, or understand a tool when it breaks?** [Go deeper](go-deeper.md): Forward's docs for each
+feature you use, netlab, containerlab, NAPALM, GitHub's checks and rulesets, and where to look when the platform
+itself is the problem.
 
 **What does a `workshop` command actually do?** [Every command, in its pieces](commands.md): each one is a few calls
 to netlab, NAPALM, the Forward collector, the Forward SDK and Git, and it prints each of them as it runs.

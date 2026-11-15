@@ -107,3 +107,7 @@ You have an isolated lab and a Forward network that only you can touch. Nothing 
 
   `docker exec -it clab-autocon6-client sh` gives you a shell on the client (`exit` to leave). In the Containerlab
   panel, right-click a node for **Connect to SSH** or **Attach shell**, and the lab for **Graph**.
+
+## Go deeper
+
+[netlab](https://netlab.tools/) and [containerlab](https://containerlab.dev/) built your lab from `lab/topology.yml`; [the framework map](framework.md) shows where each piece of today's loop sits. More: [Go deeper](go-deeper.md).

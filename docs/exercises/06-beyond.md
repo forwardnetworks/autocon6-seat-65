@@ -2,6 +2,23 @@
 
 **Framework map.** Every block here has a swap point: a different Collector or Executor, a second source of Intent, a different Orchestrator. [The framework map](framework.md) lists where each one lives and what is vendor-specific today.
 
+## What you just built, and what it's worth
+
+You ran a closed loop: a change was tested against the network's behavior before it existed, deployed only if it
+passed, and then checked against reality. Each step left evidence for the next:
+
+| Before the loop | With it |
+|---|---|
+| A reviewer reads one device's diff | Your tests run on the whole predicted network: the bad change in exercise 3 broke the service two routers away |
+| "Approved" means someone said yes | Approval is a merge of a green check, bound to that candidate, that baseline and those requirements |
+| What's deployed is whatever got pasted | Exactly the bytes Predict judged, refused if the routers drifted |
+| Done means no alarms | Done means your tests give the same verdicts on a new collection as on the prediction (MATCH), with a checked way back (`workshop revert`) |
+
+What it costs, honestly: tests you write and keep current, a collection that's fresh enough to trust, and a model you
+have checked against your own platforms and change types ([what to validate first](#the-same-pattern-bigger)).
+
+Everything you'd want to read next, from Forward's docs to NAPALM and GitHub rulesets: [Go deeper](go-deeper.md).
+
 ## Monday morning
 
 You don't need the whole pipeline to start. Pick one kind of change you make often and write three requirements for it:

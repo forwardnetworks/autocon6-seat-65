@@ -67,3 +67,7 @@ The only way to merge is a green check, so approval is a person looking at evide
   the predict steps with `--requirements requirements/mine.yml` (on `changeset` and `check`).
 - `workshop agent`: on a scratch branch, put the broken change back in the candidate and let the advisers iterate to
   a passing change. It stops before approval, so compare its answer with yours.
+
+## Go deeper
+
+Forward AI's [limits and scope](https://docs.fwd.app/latest/application/forward-ai/limits-and-scope/) are why the requirements decide and AI only advises. To see the gate refuse on purpose and then back out cleanly: [SQ12](side-quests.md#sq12--deploy-it-anyway-then-back-it-out). More: [Go deeper](go-deeper.md).

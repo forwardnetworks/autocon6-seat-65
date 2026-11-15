@@ -133,3 +133,7 @@ The model said which tests would pass, and the real network, collected again, ag
   `workshop restore`, then the baseline steps (restore is the one change path with no prediction: it is the break-glass step,
   and that's why a new baseline must follow).
 - `workshop ask --prompt post-still-stale`: ask Forward AI about the network after the change.
+
+## Go deeper
+
+[NAPALM](https://napalm.readthedocs.io/en/latest/) pushes the change through an [EOS configuration session](https://www.arista.com/en/um-eos/eos-configure-session) (stage, diff, commit in one step). What deploy and verify check, and what they don't: [the gates](how-it-works.md#e-the-gates-and-what-approval-means-here) and [drift](how-it-works.md#f-what-drift-means). More: [Go deeper](go-deeper.md).
