@@ -44,7 +44,7 @@ R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
 # What the page may start. Anything else (down, collector, ask...) stays a typed command.
 STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "matrix", "agent", "deploy", "verify", "restore", "status",
          # one step at a time: what the exercises teach
-         "baseline collect", "baseline upload", "baseline wait", "baseline check",
+         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up",
          "predict changeset", "predict run", "predict check",
          "deploy gates", "deploy render", "deploy apply", "deploy readback",
          "verify probe", "verify collect", "verify upload", "verify wait", "verify compare")

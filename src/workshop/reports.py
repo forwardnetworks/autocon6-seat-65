@@ -177,9 +177,14 @@ def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None,
     out += ["", "Forward's location-to-location connectivity diff: " + ("see the raw answer" if pairs else f"not shown ({why})."), "",
             src("Predict › paths (and Reachability, where enabled)", "path_search.get_paths · snapshot_diff_details.get_connectivity_diff_location_pairs"), ""]
 
+    from workshop import intent
+
+    intent_lines, _ = _try(log, "intent checks", lambda: intent.section(client, b, a, before_label="Baseline", after_label="Predicted",
+                                                                        title="5 · Your intent checks, judged by Forward on the prediction"))
+    out += intent_lines or []
     checks, why = _try(log, "check diffs", lambda: _dump(sd.get_check_diffs(before_snapshot_id=b, after_snapshot_id=a,
                                                                             type=["NQE", "Predefined", "Isolation", "Reachability", "Existential"])))
-    out += ["## 5 · Forward's own checks", ""]
+    out += ["## 5b · Forward's other checks", ""]
     moved = []
     for c in (checks or {}).get("checks") or []:
         x, y = c.get("a") or {}, c.get("b") or {}
@@ -231,6 +236,7 @@ def analysis(client, m, *, baseline_results: list[dict[str, Any]] | None = None,
             "| Requirements | Predict › paths and NQE, judged by evaluate.py | `path_search.get_paths`, `nqe.query` |",
             "| Routing | Predict › routing diff | `snapshot_diff_details.get_routing_diff_*` |",
             "| Reachability | Predict › paths | `path_search.get_paths` |",
+            "| Intent checks | Verify › intent checks, judged on both snapshots | `checks.add_check`, `checks.get_checks` |",
             "| Checks | Predict › checks | `snapshot_diff_details.get_check_diffs` |",
             "| Other diffs | Predict › diffs | `snapshot_diff_details.get_*_diff_stats` |",
             "| AI reading | Forward AI | `predict_assist.*` |", ""]

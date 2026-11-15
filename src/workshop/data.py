@@ -81,7 +81,7 @@ class NoSuchSnapshot(DataError):
 
 
 def snapshot_for(settings, evidence_path, which: str) -> str:
-    """baseline | predicted | post | <snapshot id>: the snapshot a question is about."""
+    """baseline | previous | predicted | post | <snapshot id>: the snapshot a question is about."""
     import json
 
     def read(path: Path) -> dict[str, Any]:
@@ -96,6 +96,13 @@ def snapshot_for(settings, evidence_path, which: str) -> str:
         found = steps.baseline_snapshot(settings)
         if found:
             return found
+    elif which == "previous":  # the baseline before the newest: exercise 1 compares the two around its change
+        from workshop import steps
+
+        found = steps.previous_baseline(settings)
+        if found:
+            return found
+        raise NoSuchSnapshot("no earlier baseline yet: 'previous' is the baseline before your newest one (exercise 1 takes two)")
     elif which == "predicted":
         data = read(Path(evidence_path))
         if data.get("predicted_snapshot_id"):
@@ -302,8 +309,9 @@ def checks(client, snapshot_id: str, against: str = "") -> Table:
     else:
         summary = f"{plural(len(rows), 'check')} on this snapshot: {tally}."
     cols = ["check", "type", "status"] + (["then", "moved"] if against else []) + ["what it checks"]
-    note = ("Forward evaluates these while it processes a snapshot. They are Forward's own checks, a different list from the workshop's "
-            "requirements: the requirements are what the gate judges, and these are what Forward would tell you about the network anyway.")
+    note = ("Forward evaluates these while it processes a snapshot. The ones named 'autocon6 …' and the stale_bgp_advertisements NQE check are "
+            "your requirements, registered as Forward intent checks by `workshop baseline check`; the rest are Forward's own. The gate "
+            "still judges with the workshop's requirements; these are Forward's verdicts on the same intent.")
     return Table("checks", TOPICS["checks"], summary, cols, rows[:MAX_ROWS], note, truncated=len(rows) > MAX_ROWS, raw=rows)
 
 

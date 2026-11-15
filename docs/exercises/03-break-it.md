@@ -54,7 +54,8 @@ The **forward/predict** check goes red. This time it's not "not done yet": `APP-
 Now scroll down the pull request's **Conversation**: the check posted a **Change analysis** there, Forward's Predict results
 as the change package a reviewer would read before approving. The change; every requirement before and after; the routing
 diff (which router lost which route); **every host in the lab** traced to the service, before and after (the blast radius:
-five hosts, one line on r4); Forward's own checks; everything else Predict compared; and Forward AI's reading, marked as
+five hosts, one line on r4); your intent checks as Forward judged them on the prediction (APP-EXISTING and PATH-SERVICE
+fail); Forward's other checks; everything else Predict compared; and Forward AI's reading, marked as
 advice. Every section says where in Forward it came from. Push a fix and the same comment updates.
 
 Your routers weren't touched. `workshop probe` sends real packets on the real network, not Forward's model:

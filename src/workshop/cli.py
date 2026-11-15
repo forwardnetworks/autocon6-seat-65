@@ -16,6 +16,7 @@ Looking inside Forward's model:
     workshop data inventory | topology | interfaces | routes | vulns | diff | blast | checks   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
+    workshop link down|up                                exercise 1's change: shut r2's link to r4, or bring it back
     workshop mcp                                         let Copilot use Forward's read-only MCP tools on this lab (run at Codespace start)
     workshop probe                                       real packets from the client, right now
 
@@ -149,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
     dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "blast", "checks"])
-    dt.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | <snapshot id> (diff: the 'before' side)")
+    dt.add_argument("--snapshot", default="baseline", help="baseline | previous | predicted | post | <snapshot id> (diff, checks: the 'before' side)")
     dt.add_argument("--against", help="diff and checks: the 'after' side (diff defaults to predicted if there is one, else post; checks only compares if you give one)")
     dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
     dt.add_argument("--prefix", default="", help="only this prefix, e.g. 10.20.20.0/24 (routes, diff); for blast, where traffic is going (default 10.20.20.0/24)")
@@ -163,7 +164,7 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument("--port", type=int, default=8080, help="destination TCP port (8080 the app, 2222 and 8443 blocked)")
     pa.add_argument("--to", default="10.20.20.20", help="destination address (default: the service)")
     pa.add_argument("--from", dest="src", default="10.10.10.10", help="source address (default: the client)")
-    pa.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | a snapshot id")
+    pa.add_argument("--snapshot", default="baseline", help="baseline | previous | predicted | post | a snapshot id")
     pa.add_argument("--compare", default="", help="a second snapshot (e.g. predicted): trace both and say what changed")
     pa.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     nq = sub.add_parser("nqe", help="run an NQE query (a file such as nqe/stale_bgp_advertisements.nqe, or the query text) and show its rows")
@@ -172,6 +173,8 @@ def main(argv: list[str] | None = None) -> int:
     nq.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     sub.add_parser("collector", help="download the headless collector for the server's release")
     sub.add_parser("status", help="where this lab is in the loop")
+    lk = sub.add_parser("link", help="exercise 1's change: shut r2's link to r4 (down), or bring it back (up), over NAPALM")
+    lk.add_argument("state", choices=["down", "up"])
     sub.add_parser("mcp", help="let GitHub Copilot (agent mode) use Forward's read-only MCP tools on this lab's network (run at Codespace start)")
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
     sub.add_parser("version", help="print versions")
@@ -353,6 +356,10 @@ def _baseline(settings: config.Settings, args) -> int:
         log("Each requirement in detail:")
         for line in report_.requirement_lines(rows):
             log(line)
+    with _display_only():  # every way a baseline is taken registers them: step by step, all at once, or the lab page's catch-up
+        from workshop import intent
+
+        intent.register(settings, str(snapshot_id), log)
     log("")
     log(f"baseline: {report.status.value}")
     with _display_only():
@@ -619,7 +626,13 @@ def _pre_change_report(settings: config.Settings, m, gates_passed: list[str], ca
         change = candidate.normalize(m.candidate_text)
         plan = {"lines": list(candidate.HEADER) + [revert.invert(line) for line in change[len(candidate.HEADER):]],
                 "target_fingerprint": m.baseline_fingerprint}
-        path = reports.save(settings, "pre-change.md", reports.pre_change(m, gates_passed, plan, caveats=caveats, pr=pr))
+        from workshop import provenance
+
+        text = reports.pre_change(m, gates_passed, plan, caveats=caveats, pr=pr)
+        with contextlib.suppress(Exception):  # provenance is extra: the record is written without it if it can't be read
+            text += "\n" + "\n".join(provenance.section(settings, "baseline", "Provenance: the baseline collection",
+                                                          snapshot=str(m.baseline_snapshot_id)))
+        path = reports.save(settings, "pre-change.md", text)
         log("")
         log(f"Artifact: {path}")
         log("  What it is for: the pre-change readiness record: the baseline, the test result, the approval, every gate that held, and the")
@@ -632,12 +645,27 @@ def _post_change_report(settings: config.Settings, evidence: Path, result: dict,
     import contextlib
 
     with contextlib.suppress(Exception):
-        from workshop import reports
+        from workshop import intent, provenance, reports
         from workshop.evidence import Manifest
+        from workshop.forward import Forward
 
         record = json.loads((settings.state_dir / "deploy.json").read_text())
-        pr = (Manifest.read(evidence).git or {}).get("pr")
-        path = reports.save(settings, "post-change.md", reports.post_change(record, result, routing=routing, pr=int(pr) if pr else None))
+        m = Manifest.read(evidence)
+        pr = (m.git or {}).get("pr")
+        text = reports.post_change(record, result, routing=routing, pr=int(pr) if pr else None)
+        extra: list[str] = []
+        post = str(result.get("post_snapshot_id") or "")
+        with contextlib.suppress(Exception), Forward(settings, quick=True) as fwd:  # Forward's own intent checks, before and after
+            if post and m.baseline_snapshot_id:
+                extra += intent.section(fwd.c, str(m.baseline_snapshot_id), post, before_label=f"Baseline `{m.baseline_snapshot_id}`",
+                                        after_label=f"After the change `{post}`", title="Forward's intent checks, before and after")
+        with contextlib.suppress(Exception):  # provenance is extra: the record is written without it if it can't be read
+            extra += provenance.section(settings, "baseline", "Provenance: the baseline collection", snapshot=str(m.baseline_snapshot_id))
+        with contextlib.suppress(Exception):
+            extra += provenance.section(settings, "post", "Provenance: the collection after the change", snapshot=post)
+        if extra:
+            text += "\n" + "\n".join(extra)
+        path = reports.save(settings, "post-change.md", text)
         log("")
         log(f"Artifact: {path}")
         log("  What it is for: the post-change report: proof the change is what was approved and the network does what was predicted.")
@@ -732,6 +760,13 @@ def _snapshot_for(settings: config.Settings, which: str, evidence: str) -> str:
 
     if which.isdigit():
         return which
+    if which == "previous":
+        from workshop import steps
+
+        found = steps.previous_baseline(settings)
+        if found:
+            return found
+        raise LookupError("no earlier baseline yet: 'previous' is the baseline before your newest one (exercise 1 takes two)")
     if which == "baseline":
         from workshop import steps
 
@@ -1157,6 +1192,32 @@ def _data(settings: config.Settings, args) -> int:
         log(f"workshop data: Forward could not answer ({type(exc).__name__}: {str(exc)[:160]})")
         return EXIT["ERROR"]
     log(json.dumps(table.to_json(), indent=2, default=str) if args.json else data.render(table))
+    return 0
+
+
+def _link(settings: config.Settings, args) -> int:
+    from workshop import deploy, link
+
+    banner(settings, f"link {args.state}")
+    try:
+        with deploy.lab_lock(settings):  # never in the middle of a deploy, restore or revert
+            diff = link.change(settings, args.state, log)
+    except Exception as exc:  # noqa: BLE001 - the router refused, or the lab is down: one line
+        log(f"workshop link: {exc}")
+        return EXIT["ERROR"]
+    log("")
+    log(f"r2's own diff ({link.INTERFACE}, its link to {link.PEER}):" if diff.strip() else f"r2's {link.INTERFACE} already was {args.state}: nothing to change.")
+    for line in diff.splitlines():
+        log(f"  {line}")
+    log("")
+    if args.state == "down":
+        log("What this means: r2 can't reach r4 directly any more. The service should still work (BGP reroutes through r3), but not")
+        log("the way requirements/candidate.yml says it must (PATH-SERVICE: through r2). Now let Forward see it: the four baseline steps")
+        log("again (`workshop baseline collect`, `upload`, `wait`, `check`), then what changed: `workshop data diff --snapshot previous")
+        log("--against baseline` (routes) and `workshop data checks --snapshot previous --against baseline` (your intent checks).")
+    else:
+        log("What this means: r2's link to r4 is back, its configuration exactly as before. Take the baseline once more (the four steps):")
+        log("that one, with every line PASS, is the one the rest of the day starts from.")
     return 0
 
 

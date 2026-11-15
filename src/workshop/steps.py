@@ -42,17 +42,44 @@ def load(settings: Settings, name: str, first: str) -> dict[str, Any]:
         raise StepError(f"nothing to work on yet: run `{first}` first") from exc
 
 
+def record_collection(settings: Settings, kind: str, zip_path: Path, fp: str, binary) -> dict[str, Any]:
+    """What a collection used and made, for the next step and for the change records (both the step-by-step and the
+    all-in-one paths write it, so a record always describes the collection it sits beside)."""
+    with zipfile.ZipFile(zip_path) as z:
+        entries = z.namelist()
+    data = {"kind": kind, "zip": str(zip_path), "fingerprint": fp, "bytes": zip_path.stat().st_size, "entries": len(entries),
+            "collector": collect.collector_info(binary)}
+    save(settings, f"collect-{kind}", data)
+    return data
+
+
+def record_upload(settings: Settings, kind: str, snap_id: str, fp: str, zip_path, *, processed: bool = False) -> dict[str, Any]:
+    data = {"kind": kind, "snapshot": str(snap_id), "fingerprint": fp, "zip": str(zip_path)}
+    if processed:
+        data["processed"] = True
+    save(settings, f"upload-{kind}", data)
+    if kind == "baseline":  # every baseline in order, so "previous" can name the one before (exercise 1 compares the two)
+        history = settings.state("steps/baseline-history.json")
+        try:
+            ids = json.loads(history.read_text())
+        except (OSError, ValueError):
+            ids = []
+        if not ids or ids[-1] != str(snap_id):
+            history.write_text(json.dumps([*ids, str(snap_id)][-20:]))
+    return data
+
+
 def collect_step(settings: Settings, kind: str, log) -> dict[str, Any]:
     with Forward(settings) as fwd:
         binary = collect.ensure(settings, fwd, log)
     zip_path, fp = baseline.collect_clean(settings, binary, kind, log)
-    with zipfile.ZipFile(zip_path) as z:
-        entries = z.namelist()
-    data = {"kind": kind, "zip": str(zip_path), "fingerprint": fp, "bytes": zip_path.stat().st_size, "entries": len(entries)}
-    save(settings, f"collect-{kind}", data)
+    data = record_collection(settings, kind, zip_path, fp, binary)
     log("")
     log(f"Evidence: {zip_path}")
-    log(f"  {data['bytes'] // 1024} KiB, {len(entries)} files: each router's command output (`unzip -l {zip_path} | head`)")
+    log(f"  {data['bytes'] // 1024} KiB, {data['entries']} files: each router's command output (`unzip -l {zip_path} | head`)")
+    col = data.get("collector") or {}
+    if col.get("package"):
+        log(f"  made by the Forward headless collector {col['package']} (the NAF Collector here), with the devices in data_sources.json")
     log(f"  fingerprint {fp[:16]}…: a hash of r1-r4's running configs, taken live and again from the ZIP (they matched)")
     log(f"Next: workshop {STAGE[kind]} upload")
     return data
@@ -65,8 +92,7 @@ def upload_step(settings: Settings, kind: str, log, extra: str = "") -> dict[str
         raise StepError(f"{zip_path} is gone: run `workshop {STAGE[kind]} collect` again")
     with Forward(settings) as fwd:
         snap_id = baseline.upload(settings, fwd, zip_path, got["fingerprint"], kind, extra, log)
-    data = {"kind": kind, "snapshot": snap_id, "fingerprint": got["fingerprint"], "zip": got["zip"]}
-    save(settings, f"upload-{kind}", data)
+    data = record_upload(settings, kind, snap_id, got["fingerprint"], got["zip"])
     log("")
     log(f"Evidence: snapshot {snap_id} in your Forward network. Its note says what it is: autocon6:{kind} lab={settings.lab_id} fp={got['fingerprint'][:12]}…")
     log("  Forward has the ZIP and is building its model now (routes, ACLs, every path).")
@@ -86,6 +112,15 @@ def wait_step(settings: Settings, kind: str, log) -> dict[str, Any]:
     log("  Look at it now if you like: workshop data inventory · workshop data routes --device r1 · workshop path")
     log(f"Next: workshop {'baseline check' if kind == 'baseline' else 'verify compare'}")
     return got
+
+
+def previous_baseline(settings: Settings) -> str:
+    """The baseline uploaded before the newest one, or "": what exercise 1's change is compared against."""
+    try:
+        ids = json.loads(settings.state("steps/baseline-history.json").read_text())
+    except (OSError, ValueError):
+        return ""
+    return str(ids[-2]) if len(ids) >= 2 else ""
 
 
 def processed_snapshot(settings: Settings, kind: str) -> dict[str, Any]:

@@ -148,7 +148,8 @@ still hash to it (nothing changed since you collected). Then, for each requireme
 path searches and NQE you just ran) and `src/workshop/evaluate.py` compares the answer with what the YAML says it must be.
 Forward answers questions; `evaluate.py` judges.
 
-Every line should say **PASS**.
+Every requirement line should say **PASS**. (Below them, among Forward's intent checks, STALE-CLEARED fails, labelled
+*expected*: that is the finding your change will clear.)
 
 Read the `baseline: PASS` line near the end and the **What this means** under it first. Then work up: the table is the
 summary, and the blocks below it are the proof. Each block is one requirement: its **name and meaning**, **must be**
@@ -157,13 +158,53 @@ summary, and the blocks below it are the proof. Each block is one requirement: i
 If any line says **FAIL**, see [If something goes wrong](stuck.md). The most likely cause: `workshop up` hadn't
 finished when you collected.
 
+**Your critical flows, as Forward intent checks.** The end of the output registers your requirements in Forward itself
+(`checks.add_check`, from `requirements/candidate.yml`): APP-EXISTING and PATH-SERVICE as *Existential* path checks
+(traffic must get through, through r2), MGMT-DENY as an *Isolation* check (it must not), and the stale-advertisement query
+as an *NQE* check. From now on Forward judges every snapshot against them: your baseline, every prediction, the network
+after a deploy. STALE-CLEARED says **FAIL** here, and should: the two stale statements are the finding your change will
+clear. See them any time with `workshop data checks`.
+
+**Where the snapshot came from.** In NAF terms, Forward is the **Collector** here. Look at what it used and made:
+`cat $WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID/data_sources.json` (the routers it read, and the lab's login, which is why the
+file lives in the state folder, readable only by you, never in Git; the change records list the routers, not the login) and `unzip -l` on the ZIP that `baseline collect` printed (21 files per router: config, routes, BGP, LLDP and the
+rest). Every change record names that ZIP by its SHA-256 and the snapshot it became.
+
+### See a change the Forward way (10 min, optional if you're behind)
+
+You have the network *before*. Now change it, collect *after*, and let Forward tell you what changed. This is how Forward
+thinks about every change: two snapshots and what differs between them, judged by your intent checks.
+
+1. **Before.** `workshop path`: the service traffic goes r1 → r2 → r4. Keep that in mind.
+2. **Make a change: shut r2's link to r4.** Pick your track:
+   - *I'm Too Young to Die:* on the Your lab page, **Make a change: shut r2's link to r4** (or `workshop link down`).
+     It goes through NAPALM, like every change after bring-up, and prints r2's own diff.
+   - *Hold My Beer:* on the router itself, with no workshop tool in between. In the editor's **Containerlab** panel
+     (left bar), open the lab's **Graph** to see the link you're about to cut (r2 to r4), then right-click **r2** →
+     **Connect to SSH** (the lab login: admin / admin) and type `enable`, `configure`, `interface Ethernet2`, `shutdown`,
+     `end`, `exit`. From a terminal instead: `docker exec -it clab-autocon6-r2 Cli`. Forward will find it all the same.
+3. **Is it broken?** `workshop probe`: 8080 is still open. The service works.
+4. **After.** The four baseline steps again (`workshop baseline collect`, `upload`, `wait`, `check`). The check now says
+   ROUTE-SERVICE and PATH-SERVICE **FAIL** while APP-EXISTING still **PASS**es, and so do Forward's own intent checks.
+5. **What changed, according to Forward:**
+   ```
+   workshop data diff --snapshot previous --against baseline     # every route that moved, on every router
+   workshop data checks --snapshot previous --against baseline   # which intent checks moved: PATH-SERVICE PASS -> FAIL
+   workshop path                                                 # the service traffic now goes r1 -> r3 -> r4
+   ```
+   *previous* is the baseline before your newest one. The diff is the pre/post view; the checks say which of the
+   moves matter to you. It works, but not the way your intent says it must: nothing else would have told you.
+6. **Undo it.** *I'm Too Young to Die:* **Undo the change** (or `workshop link up`). *Hold My Beer:* `no shutdown` on
+   r2's Ethernet2, the same way you shut it (Containerlab panel → r2 → Connect to SSH). Then the four baseline steps once more: every requirement **PASS**. That
+   baseline is the one the rest of the day starts from. (Lost track of what you changed? `workshop restore` puts r2's link and r4 back; then the baseline steps.)
+
 ### What you just proved
 
 You know the network's good behavior in a form a machine can check, and Forward holds a model of it. Every change from here is judged against that. `STALE-KNOWN` shows one more thing: today's change request was found by a query, not by reading configs.
 
 **At work:** pick a service you care about and write down three things that must stay true after any change: what must be reachable, what must stay blocked, and the path it should take.
 
-**Behind?** The one must-do is `workshop baseline check` with every line **PASS** (after collect, upload, wait). Do two of the Meet Forward commands (`workshop path` and the NQE query) and skip the rest.
+**Behind?** The one must-do is `workshop baseline check` with every requirement **PASS** (after collect, upload, wait). Skip "See a change the Forward way". Do two of the Meet Forward commands (`workshop path` and the NQE query) and skip the rest.
 
 ## Finished early?
 

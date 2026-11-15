@@ -43,4 +43,12 @@ def run(settings: Settings, log) -> None:
         log(f"  removed hand-added advertisements: {', '.join(extras)}")
     log(f"  r4 was advertising: {', '.join(current) or 'nothing'}")
     log(f"  r4 now advertises:  {', '.join(readback)}  (the baseline: the live service prefix and the two stale ones)")
+    # Exercise 1's change, if it was left in: r2's link to r4 back up (no change at all when it already is).
+    from workshop import link
+
+    try:
+        if link.change(settings, "up", None).strip():
+            log("  r2's link to r4 was down (exercise 1's change): brought back up")
+    except Exception as exc:  # noqa: BLE001 - r4 is restored either way; say what to do about r2
+        log(f"  could not check r2's link to r4 ({type(exc).__name__}): if exercise 1's change is still in, `workshop link up`")
     log("  r4 advertisements restored; the old baseline no longer matches the network, so run the baseline steps (`workshop baseline collect` first) before predicting again")

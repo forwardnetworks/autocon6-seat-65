@@ -90,6 +90,12 @@ def run(settings: Settings, to: int, log) -> None:
         snap, _fp, report = baseline.run(settings, log)
         status = report.status.value if report else "?"
         log(f"  fresh baseline: snapshot {snap}, requirements {status}")
+        try:  # display only: a reset seat gets its intent checks like any other
+            from workshop import intent
+
+            intent.register(settings, str(snap), log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"  (intent checks not registered: {type(exc).__name__}: {str(exc)[:100]})")
         if status != "PASS":
             raise ResetError(f"the fresh baseline is {status}, not PASS: run `workshop reset --to {to}` again, or ask a proctor")
     log("")

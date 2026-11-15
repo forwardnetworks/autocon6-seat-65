@@ -167,6 +167,18 @@
      "label": "4. Check",
      "note": "Three integrity checks, then every baseline requirement against Forward's model.",
      "cmd": "workshop baseline check"
+    },
+    {
+     "step": "link down",
+     "label": "Make a change: shut r2's link to r4",
+     "note": "Exercise 1's change, over NAPALM. The service keeps working (it reroutes through r3), but not the way your intent says. Then the four baseline steps again, and compare.",
+     "cmd": "workshop link down"
+    },
+    {
+     "step": "link up",
+     "label": "Undo the change",
+     "note": "Bring r2's link to r4 back, exactly as before. Then the four baseline steps once more: that baseline is the one the rest of the day starts from.",
+     "cmd": "workshop link up"
     }
    ],
    "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline.",

@@ -110,6 +110,14 @@ def run(settings: Settings, log, *, kind: str = "baseline", extra: str = "") -> 
         snap_id = upload(settings, fwd, zip_path, zip_fp, kind, extra, log)
         snap = wait(settings, fwd, snap_id, kind, log)
         report = evaluate_baseline(settings, fwd, str(snap.id), zip_fp, log) if kind == "baseline" else None
+    # the same step records the one-step-at-a-time path keeps (provenance, "previous"); bookkeeping, never a reason to fail
+    from workshop import steps
+
+    try:
+        steps.record_collection(settings, kind, Path(zip_path), zip_fp, binary)
+        steps.record_upload(settings, kind, str(snap.id), zip_fp, zip_path, processed=True)
+    except Exception:  # noqa: BLE001, S110 - bookkeeping for the records; the collection itself has already succeeded
+        pass
     return str(snap.id), zip_fp, report
 
 

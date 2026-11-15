@@ -75,6 +75,19 @@ def ensure(settings: Settings, fwd: Forward, log) -> Path:
     return binary
 
 
+def collector_info(binary: Path) -> dict[str, str]:
+    """The headless collector a run used: the Forward server release it was fetched for (its folder) and the package itself
+    (file name and sha256, recorded at download). For the change records' provenance."""
+    home = Path(binary).parent.parent.parent
+    out = {"server_release": home.name}
+    try:
+        pkg = json.loads((home / "package.json").read_text())
+        out.update(package=str(pkg.get("file", "")), sha256=str(pkg.get("sha256", "")))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 def render_data_sources(settings: Settings) -> Path:
     """The collector's device list, from netlab's inventory. Holds lab passwords: 0600, state dir."""
     ips = lab.mgmt_ips(settings)
