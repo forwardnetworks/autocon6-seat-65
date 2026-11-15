@@ -161,6 +161,10 @@ post-change collection) is newer. So every open PR predicted against the old bas
 anyone collects, and the fix is to re-run the check. That's the safe failure, and it's also why this doesn't scale past
 one change per lab without rethinking it.
 
+Predict doesn't chain, either: a prediction starts from a collected snapshot, never from another prediction (asked to,
+on fwd.app 26.10.6, it ends FAILED). So you can't stack change B on predicted change A and judge the pair. To test two
+changes together, put both in one candidate; to test them in sequence, deploy and collect A first.
+
 ## i. What to keep, what's scaffolding
 
 | Keep: the pattern | Replace: workshop scaffolding |
