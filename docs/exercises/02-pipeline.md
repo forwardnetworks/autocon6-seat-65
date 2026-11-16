@@ -14,7 +14,13 @@ able to explain every line of the result.*
 Before the pipeline, send a change the way many still go out: straight to the router, with nobody asking first. Then
 let Forward tell you what happened. You'll undo it at the end.
 
-0. **Turn your path searches into intent checks.** In lab 1 you asked Forward path questions one at a time
+0. **Ask your own question.** Lab 1 used Forward's ready-made queries. This one is ours, in Git:
+   `cat nqe/stale_bgp_advertisements.nqe`, then `workshop nqe nqe/stale_bgp_advertisements.nqe`. It looks at r4's BGP
+   `network` statements and r4's routes, and lists the statements with no route behind them: `10.20.30.0/24` and
+   `10.20.40.0/24`. They advertise nothing and look exactly like the live `10.20.20.0/24` line. **That's today's change
+   request** (CHG-AC6-0001): retire them. It follows us all morning.
+
+   **Then turn your path searches into intent checks.** In lab 1 you asked Forward path questions one at a time
    (`workshop path`, `workshop path --port 2222`). Write them down once, and Forward answers them on every snapshot by
    itself. *Page:* the **Deploy** stage, **Turn my path searches into intent checks**. *Terminal:* `workshop intent`.
    You'll see each path search, the check it becomes (*Existential*: 8080 gets through, through r2; *Isolation*: 2222

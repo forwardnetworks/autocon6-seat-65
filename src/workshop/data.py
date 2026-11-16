@@ -39,6 +39,7 @@ TOPICS = {
     "blast": "Blast radius: which addresses traffic from one place can reach",
     "checks": "Posture: Forward's own checks on the network, and which ones a change moves",
     "reach": "Reachability changes: which subnets can reach which others, before against after",
+    "changes": "Everything that changed: Forward's catalog of two snapshots (topology, configs, interfaces, routes, ARP/MAC, ACLs, reachability, built-in checks)",
     "topology": "Topology: which device ports Forward found linked",
     "interfaces": "Interfaces: each port's address, description, ACLs and state",
 }
@@ -385,6 +386,83 @@ def blast(client, snapshot_id: str, source: str = "", destination: str = "") -> 
 CONNECTIVITY = ("DELETED", "ADDED", "MODIFIED")  # Forward's DiffType for the location connectivity diff ("ALL" is refused)
 
 
+# Forward's own NQE library (repository "fwd"): queries that ship with Forward, not written for this workshop. Lab 1 diffs
+# them across a change; writing your own query is lab 2.
+LIBRARY_DIFFS = ("/L3/BGP/BGP Peerings Not Established", "/Interfaces/Interface Status Query", "/L2/CDP and LLDP",
+                 "/L3/BGP/Established BGP Peerings")
+
+
+def _names(stats: Any) -> list[str]:
+    infos = (_dump(stats) or {}).get("device_infos") or []
+    return sorted({str(i.get("device_name") or i.get("name")) for i in infos if i})
+
+
+def _entry(e: dict[str, Any]) -> str:
+    row = e.get("after") or e.get("before") or {}
+    keys = [k for k in row if k != "violation"][:4]
+    return f"{str(e.get('type', '')).lower()}: " + ", ".join(f"{k} {row[k]}" for k in keys)
+
+
+def changes(client, before: str, after: str) -> Table:
+    """Forward's catalog of what changed between two snapshots, from every angle it models. Each row is one SDK call (or one
+    built-in NQE query diffed with nqe.diff); a row Forward can't answer says so instead of failing the rest."""
+    from forward_sdk.nqe.query_ref import QueryRef
+
+    d = client.snapshot_diff_details
+    kw = {"before_snapshot_id": before, "after_snapshot_id": after}
+    rows: list[dict[str, Any]] = []
+
+    def row(what: str, fn) -> None:
+        try:
+            change, detail = fn()
+        except Exception as exc:  # noqa: BLE001 - one angle Forward can't answer must not hide the others
+            change, detail = "not available", f"{type(exc).__name__}: {str(exc)[:80]}"
+        rows.append({"what": what, "changed": change, "detail": detail})
+
+    def topology():
+        t = _dump(d.get_topology_diffs(**kw)) or {}
+        links = [f"{'+' if k == 'added' else '-'} {x.get('source_port')} <-> {x.get('target_port')}" for k in ("added", "deleted") for x in t.get(k) or []]
+        return (f"{len(links)} link(s)" if links else "no"), "; ".join(links)
+
+    def files():
+        c = _dump(d.get_file_diff_count(**kw)) or {}
+        types = c.get("types") or {}
+        infos = (_dump(d.get_interface_diff_stats(**kw)) or {}).get("device_infos") or []
+        infos += (_dump(d.get_routing_diff_stats(**kw)) or {}).get("device_infos") or []
+        cfg = sorted({str(i.get("device_name")) for i in infos if i and i.get("has_config_change")}) if types.get("CONFIG") else []
+        return (f"{c.get('count', 0)} file(s)" if c.get("count") else "no"), ", ".join(f"{v} {k.lower()}" for k, v in types.items()) + (f" (config on {', '.join(cfg)})" if cfg else "")
+
+    def devices(call):
+        def fn():
+            names = _names(getattr(d, call)(**kw))
+            return (f"{len(names)} device(s)" if names else "no"), ", ".join(names)
+        return fn
+
+    def sites():
+        t = reach(client, before, after)
+        return ("yes" if t.rows else "no"), t.summary
+
+    row("Topology (links)", topology)
+    row("Config and state files", files)
+    row("Interfaces", devices("get_interface_diff_stats"))
+    row("Routing tables", devices("get_routing_diff_stats"))
+    row("ARP tables", devices("get_arp_diff_stats"))
+    row("MAC tables", devices("get_mac_diff_stats"))
+    row("ACLs", devices("get_acl_diff_stats"))
+    row("Reachability between sites", sites)
+    for path in LIBRARY_DIFFS:
+        def lib(path=path):
+            entries = [_dump(e) for e in client.nqe.diff(QueryRef.by_path(path, repository="fwd"), before=before, after=after)]
+            return (f"{len(entries)} row(s)" if entries else "no"), "; ".join(_entry(e) for e in entries[:3]) + (" …" if len(entries) > 3 else "")
+        row(f"Forward library: {path.rsplit('/', 1)[-1]}", lib)
+    moved = sum(1 for r in rows if r["changed"] not in ("no", "not available"))
+    summary = f"Snapshot {before} (before) against {after} (after): {moved} of {len(rows)} views of the network changed."
+    note = ("Forward compared the two models; no router was asked. The first rows are its diff APIs; the 'Forward library' rows are "
+            "NQE queries that ship with Forward (2,000+ of them), run on both snapshots and compared. Dig into any row: "
+            "`workshop data diff` (routes), `data reach` (sites), `workshop nqe \"/L3/BGP/BGP Peerings Not Established\" --snapshot previous`.")
+    return Table("changes", TOPICS["changes"], summary, ["what", "changed", "detail"], rows, note=note, raw=rows)
+
+
 def reach(client, before: str, after: str) -> Table:
     """Which subnets can reach which others, compared between two snapshots: Forward's location connectivity diff. Works
     on any two snapshots (two baselines, a baseline and a prediction, a baseline and the network after a deploy).
@@ -502,6 +580,11 @@ def ask(client, topic: str, snapshot_id: str, *, against: str = "", device: str 
         return topology(client, snapshot_id)
     if topic == "interfaces":
         return interfaces(client, snapshot_id, device)
+    if topic == "changes":
+        if not against:
+            raise DataError("the catalog of changes needs two snapshots: the baseline and what to compare it with")
+        return _with_query(changes(client, snapshot_id, against), "SDK call",
+                           "client.snapshot_diff_details.get_*_diff*(…) for each view · client.nqe.diff(QueryRef.by_path(<Forward library query>, repository='fwd'), before=…, after=…)")
     if topic == "reach":
         if not against:
             raise DataError("reachability changes need two snapshots: the baseline and what to compare it with")

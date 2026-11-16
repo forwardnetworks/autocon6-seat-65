@@ -175,6 +175,12 @@
      "cmd": "workshop link down"
     },
     {
+     "step": "changes all",
+     "label": "What changed: everything Forward sees",
+     "note": "Forward's catalog of the two baselines: links, configs, interfaces, routes, ARP/MAC, ACLs, reachability between sites, and Forward's own built-in BGP, interface and LLDP queries, before against after.",
+     "cmd": "workshop data changes --snapshot previous --against baseline"
+    },
+    {
      "step": "changes routes",
      "label": "What changed: routes",
      "note": "Forward's route diff between your previous baseline and the newest one: every route that moved, on every router.",

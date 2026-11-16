@@ -119,26 +119,19 @@ That's Forward's path search (`path_search.get_paths`): every hop, what each rou
 the route behind each decision. For 2222 Forward gives two answers: routing *would* deliver it, and r1's `CLIENT-IN` ACL
 *denies* it. It traces the full route anyway, so you can see where it would have gone.
 
-**Ask it anything: NQE.** NQE is Forward's query language over the model: every device, interface, route and line of
-config is data you can query.
+**Ask it anything: NQE, from Forward's own library.** NQE is Forward's query language over the model: every device,
+interface, route and line of config is data you can query. Forward ships more than 2,000 ready-made queries (BGP,
+interfaces, links, security checks for Arista, Cisco and others). Run some by their path:
 ```
-cat nqe/stale_bgp_advertisements.nqe
-workshop nqe nqe/stale_bgp_advertisements.nqe
+workshop nqe "/L3/BGP/Established BGP Peerings"
+workshop nqe "/Interfaces/Interface Status Query"
+workshop nqe "/L2/CDP and LLDP"
 ```
-That query looks at r4's BGP `network` statements and r4's routes, and lists the statements with no route behind them.
-Two come back: `10.20.30.0/24` and `10.20.40.0/24`. They advertise nothing, they look exactly like the live
-`10.20.20.0/24` line, and nobody would spot them by reading configs. Retiring them is today's change request.
-The third statement, `10.20.20.0/24`, is live because a connected route is behind it: it's the subnet on r4's
-service-facing interface.
-
-Write your own. One that lists every interface and whether it is up:
-```
-workshop nqe 'foreach d in network.devices foreach i in d.interfaces select {device: d.name, interface: i.name, admin: i.adminStatus, oper: i.operStatus}'
-```
-Change it: only `oper` not up, only r1, add `i.description`. It answers in a second, for four routers or four thousand.
+Eight BGP sessions, every interface up, every link seen from both ends. Nobody wrote these for this workshop; they work
+on any network Forward models. (Writing your own query is lab 2.)
 
 **The one idea to take away:** none of this touched a router. It is all Forward's model, built from the ZIP you
-collected. That model is what Predict will change, in exercise 2, to show you a network that doesn't exist yet.
+collected. Next: change the network, and let Forward catalog the difference.
 
 ### Check it: the baseline requirements (5 min)
 
@@ -182,13 +175,17 @@ thinks about every change: two snapshots, and what differs between them.
 3. **Is it broken?** `workshop probe`: 8080 is still open. The service works.
 4. **After.** The four baseline steps again (`workshop baseline collect`, `upload`, `wait`, `check`). The check now says
    ROUTE-SERVICE and PATH-SERVICE **FAIL** while APP-EXISTING still **PASS**es.
-5. **What changed, according to Forward:**
+5. **What changed, according to Forward:** first the whole catalog, then the detail.
    ```
+   workshop data changes --snapshot previous --against baseline   # everything: links, configs, interfaces, routes, ARP/MAC,
+                                                                  # ACLs, sites, and Forward's own BGP/interface/LLDP queries
    workshop data diff --snapshot previous --against baseline     # every route that moved, on every router
    workshop data reach --snapshot previous --against baseline    # which sites lost reachability: Branches <-> Service
    workshop path                                                 # the service traffic now goes r1 -> r3 -> r4
    ```
-   On the Your lab page (Baseline stage): **What changed: routes** and **What changed: reachability** run the first two.
+   On the Your lab page (Baseline stage): **What changed: everything Forward sees**, **What changed: routes** and
+   **What changed: reachability** run the first three. Try a library query on both snapshots too:
+   `workshop nqe "/L3/BGP/BGP Peerings Not Established" --snapshot previous` (none) and without `--snapshot` (r2 ↔ r4 idle).
    *previous* is the baseline before your newest one. The route diff says *what moved*; Forward's location
    connectivity diff says *which sites lost reach* (each router is a Forward location: Client edge, Branches, Data
    centre, Service; the pairs lost are the r2-r4 link's own subnet, while the hosts reroute through r3); `workshop path`
@@ -200,13 +197,13 @@ thinks about every change: two snapshots, and what differs between them.
 
 ### What you just proved
 
-You know the network's good behavior in a form a machine can check, and Forward holds a model of it. Every change from here is judged against that. `STALE-KNOWN` shows one more thing: today's change request was found by a query, not by reading configs.
+You know the network's good behavior in a form a machine can check, and Forward holds a model of it. Every change from here is judged against that.
 
 **Coming up:** you just looked at a change after it happened. Next, you'll deploy one with nobody asking first, and see when you find out.
 
 **At work:** pick a service you care about and write down three things that must stay true after any change: what must be reachable, what must stay blocked, and the path it should take.
 
-**Behind?** The one must-do is `workshop baseline check` with every requirement **PASS** (after collect, upload, wait). Skip "See a change the Forward way". Do two of the Meet Forward commands (`workshop path` and the NQE query) and skip the rest.
+**Behind?** The one must-do is `workshop baseline check` with every requirement **PASS** (after collect, upload, wait). Skip "See a change the Forward way". Do two of the Meet Forward commands (`workshop path` and one library query, `workshop nqe "/L3/BGP/Established BGP Peerings"`) and skip the rest.
 
 ## Finished early?
 
@@ -251,8 +248,7 @@ You know the network's good behavior in a form a machine can check, and Forward 
   ```
   That is the query behind `STALE-KNOWN`. Its rows are Forward's answer; `evaluate.py` is what turned them into PASS.
 
-  `STALE-KNOWN` is the one to read. It lists r4 `network` statements whose prefixes r4 has no route for. These are
-  stale advertisements, and retiring them is today's change request.
+  `STALE-KNOWN` lists r4 `network` statements whose prefixes r4 has no route for: you'll meet it properly in lab 2.
   </details>
 
 ## Go deeper

@@ -117,7 +117,7 @@ def service_routes(client, snapshot_id: str) -> list[str]:
     return ([f"  {t.summary}"] + term.table(["device", "prefix", "learned by", "next hop"], rows)
             + term.how_to_read("this is how every router reaches the service's subnet today. r4 has it connected and advertises it "
                                "with a BGP network statement; r2 and r3 learn it from r4; r1 prefers the path through r2. "
-                               "Drill down: workshop data routes, workshop path, workshop nqe nqe/stale_bgp_advertisements.nqe"))
+                               "Drill down: workshop data routes, workshop path, workshop nqe \"/L3/BGP/Established BGP Peerings\""))
 
 
 def inventory_line(client, snapshot_id: str) -> str:

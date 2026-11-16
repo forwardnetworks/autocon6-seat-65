@@ -47,7 +47,7 @@ R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
 # What the page may start. Anything else (down, collector, ask...) stays a typed command.
 STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "matrix", "agent", "deploy", "verify", "restore", "status",
          # one step at a time: what the exercises teach
-         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up", "changes routes", "changes checks", "changes reach", "intent", "deploy unpredicted", "revert plan", "revert apply", "revert compare",
+         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up", "changes all", "changes routes", "changes checks", "changes reach", "intent", "deploy unpredicted", "revert plan", "revert apply", "revert compare",
          "predict changeset", "predict run", "predict check",
          "deploy gates", "deploy render", "deploy apply", "deploy readback",
          "verify probe", "verify collect", "verify upload", "verify wait", "verify compare")
@@ -305,8 +305,8 @@ class Jobs:
     def argv(self, step: str, params: dict[str, Any]) -> list[str]:
         if step not in STEPS:
             raise ValueError(f"'{step}' is not a step this page can start")
-        if step in ("changes routes", "changes checks", "changes reach"):  # exercise 1: the baseline before the newest one, against the newest
-            topic = {"changes routes": "diff", "changes checks": "checks", "changes reach": "reach"}[step]
+        if step in ("changes all", "changes routes", "changes checks", "changes reach"):  # exercise 1: the baseline before the newest one, against the newest
+            topic = {"changes all": "changes", "changes routes": "diff", "changes checks": "checks", "changes reach": "reach"}[step]
             return ["data", topic, "--snapshot", "previous", "--against", "baseline"]
         if step == "deploy unpredicted":  # Predict overridden, on purpose (exercise 2's first part): only the hash of what is sent
             confirm = str(params.get("confirm", "")).strip().lower()

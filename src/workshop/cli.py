@@ -157,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     u.add_argument("--port", type=int, default=8765)
     u.add_argument("--evidence", default="evidence/evidence.json")
     dt = sub.add_parser("data", help="what Forward knows: devices, routes, CVEs, and what a change did to the routing tables")
-    dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "reach", "blast", "checks"])
+    dt.add_argument("topic", choices=["inventory", "topology", "interfaces", "routes", "vulns", "diff", "changes", "reach", "blast", "checks"])
     dt.add_argument("--snapshot", default="baseline", help="baseline | previous | predicted | post | <snapshot id> (diff, checks: the 'before' side)")
     dt.add_argument("--against", help="diff and checks: the 'after' side (diff defaults to predicted if there is one, else post; checks only compares if you give one)")
     dt.add_argument("--device", default="", help="only this device (routes, diff); for blast, where traffic starts: r1, or r1 Ethernet3 (default r1)")
@@ -175,8 +175,8 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument("--snapshot", default="baseline", help="baseline | previous | predicted | post | a snapshot id")
     pa.add_argument("--compare", default="", help="a second snapshot (e.g. predicted): trace both and say what changed")
     pa.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
-    nq = sub.add_parser("nqe", help="run an NQE query (a file such as nqe/stale_bgp_advertisements.nqe, or the query text) and show its rows")
-    nq.add_argument("query", help="a .nqe file, or the query itself in quotes")
+    nq = sub.add_parser("nqe", help="run an NQE query: one of Forward's built-in library queries by its path (\"/L3/BGP/Established BGP Peerings\"), a .nqe file, or the query text")
+    nq.add_argument("query", help="a Forward library path (starts with /), a .nqe file, or the query itself in quotes")
     nq.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | a snapshot id")
     nq.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     sub.add_parser("collector", help="download the headless collector for the server's release")
@@ -1238,12 +1238,20 @@ def _nqe(settings: config.Settings, args) -> int:
     from workshop.forward import Forward
 
     path = settings.repo_root / args.query
+    library = args.query.startswith("/") and not path.is_file()  # Forward's own library (repository "fwd"), by path
     query = path.read_text() if args.query.endswith(".nqe") and path.is_file() else args.query
     try:
         snap = data.snapshot_for(settings, settings.repo_root / args.evidence, args.snapshot)
-        show.sdk(log, f'nqe.query(<{"the query in " + args.query if query is not args.query else "your query"}>, snapshot_id="{snap}")')
         with Forward(settings) as fwd:
-            rows = [dict(r) for r in fwd.c.nqe.query(query, snapshot_id=snap)]
+            if library:
+                from forward_sdk.nqe.query_ref import QueryRef
+
+                show.sdk(log, f'nqe.query(QueryRef.by_path("{args.query}", repository="fwd"), snapshot_id="{snap}")   a query that ships with Forward')
+                rows = [dict(r) for r in fwd.c.nqe.query(QueryRef.by_path(args.query, repository="fwd"), snapshot_id=snap)]
+                query = f"(Forward's built-in library query {args.query})"
+            else:
+                show.sdk(log, f'nqe.query(<{"the query in " + args.query if query is not args.query else "your query"}>, snapshot_id="{snap}")')
+                rows = [dict(r) for r in fwd.c.nqe.query(query, snapshot_id=snap)]
     except data.DataError as exc:
         log(f"workshop nqe: {exc}")
         return EXIT["ERROR"]
@@ -1280,7 +1288,7 @@ def _data(settings: config.Settings, args) -> int:
     try:
         snap = data.snapshot_for(settings, evidence, args.snapshot)
         against = ""
-        if args.topic in ("diff", "reach"):
+        if args.topic in ("diff", "reach", "changes"):
             for which in ([args.against] if args.against else ["predicted", "post"]):
                 try:
                     if which == "predicted":  # the prediction's own baseline, and only for the change in the candidate file now
