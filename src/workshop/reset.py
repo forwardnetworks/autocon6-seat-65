@@ -93,7 +93,7 @@ def run(settings: Settings, to: int, log) -> None:
         try:  # display only: a reset seat gets its intent checks like any other
             from workshop import intent
 
-            intent.register(settings, str(snap), log)
+            intent.register(settings, str(snap), log, quiet=True)
         except Exception as exc:  # noqa: BLE001
             log(f"  (intent checks not registered: {type(exc).__name__}: {str(exc)[:100]})")
         if status != "PASS":

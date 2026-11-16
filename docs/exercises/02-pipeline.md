@@ -14,6 +14,11 @@ able to explain every line of the result.*
 Before the pipeline, send a change the way many still go out: straight to the router, with nobody asking first. Then
 let Forward tell you what happened. You'll undo it at the end.
 
+0. **Turn your path searches into intent checks.** In lab 1 you asked Forward path questions one at a time
+   (`workshop path`, `workshop path --port 2222`). Write them down once, and Forward answers them on every snapshot by
+   itself. *Page:* the **Deploy** stage, **Turn my path searches into intent checks**. *Terminal:* `workshop intent`.
+   You'll see each path search, the check it becomes (*Existential*: 8080 gets through, through r2; *Isolation*: 2222
+   stays blocked) and Forward's verdict on your baseline: PASS. These are what will judge your next change.
 1. **The change.** *I'm Too Young to Die:* the **Change** stage, tick **all three** prefixes, **Write
    candidate/r4-bgp.eos**. *Hold My Beer:* add the three lines yourself:
    ```

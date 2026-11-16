@@ -313,7 +313,7 @@ def checks(client, snapshot_id: str, against: str = "") -> Table:
         summary = f"{plural(len(rows), 'check')} on this snapshot: {tally}."
     cols = ["check", "type", "status"] + (["then", "moved"] if against else []) + ["what it checks"]
     note = ("Forward evaluates these while it processes a snapshot. The ones named 'autocon6 …' and the stale_bgp_advertisements NQE check are "
-            "your requirements, registered as Forward intent checks by `workshop baseline check`; the rest are Forward's own. The gate "
+            "your requirements, registered as Forward intent checks (`workshop intent` shows them); the rest are Forward's own. The gate "
             "still judges with the workshop's requirements; these are Forward's verdicts on the same intent.")
     return Table("checks", TOPICS["checks"], summary, cols, rows[:MAX_ROWS], note, truncated=len(rows) > MAX_ROWS, raw=rows)
 
@@ -421,7 +421,7 @@ def reach(client, before: str, after: str) -> Table:
     cols = ["change", "subnet pairs", "from location", "to location"]
     note = ("Forward's connectivity diff: computed from its reachability model of each snapshot, so it answers 'can these subnets "
             "still reach each other?', not 'did the path change?'. Routes can move with reachability unchanged (traffic reroutes); "
-            "the route diff and your intent checks say what moved and whether it matters. Each router is a Forward location, "
+            "the route diff says what moved. Each router is a Forward location, "
             "holding the subnets behind it: " + ", ".join(f"{p[0]} {r}" for r, p in PLACES.items()) + ".")
     return Table("reach", TOPICS["reach"], summary, cols, rows[:MAX_ROWS], note=note, truncated=len(rows) > MAX_ROWS, raw=rows)
 

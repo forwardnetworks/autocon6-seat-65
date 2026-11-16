@@ -95,6 +95,9 @@ collected; and r1's ports with their addresses, descriptions and the `CLIENT-IN`
 and service are small Linux containers the collector doesn't log in to: Forward knows them as the subnets on r1's and r4's
 client- and service-facing interfaces.
 
+**Is anything vulnerable?** `workshop data vulns`: the published CVEs that actually apply to these routers' OS and
+configuration, from Forward's model (the same question at work: "which of our devices does this advisory hit?").
+
 If you work with APIs: every one of these is an SDK call or an NQE query, and each table ends with the exact call or query behind it.
 Add `--json` for Forward's own answer. The lab page's **Your lab** tab shows the same tables, from the same code.
 
@@ -148,8 +151,7 @@ still hash to it (nothing changed since you collected). Then, for each requireme
 path searches and NQE you just ran) and `src/workshop/evaluate.py` compares the answer with what the YAML says it must be.
 Forward answers questions; `evaluate.py` judges.
 
-Every requirement line should say **PASS**. (Below them, among Forward's intent checks, STALE-CLEARED fails, labelled
-*expected*: that is the finding your change will clear.)
+Every requirement line should say **PASS**.
 
 Read the `baseline: PASS` line near the end and the **What this means** under it first. Then work up: the table is the
 summary, and the blocks below it are the proof. Each block is one requirement: its **name and meaning**, **must be**
@@ -157,13 +159,6 @@ summary, and the blocks below it are the proof. Each block is one requirement: i
 
 If any line says **FAIL**, see [If something goes wrong](stuck.md). The most likely cause: `workshop up` hadn't
 finished when you collected.
-
-**Your critical flows, as Forward intent checks.** The end of the output registers your requirements in Forward itself
-(`checks.add_check`, from `requirements/candidate.yml`): APP-EXISTING and PATH-SERVICE as *Existential* path checks
-(traffic must get through, through r2), MGMT-DENY as an *Isolation* check (it must not), and the stale-advertisement query
-as an *NQE* check. From now on Forward judges every snapshot against them: your baseline, every prediction, the network
-after a deploy. STALE-CLEARED says **FAIL** here, and should: the two stale statements are the finding your change will
-clear. See them any time with `workshop data checks`.
 
 **Where the snapshot came from.** In NAF terms, Forward is the **Collector** here. Look at what it used and made:
 `cat $WORKSHOP_STATE_DIR/$WORKSHOP_LAB_ID/data_sources.json` (the routers it read, and the lab's login, which is why the
@@ -173,7 +168,7 @@ rest). Every change record names that ZIP by its SHA-256 and the snapshot it bec
 ### See a change the Forward way (10 min, optional if you're behind)
 
 You have the network *before*. Now change it, collect *after*, and let Forward tell you what changed. This is how Forward
-thinks about every change: two snapshots and what differs between them, judged by your intent checks.
+thinks about every change: two snapshots, and what differs between them.
 
 1. **Before.** `workshop path`: the service traffic goes r1 → r2 → r4. Keep that in mind.
 2. **Make a change: shut r2's link to r4.** Pick your track:
@@ -186,20 +181,19 @@ thinks about every change: two snapshots and what differs between them, judged b
      `end`, `exit`. From a terminal instead: `docker exec -it clab-autocon6-r2 Cli`. Forward will find it all the same.
 3. **Is it broken?** `workshop probe`: 8080 is still open. The service works.
 4. **After.** The four baseline steps again (`workshop baseline collect`, `upload`, `wait`, `check`). The check now says
-   ROUTE-SERVICE and PATH-SERVICE **FAIL** while APP-EXISTING still **PASS**es, and so do Forward's own intent checks.
+   ROUTE-SERVICE and PATH-SERVICE **FAIL** while APP-EXISTING still **PASS**es.
 5. **What changed, according to Forward:**
    ```
    workshop data diff --snapshot previous --against baseline     # every route that moved, on every router
    workshop data reach --snapshot previous --against baseline    # which sites lost reachability: Branches <-> Service
-   workshop data checks --snapshot previous --against baseline   # which intent checks moved: PATH-SERVICE PASS -> FAIL
    workshop path                                                 # the service traffic now goes r1 -> r3 -> r4
    ```
-   On the Your lab page (Baseline stage): **What changed: routes**, **What changed: reachability** and **What changed:
-   your intent checks** run them. *previous* is the baseline before your newest one. Three answers, three questions:
-   the route diff says *what moved*; the reachability diff says *which sites lost reach* (each router is a Forward
-   location: Client edge, Branches, Data centre, Service; the pairs lost are the r2-r4 link's own subnet, while the
-   hosts reroute through r3); your intent checks say *whether it matters to you*. The service still works, but not the
-   way your intent says it must: only the last one would have told you.
+   On the Your lab page (Baseline stage): **What changed: routes** and **What changed: reachability** run the first two.
+   *previous* is the baseline before your newest one. The route diff says *what moved*; Forward's location
+   connectivity diff says *which sites lost reach* (each router is a Forward location: Client edge, Branches, Data
+   centre, Service; the pairs lost are the r2-r4 link's own subnet, while the hosts reroute through r3); `workshop path`
+   says *how the service gets there now*. It still works. Whether "via r3" is acceptable is a question about your
+   intent, and lab 2 writes that down.
 6. **Undo it.** *I'm Too Young to Die:* **Undo the change** (or `workshop link up`). *Hold My Beer:* `no shutdown` on
    r2's Ethernet2, the same way you shut it (Containerlab panel → r2 → Connect to SSH). Then the four baseline steps once more: every requirement **PASS**. That
    baseline is the one the rest of the day starts from. (Lost track of what you changed? `workshop restore` puts r2's link and r4 back; then the baseline steps.)

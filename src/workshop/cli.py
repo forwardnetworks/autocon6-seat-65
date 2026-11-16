@@ -13,10 +13,11 @@ makes, and ends with its evidence and the next step.
 
 Looking inside Forward's model:
 
-    workshop data inventory | topology | interfaces | routes | vulns | diff | blast | checks   what Forward knows
+    workshop data inventory | topology | interfaces | routes | vulns | diff | reach | blast | checks   what Forward knows
     workshop path [--port N] [--compare predicted]        one flow, hop by hop
     workshop nqe <file or query>                         ask Forward anything
     workshop link down|up                                exercise 1's change: shut r2's link to r4, or bring it back
+    workshop intent                                      lab 2: your lab 1 path searches, as Forward intent checks
     workshop mcp                                         let Copilot use Forward's read-only MCP tools on this lab (run at Codespace start)
     workshop probe                                       real packets from the client, right now
 
@@ -179,6 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     nq.add_argument("--snapshot", default="baseline", help="baseline | predicted | post | a snapshot id")
     nq.add_argument("--evidence", default="evidence/evidence.json", help="where 'predicted' comes from")
     sub.add_parser("collector", help="download the headless collector for the server's release")
+    sub.add_parser("intent", help="lab 2: turn your path searches into Forward intent checks, and see Forward's verdict on your baseline")
     sub.add_parser("status", help="where this lab is in the loop")
     lk = sub.add_parser("link", help="exercise 1's change: shut r2's link to r4 (down), or bring it back (up), over NAPALM")
     lk.add_argument("state", choices=["down", "up"])
@@ -366,7 +368,7 @@ def _baseline(settings: config.Settings, args) -> int:
     with _display_only():  # every way a baseline is taken registers them: step by step, all at once, or the lab page's catch-up
         from workshop import intent
 
-        intent.register(settings, str(snapshot_id), log)
+        intent.register(settings, str(snapshot_id), log, quiet=True)  # lab 1 is facts only; lab 2 introduces them
     log("")
     log(f"baseline: {report.status.value}")
     with _display_only():
@@ -1304,6 +1306,37 @@ def _data(settings: config.Settings, args) -> int:
     return 0
 
 
+def _intent(settings: config.Settings, args) -> int:
+    """Lab 2's first step: the path searches from lab 1, written down as Forward intent checks."""
+    from workshop import intent, requirements, steps
+
+    banner(settings, "intent")
+    snap = steps.baseline_snapshot(settings)
+    if not snap:
+        log("no baseline yet: take one first (`workshop baseline collect`, `upload`, `wait`, `check`)")
+        return EXIT["ERROR"]
+    reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
+    log("In lab 1 you asked Forward path questions one at a time. Written down once (requirements/candidate.yml), they become")
+    log("intent checks that Forward answers on every snapshot, by itself. (Your baseline already handed them to Forward; this")
+    log("is what Forward now holds.)")
+    for p in intent.planned(reqs):
+        if p["kind"] == "NQE":
+            log(f"  NQE query  {p['what']:<52} -> NQE check        {p['id']}")
+        else:
+            port = p["what"].split(":")[-1].split()[0]
+            asked = "workshop path" + ("" if port == "8080" else f" --port {port}")
+            log(f"  {asked:<30} {p['what']:<40} -> {p['kind']:<11} check  {p['id']}")
+    try:
+        intent.register(settings, str(snap), log)
+    except Exception as exc:  # noqa: BLE001
+        log(f"workshop intent: Forward could not answer just now ({type(exc).__name__}: {str(exc)[:120]}); run it again")
+        return EXIT["ERROR"]
+    log("")
+    log("What this means: these are your intent, held by Forward. Next, change the network and let them judge it")
+    log("(`workshop data checks --snapshot previous --against baseline` shows which ones moved).")
+    return 0
+
+
 def _link(settings: config.Settings, args) -> int:
     from workshop import deploy, link
 
@@ -1323,8 +1356,8 @@ def _link(settings: config.Settings, args) -> int:
         log("What this means: r2 can't reach r4 directly any more. The service should still work (BGP reroutes through r3), but not")
         log("the way requirements/candidate.yml says it must (PATH-SERVICE: through r2). Now let Forward see it: the four baseline steps")
         log("again (`workshop baseline collect`, `upload`, `wait`, `check`), then what changed: `workshop data diff --snapshot previous")
-        log("--against baseline` (routes), `workshop data reach --snapshot previous --against baseline` (which sites lost reach) and")
-        log("`workshop data checks --snapshot previous --against baseline` (your intent checks).")
+        log("--against baseline` (routes), `workshop data reach --snapshot previous --against baseline` (which sites lost reach), and")
+        log("`workshop path` (how the service gets there now).")
     else:
         log("What this means: r2's link to r4 is back, its configuration exactly as before. Take the baseline once more (the four steps):")
         log("that one, with every line PASS, is the one the rest of the day starts from.")

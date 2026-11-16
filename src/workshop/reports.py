@@ -146,8 +146,8 @@ def change_request(client, m, *, pr: str = "") -> list[str]:
                  + ", ".join(f"`{p}`" for p in prefixes)
                  + ". They advertise nothing real today, and they are a standing invitation to attract traffic for a prefix that isn't ours.") \
             if rows else "finds no stale advertisement: on this baseline there is nothing left for this change to retire."
-        out += [(f"**Why: Forward found it.** On the baseline (snapshot `{b}`), the NQE query `{STALE_QUERY.name}` (which "
-                 f"`workshop baseline check` also registers as a Forward intent check) {found}"), ""]
+        out += [(f"**Why: Forward found it.** On the baseline (snapshot `{b}`), the NQE query `{STALE_QUERY.name}` (also a "
+                 f"Forward intent check: `workshop intent`) {found}"), ""]
 
     hosts = lab_hosts()
     paths = {name: _try(None, f"path {name}", lambda ip=ip: _outcome(client, b, ip, SERVICE_IP, 8080))[0] for name, ip in hosts.items()}

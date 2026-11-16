@@ -619,6 +619,7 @@ function renderGuide(s, key) {
       <div class="runrow"><span class="muted">Or in a change window:</span> <input type="time" id="dep-at" value="${esc(depAt)}"> <button id="dep-at-go" ${s.job && !s.job.done ? "disabled" : ""}>Apply at the window</button></div>
       <div class="gsec"><h3>Without Predict (the start of exercise 2: don't do this at work)</h3>
       <div class="note muted">Sends <code>candidate/r4-bgp.eos</code> as it is, with nobody asking Forward first. It opens a change ticket (a GitHub issue); verify then tells you, after the fact, what broke, and puts it in the ticket.</div>
+      <div class="runrow"><button id="intent-go" ${s.job && !s.job.done ? "disabled" : ""}>Turn my path searches into intent checks</button> <span class="muted">first: what Forward will judge the change against</span></div>
       <div class="runrow"><button id="dep-blind" ${s.job && !s.job.done ? "disabled" : ""}>Deploy without Predict</button> <span class="muted">uses the hash typed above: this file's is <code>${esc((s.candidate?.sha256 || "").slice(0, 7)) || "(no change yet)"}</code></span></div>
       <div class="runrow"><span class="muted">Then the verify steps, then back it out:</span> <button class="rev-step" data-step="revert plan" ${s.job && !s.job.done ? "disabled" : ""}>Revert: plan</button> <input type="text" id="rev-sha" size="12" placeholder="revert's hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(revSha)}"> <button class="rev-step" data-step="revert apply" ${s.job && !s.job.done ? "disabled" : ""}>Revert: apply</button> <button class="rev-step" data-step="revert compare" ${s.job && !s.job.done ? "disabled" : ""}>Revert: compare</button></div>
       <div class="note muted">After <b>Revert: apply</b>, take the baseline again (Baseline stage, four steps), then <b>Revert: compare</b>: Forward confirms the network is back.</div></div>
@@ -702,6 +703,7 @@ function renderGuide(s, key) {
   };
   if ($("dep-pr")) { $("dep-pr").oninput = (e) => { depPr = e.target.value; }; $("dep-sha").oninput = (e) => { depSha = e.target.value; }; }
   document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => { depPr = $("dep-pr").value.trim(); depSha = $("dep-sha").value.trim(); runStep({ step: b.dataset.step, pr: depPr, confirm: depSha }); }; });
+  if ($("intent-go")) $("intent-go").onclick = () => runStep({ step: "intent" });
   if ($("dep-blind")) {
     $("dep-blind").onclick = () => { depSha = $("dep-sha").value.trim(); runStep({ step: "deploy unpredicted", confirm: depSha }); };
     $("rev-sha").oninput = (e) => { revSha = e.target.value; };
