@@ -41,8 +41,9 @@ in its table should be **PASS**:
 
 ### Approve (10 min)
 
-In this repository, merging is the approval. There's no separate approve button here; in real life you'd also require
-a reviewer. The repository only allows the merge once **forward/predict** has passed.
+**You are the approver.** In this repository, merging is the approval: read the green check's summary (what Predict
+judged, the change request at the top of the Change analysis), then merge. There's no separate approve button here; in
+real life you'd also require a second reviewer. The repository only allows the merge once **forward/predict** has passed.
 
 1. Wait for **forward/predict** to go green. GitHub can take a minute or two to start it: press **Refresh** at the top
    of the pull request page now and then. Merge as soon as forward/predict is green. **forward/advice** is advisory
@@ -54,6 +55,11 @@ a reviewer. The repository only allows the merge once **forward/predict** has pa
 4. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab).
    That also switches you back to `main`.
 5. Optional: if you have a `retire-one` PR from exercise 2, try merging it to see the refusal, then close it.
+
+*On github.com instead:* the PR's **Conversation** tab, the green **Squash and merge** button at the bottom, then
+**Confirm squash and merge**. Then in your Codespace: `git switch main` and `git pull`.
+*Hold My Beer (terminal):* `gh pr merge <N> --squash`, then `git switch main && git pull`. (`--squash` matters: this
+repository refuses plain merge commits.)
 
 ### What you just proved
 
