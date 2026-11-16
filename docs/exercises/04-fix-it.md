@@ -48,12 +48,13 @@ real life you'd also require a second reviewer. The repository only allows the m
 1. Wait for **forward/predict** to go green. GitHub can take a minute or two to start it: press **Refresh** at the top
    of the pull request page now and then. Merge as soon as forward/predict is green. **forward/advice** is advisory
    (Forward AI's review), can take a few minutes, and isn't required.
-2. In the **GitHub Pull Requests** panel, open the PR and press **Merge Pull Request**. (The same button is on the
-   PR's page on github.com.)
+2. In the **GitHub Pull Requests** panel, open the PR and scroll to the bottom of its overview: **Merge Pull Request**
+   *using method* **Squash and Merge** (already chosen). Press **Merge Pull Request**. (On github.com it's the PR page's
+   **Squash and merge** button.)
 3. It opens a form with the commit message. Scroll down and press **Squash and Merge**. Squash means your branch's
    commits become one commit on `main`.
-4. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab).
-   That also switches you back to `main`. Then pull the merge: the circular-arrows icon next to the branch name in the
+4. VS Code then asks what to delete: **Delete local branch** is already ticked and *Suspend Codespace* isn't (leave it
+   that way: it would stop your lab). Press **OK**. That also switches you back to `main`. Then pull the merge: the circular-arrows icon next to the branch name in the
    status bar (or `git pull`).
 5. Optional: if you still have a `retire-one` PR from exercise 2, look at it: GitHub won't merge it, because its
    forward/predict check is red (it may also say the branch has conflicts now; that's the merge you just made). Close it.

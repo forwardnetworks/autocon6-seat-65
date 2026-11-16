@@ -70,7 +70,7 @@ This is the first Git in the workshop, so each step says what it's for.
 4. **Publish (push):** press **Publish Branch**. *Pushing copies your branch to GitHub, where the pipeline can see it.*
    A notification may also ask whether VS Code should periodically run `git fetch`: either answer is fine.
 5. **Pull request:** in **GitHub Pull Requests**, press **Create Pull Request** (or the notification that offers it),
-   check that it goes from `retire-one` into `main`, and press **Create**. *A pull request asks for your branch to be
+   check that it goes from `retire-one` into `main`, and press **Create** (at the bottom of that form; on a small screen, Ctrl+Enter in the title box does the same). *A pull request asks for your branch to be
    merged into `main`. It's where the review happens, and where the forward/predict check runs.*
 
 > **From the lab page.** On the **Predict** step, **Open pull request** does steps 1 and 3 to 5 for you (edit the file
