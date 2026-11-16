@@ -35,7 +35,6 @@ traffic cross?) or `nqe` (a query over the model; here, "are there stale adverti
 ```
 cat requirements/baseline.yml
 cat requirements/candidate.yml
-cat nqe/stale_bgp_advertisements.nqe
 ```
 Which test would catch the service becoming unreachable? Which would catch 2222 becoming reachable? Which one checks
 that the change request is actually done?

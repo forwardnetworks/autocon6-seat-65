@@ -215,7 +215,7 @@ The one command that does several things, because it's for getting unstuck:
 ### `workshop nqe <file or query>`: ask Forward anything
 **SDK** `nqe.query(<query>, snapshot_id=…)`, and the rows as a table. Try `workshop nqe nqe/stale_bgp_advertisements.nqe`.
 
-### `workshop data inventory|topology|interfaces|routes|vulns|diff|blast|checks`
+### `workshop data inventory|topology|interfaces|routes|vulns|changes|diff|reach|blast|checks`
 - `inventory`: **SDK** `nqe.query`, a query over Forward's device inventory.
 - `topology`: **SDK** `network_topology.get_topology`: the links Forward inferred between the routers, each once.
 - `interfaces`: **SDK** `device_interfaces.list_device_interfaces` per router (`--device r1` for one): address, description, ACLs, state.
@@ -225,7 +225,9 @@ Every table ends with the exact NQE query or SDK call behind it; `--json` adds F
 from the same code.
 - `routes`: **SDK** `nqe.query`, the routes query.
 - `vulns`: **SDK** `vulnerability_analysis`: the CVEs that match the lab's EOS version.
+- `changes`: everything that changed between two snapshots (lab 1's catalog, `--snapshot previous --against baseline`): **SDK** `snapshot_diff_details` topology, file, interface, routing, ARP, MAC and ACL diffs, location connectivity, and `nqe.diff` on Forward's built-in BGP, interface and LLDP queries.
 - `diff`: **SDK** `snapshot_diff_details`, Forward's routing diff between two snapshots.
+- `reach`: **SDK** `snapshot_diffs.wait_for_location_pairs`: which sites (Forward locations) gained or lost reachability.
 - `blast`: **SDK** `blast_radius.get_blast_radius`: from a device (`--device r1`) or an interface (`--device "r1 Ethernet3"`), how many addresses in a prefix (`--prefix 10.20.20.0/24`) traffic can reach. Run it on the baseline and on the predicted snapshot to see how much a change cuts off. Needs no internet node; the answer for a cut-off subnet is empty.
 
 ### `workshop probe`
@@ -277,3 +279,25 @@ headless collector takes a fresh snapshot (`workshop baseline collect`, `upload`
 the baseline requirements PASS (**SDK** path searches and NQE, as in `baseline check`), the fingerprint is the original baseline's, and
 Forward's routing diff (**SDK** `snapshot_diff_details`) from the original baseline to the new snapshot is empty. MATCH, or it says what differs.
 `workshop restore` stays the break-glass path: no record, no checks.
+
+### `workshop link down|up`
+
+Exercise 1's change: shut r2's link to r4 (`down`) or bring it back (`up`), over NAPALM (r2's own diff, an atomic commit),
+under the lab lock. `workshop restore` also brings the link back.
+
+### `workshop nqe "/path"` (Forward's own library)
+
+A path starting with `/` runs one of the queries that ship with Forward (repository `fwd`), e.g.
+`workshop nqe "/L3/BGP/Established BGP Peerings"`. **SDK** `nqe.query(QueryRef.by_path(path, repository="fwd"))`.
+
+### `workshop intent`
+
+Lab 2's first step: each lab 1 path search, the Forward intent check it becomes (from `requirements/candidate.yml`),
+and Forward's verdict on the newest baseline. **SDK** `checks.add_check` (once), `checks.get_checks`.
+
+### `workshop deploy apply --without-predict --confirm <sha7>`
+
+Exercise 2's blind change, on purpose (owner decision): sends `candidate/r4-bgp.eos` with no prediction. The hash,
+scope (r4's BGP only), the lab lock and the drift check still hold; it says PREDICT OVERRIDDEN, opens a change ticket
+(a GitHub issue), and `workshop verify` then judges it after the fact (PASS/FAIL) into that ticket. Back it out with
+`workshop revert plan`, `revert apply --confirm <hash>`, the baseline steps, `revert compare`.

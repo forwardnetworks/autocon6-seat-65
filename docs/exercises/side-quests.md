@@ -14,7 +14,7 @@ If you're **behind**, skip this page. The core steps are the only thing that mat
 | you've seen a red check | [SQ6 · Every way of retiring the lines](#sq6--every-way-of-retiring-the-lines) | 10 min |
 | you've seen a red check | [SQ7 · Let an adviser draft it](#sq7--let-an-adviser-draft-it) | 10 min |
 | you've seen a red check | [SQ10 · Blast radius, before and after](#sq10--blast-radius-before-and-after) | 10 min |
-| your baseline is PASS | [SQ11 · Ask Forward anything (NQE)](#sq11--ask-forward-anything-nqe) | 10 min |
+| exercise 2, first part done (your own query) | [SQ11 · Ask Forward anything (NQE)](#sq11--ask-forward-anything-nqe) | 10 min |
 | you've verified (MATCH) | [SQ8 · Cheat the gate](#sq8--cheat-the-gate) | 10 min |
 | you've verified (MATCH) | [SQ9 · Catch the drift](#sq9--catch-the-drift) | 10 min |
 | you've verified (MATCH) | [SQ12 · Deploy it anyway, then back it out](#sq12--deploy-it-anyway-then-back-it-out) | 15 min |

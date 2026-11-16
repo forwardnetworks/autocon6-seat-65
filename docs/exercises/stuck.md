@@ -23,6 +23,7 @@ Find the line that looks like yours. Most fixes are one command. Run `workshop s
 
 | You see | What it means | What to do |
 |---|---|---|
+| `verify` says **FAIL** right after **Deploy without Predict** | That is the lesson: the blind change broke the service, and Forward found it afterwards | Back it out: `workshop revert plan`, `workshop revert apply --confirm <the hash it printed>`, the four baseline steps, then `workshop revert compare` (MATCH). Then empty the candidate (Change stage, nothing ticked, Write candidate) |
 | GitHub shows **"Oh no, something unexpected went wrong"** for your Codespace | GitHub's side; its status page failed while the Codespace was starting | Click **Restart and reconnect to codespace** on that page. It takes a minute or two. Your files are kept; run `workshop up` again if your lab was running |
 | The **Your lab** pane is blank, or there is no Your lab page | The page is running, but VS Code's built-in browser pane often can't show it | Open the **Ports** tab at the bottom, click the globe icon beside port **8765**, and keep that browser tab open. If there is no port 8765, run `bash .devcontainer/start-ui.sh` |
 | You pressed **Delete codespace** (or it was deleted) | The Codespace and the lab in it are gone. Anything you merged is safe on GitHub; uncommitted or unpushed work is lost | Reopen from your seat page (it makes a new Codespace), then `workshop up` and the baseline steps (`workshop baseline collect`, `upload`, `wait`, `check`) |
