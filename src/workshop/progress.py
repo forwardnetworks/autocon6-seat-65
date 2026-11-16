@@ -110,8 +110,8 @@ def facts(settings: Settings, *, prs: list[dict[str, Any]], threads: list[dict[s
         earned.add("caught")
     if any(p.get("state") == "MERGED" for p in prs):
         earned.add("approved")
-    if _exists(s / "deploy.json"):
-        earned.add("deployed")
+    if _exists(s / "deploy.json") and (_json(s / "deploy.json") or {}).get("predicted") is not False:
+        earned.add("deployed")  # a change deployed with Predict overridden earns nothing: it's the lesson, not the goal
     if (_json(s / "verify.json") or {}).get("outcome") == "MATCH":
         earned.add("verified")
     if any(turn.get("status") == "done" for t in threads for turn in t.get("turns", [])) or any((s / "ai").glob("*.md")):

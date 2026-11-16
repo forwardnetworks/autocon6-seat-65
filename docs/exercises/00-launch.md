@@ -1,7 +1,7 @@
-# 0 · Launch and check your lab (9:00–9:20)
+# 0 · Launch your lab, then take a baseline (9:00–9:30)
 
-*About 10 minutes of introduction, then 10 minutes hands-on. Start `workshop up` as early as you can: it takes a few
-minutes.*
+*Lab first: about 25 minutes hands-on with a few short slides while the lab builds. Start `workshop up` as early as you
+can: it takes a few minutes. Then, as soon as it finishes, give Forward a baseline (below).*
 
 Configuration validation asks "is this config well formed?" **Behavioral validation** asks "what will the network do
 with it?" Today that second question gets its own stage in the pipeline, and it runs before deploy.
@@ -90,6 +90,12 @@ You have an isolated lab and a Forward network that only you can touch. Nothing 
 **Which path?** *I'm Too Young to Die* (the Your lab page and the editor's panels) or *Hold My Beer* (the terminal, every step by hand, and the side quests): [pick one](README.md#pick-your-path), switch any time.
 
 **Behind?** The one must-do is `workshop up` running. The BGP check on r1 can wait.
+
+### Next, as soon as `workshop up` finishes: take the baseline (by 9:30)
+
+Do exercise 1's [**Take the baseline, one step at a time**](01-baseline.md#take-the-baseline-one-step-at-a-time-10-min)
+now: `workshop baseline collect`, `upload`, `wait`, `check` (or the four buttons on the **Your lab** page), ending in
+every line **PASS**. The rest of exercise 1 comes after a short talk at 9:30.
 
 ## Finished early?
 

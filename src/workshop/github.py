@@ -97,6 +97,18 @@ def comment(number: int, body: str) -> None:
     _call(f"commenting on PR #{number}", pr.create_issue_comment, body[:65000])
 
 
+def open_ticket(title: str, body: str) -> int:
+    """Open a GitHub issue in the seat repository: the change ticket for a deploy made without a pull request."""
+    issue = _call("opening the change ticket (a GitHub issue)", repo().create_issue, title=title[:200], body=body[:65000])
+    return int(issue.number)
+
+
+def comment_ticket(number: int, body: str) -> None:
+    """Add a comment to the change ticket (a GitHub issue)."""
+    issue = _call(f"reading ticket #{number}", repo().get_issue, number)
+    _call(f"commenting on ticket #{number}", issue.create_comment, body[:65000])
+
+
 def upsert_comment(number: int, marker: str, body: str) -> None:
     """One comment per pull request that carries ``marker``: edited in place on later runs, so a pull request pushed five times
     still has one change analysis, the newest."""

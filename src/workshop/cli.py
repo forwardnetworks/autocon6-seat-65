@@ -113,6 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--with-caveats", default="", metavar="IDS",
                    help="deploy a FAIL on purpose (local evidence only): name every failing requirement you accept, comma-separated. "
                         "For the exercise that shows Predict was right; back it out with `workshop revert`")
+    d.add_argument("--without-predict", action="store_true",
+                   help="deploy the candidate with no prediction at all (Predict overridden): the way many changes go out today, kept to "
+                        "show what happens. Forward judges it afterwards (`workshop verify`); the record goes into a change ticket (a GitHub issue)")
     d.add_argument("--at", metavar="HH:MM",
                    help="apply in a change window: the gates are checked now, then again at that time against Forward's newest "
                         "snapshot; if anything changed by then, nothing is sent (apply only; at most 3 hours ahead)")
@@ -553,6 +556,24 @@ def _deploy(settings: config.Settings, args) -> int:
             return EXIT[exc.status]
         log("Next: workshop verify probe")
         return 0
+    if getattr(args, "without_predict", False):
+        if step not in ("apply", None) or args.pr or args.evidence or args.with_caveats or getattr(args, "at", None):
+            log("--without-predict goes with `workshop deploy apply --confirm <sha7>` alone: there is no prediction, pull request or caveat to name")
+            return EXIT["ERROR"]
+        if not args.confirm:
+            log("say which candidate you mean to send: --confirm <the first 7 characters of its sha256> (`workshop status` shows it)")
+            return EXIT["ERROR"]
+        try:
+            record = deploy.apply_unpredicted(settings, args.confirm, log)
+        except deploy.Refused as exc:
+            log(f"NOT DEPLOYED ({exc.status}): {exc}")
+            return EXIT[exc.status]
+        except Exception as exc:  # noqa: BLE001
+            log(f"workshop deploy apply: {type(exc).__name__}: {exc}")
+            return EXIT["ERROR"]
+        log("Sent and committed on r4 WITHOUT A PREDICTION" + (f" (change ticket #{record['ticket']})" if record.get("ticket") else "")
+            + ". Next: workshop deploy readback, then the verify steps: Forward judges it now, on the real network.")
+        return 0
     if not (args.pr or args.evidence):
         log("say which change: --pr N (a merged pull request) or --evidence evidence/evidence.json (a local prediction)")
         return EXIT["ERROR"]
@@ -698,6 +719,66 @@ def _post_change_report(settings: config.Settings, evidence: Path, result: dict,
         reports.attach(int(pr) if pr else None, "Post-change report", path.read_text(), log)
 
 
+def _verify_unpredicted(settings: config.Settings, args) -> int:
+    """Verify after `deploy apply --without-predict`: the same five steps, but compare asks the requirements of the real network
+    for the first time, and the post-change report goes into the change ticket."""
+    import contextlib
+
+    from workshop import reports, show, steps, verify
+
+    record = json.loads((settings.state_dir / "deploy.json").read_text())
+    step = getattr(args, "step", None)
+    try:
+        if step == "probe":
+            probes = verify.probe_unpredicted(settings, log)
+            log("")
+            log(f"Evidence: {sum(p['ok'] for p in probes)} of {len(probes)} flows behave as the requirements say, on the real network. Next: workshop verify collect")
+            return 0
+        if step == "collect":
+            steps.collect_step(settings, "post", log)
+            return 0
+        if step == "upload":
+            steps.upload_step(settings, "post", log, extra=f"after {record['candidate_sha256'][:12]} (no prediction)")
+            return 0
+        if step == "wait":
+            steps.wait_step(settings, "post", log)
+            return 0
+        if step != "compare":
+            log("after a deploy without a prediction, run the steps one at a time: `workshop verify probe`, `collect`, `upload`, `wait`, `compare`")
+            return EXIT["ERROR"]
+        got = steps.processed_snapshot(settings, "post")
+        probed = steps.load(settings, "probes", "workshop verify probe")
+        log("checking the collection is of the network as it is now ...")
+        show.napalm(log, "r1-4", "cli('show running-config')   hashed and compared with the post-change collection's fingerprint")
+        if steps.live_fingerprint(settings) != got["fingerprint"]:
+            log("the routers changed after `workshop verify collect`: run `workshop verify probe`, `collect`, `upload` and `wait` again, then compare")
+            return EXIT["ERROR"]
+        result = verify.compare_unpredicted(settings, got["snapshot"], got["fingerprint"], probed["probes"], log)
+    except Exception as exc:  # noqa: BLE001
+        log(f"workshop verify{' ' + step if step else ''}: {exc}")
+        return EXIT["ERROR"]
+    with _display_only():
+        log("")
+        log("Requirements on the real network, asked for the first time (nothing was predicted):")
+        for line in report_.requirement_table(result["rows"]):
+            log(line)
+    text = ""
+    with contextlib.suppress(Exception):
+        text = reports.unpredicted_post_change(settings, record, result)
+        path = reports.save(settings, "post-change.md", text)
+        log("")
+        log(f"Artifact: {path}")
+        log("  What it is for: the post-change report of a change nobody predicted: what Forward found after it went live.")
+        reports.attach(None, "Post-change report (no prediction)", text, log, ticket=record.get("ticket"))
+    log("")
+    log(f"verify: {result['outcome']} after a deploy without a prediction (post-change snapshot {result['post_snapshot_id']})")
+    if result["outcome"] == "FAIL":
+        failed = ", ".join(r["id"] for r in result["rows"] if r["collected"] != "PASS")
+        log(f"What this means: Forward found it, but only after the change was live: {failed}. Back it out: `workshop revert plan`,")
+        log("then `workshop revert apply --confirm <hash>`. Predict asks the same questions before any router changes.")
+    return 0 if result["outcome"] == "PASS" else EXIT["FAIL"]
+
+
 def _verify(settings: config.Settings, args) -> int:
     import contextlib
 
@@ -706,6 +787,9 @@ def _verify(settings: config.Settings, args) -> int:
     from workshop.forward import Forward
 
     banner(settings, "verify" + (f" {args.step}" if getattr(args, "step", None) else ""))
+    deployed_record = settings.state_dir / "deploy.json"
+    if not args.evidence and deployed_record.is_file() and json.loads(deployed_record.read_text()).get("predicted") is False:
+        return _verify_unpredicted(settings, args)
     evidence = args.evidence
     if not evidence:
         deployed = settings.state_dir / "deploy.json"
@@ -1035,7 +1119,7 @@ def _revert(settings: config.Settings, args) -> int:
                 log(f"Artifact: {path}")
                 log("  What it is for: the backout record: what was undone, proof the configs are the baseline's, and Forward's confirmation from a fresh")
                 log("  collection. It goes on the same ticket as the change.")
-                reports.attach(record.get("pr"), "Backout", path.read_text(), log)
+                reports.attach(record.get("pr"), "Backout", path.read_text(), log, ticket=record.get("ticket"))
             log("")
             if result["outcome"] == "MATCH":
                 log(f"revert: MATCH (snapshot {result['snapshot']}). What this means: Forward agrees the network is the one you started with:")
@@ -1273,8 +1357,10 @@ def _status(settings: config.Settings, args) -> int:
         except (OSError, ValueError):
             return None
 
+    sha7 = ""
     try:
-        changes = len(candidate.load(settings.repo_root / "candidate" / "r4-bgp.eos").changes)
+        cand = candidate.load(settings.repo_root / "candidate" / "r4-bgp.eos")
+        changes, sha7 = len(cand.changes), cand.sha256[:7]
     except (candidate.CandidateError, OSError):
         changes = 0
     base, deployed, verified = read("baseline.json"), read("deploy.json"), read("verify.json")
@@ -1283,6 +1369,8 @@ def _status(settings: config.Settings, args) -> int:
         deployed = verified = None
     for line in report_.status_lines(base, deployed, verified, changes):
         log(line)
+    if changes and sha7:
+        log(f"  Candidate hash {sha7}   (what --confirm takes)")
     return 0
 
 

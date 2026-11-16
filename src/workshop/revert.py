@@ -69,7 +69,7 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
         pr = (Manifest.read(Path(record["evidence"])).git or {}).get("pr")
     except Exception:  # noqa: BLE001 - only used to attach the backout record to the same pull request
         pr = None
-    out = {"pr": pr, "lines": list(inverse), "sha256": hashlib.sha256(text.encode()).hexdigest(), "deployed": list(sent), "target_fingerprint": target,
+    out = {"pr": pr, "ticket": record.get("ticket"), "lines": list(inverse), "sha256": hashlib.sha256(text.encode()).hexdigest(), "deployed": list(sent), "target_fingerprint": target,
            "baseline_snapshot": original, "baseline_pass": base_ok, "caveats": record.get("caveats") or [],
            "post_fingerprint": record.get("post_fingerprint", "")}
     if log:
@@ -115,7 +115,8 @@ def apply(settings: Settings, confirm: str, log: Callable[[str], None]) -> dict:
         back = bool(p["target_fingerprint"]) and live == p["target_fingerprint"]
         record = {"at": datetime.now(UTC).isoformat(timespec="seconds"), "lines": list(lines), "sha256": p["sha256"],
                   "reverted": p["deployed"], "caveats": p["caveats"], "fingerprint": live, "back_to_baseline": back,
-                  "baseline_snapshot": p["baseline_snapshot"], "target_fingerprint": p["target_fingerprint"], "pr": p.get("pr")}
+                  "baseline_snapshot": p["baseline_snapshot"], "target_fingerprint": p["target_fingerprint"], "pr": p.get("pr"),
+                  "ticket": p.get("ticket")}
         settings.state("revert.json").write_text(json.dumps(record, indent=2) + "\n")
         for name in ("deploy.json", "verify.json", "steps/collect-post.json", "steps/upload-post.json", "steps/probes.json"):
             settings.state(name).unlink(missing_ok=True)  # the deployed change is gone: its records no longer describe the network

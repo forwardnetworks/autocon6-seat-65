@@ -9,6 +9,38 @@ able to explain every line of the result.*
 
 ## Core
 
+### First, the way it's often done: deploy without Predict (10 min, don't do this at work)
+
+Before the pipeline, send a change the way many still go out: straight to the router, with nobody asking first. Then
+let Forward tell you what happened. You'll undo it at the end.
+
+1. **The change.** *I'm Too Young to Die:* the **Change** stage, tick **all three** prefixes, **Write
+   candidate/r4-bgp.eos**. *Hold My Beer:* add the three lines yourself:
+   ```
+         no network 10.20.20.0/24
+         no network 10.20.30.0/24
+         no network 10.20.40.0/24
+   ```
+   Don't commit it. It looks finished: all three statements, valid EOS.
+2. **Deploy it, no questions asked.** *Page:* the **Deploy** stage, type the candidate's hash (the Change stage shows
+   it), **Deploy without Predict**. *Terminal:* `workshop deploy apply --without-predict --confirm <sha7>`. It says
+   **PREDICT OVERRIDDEN** and opens a **change ticket**: a GitHub issue in your repository (**Issues** tab).
+   Then **4. Read back** (or `workshop deploy readback`).
+3. **Find out.** The five verify steps (Verify stage, or `workshop verify probe`, `collect`, `upload`, `wait`,
+   `compare`). The probe already says 8080 is blocked; compare says **FAIL**: APP-EXISTING, ROUTE-SERVICE and
+   PATH-SERVICE. Open the change ticket: Forward's verdict is there, with its intent checks before and after and the
+   sites that lost the Service. All true. All after the customers noticed.
+4. **Back it out.** **Revert: plan** (or `workshop revert plan`), type the hash it prints, **Revert: apply**
+   (`workshop revert apply --confirm <sha7>`), the four baseline steps, then **Revert: compare**: **MATCH**, and the
+   backout lands in the same ticket.
+5. **Empty the candidate** for what comes next: the Change stage with nothing ticked, **Write candidate/r4-bgp.eos**
+   (or `git restore candidate/r4-bgp.eos`).
+
+**What you just learned:** every answer Forward gave was true and useful, and every one came too late. The rest of
+the morning asks the same questions *before* the change: Predict.
+
+**Behind?** Skip this part: the pipeline below is the core.
+
 ### Make a small change (10 min)
 
 Start small: retire **one** stale advertisement.

@@ -86,3 +86,41 @@ def run(settings: Settings, evidence: Path, log) -> dict:
         settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")
         return result
     return compare(settings, evidence, snapshot_id, fp, probes, log)
+
+
+def probe_unpredicted(settings: Settings, log) -> list[dict]:
+    """``workshop verify probe`` after a deploy without a prediction: real packets, judged against the requirements themselves
+    (there is no forecast to compare with)."""
+    reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
+    lab.wait_bgp(settings, log)
+    log("probing the real flows from the client (no prediction: each is judged against its requirement) ...")
+    probes = []
+    for req in reqs.requirements:
+        if req.kind != "flow":
+            continue
+        show.docker(log, lab.CLIENT, f"exec_run(['nc', '-z', '-w', '3', '{lab.SERVICE_IP}', '{req.port}'])   real packets from the client")
+        p = lab.probe(req.port)
+        want = req.expect == "permit"
+        ok = p.reachable == want and p.trustworthy
+        probes.append({"id": req.id, "port": req.port, "expected": "open" if want else "blocked",
+                       "observed": "open" if p.reachable else ("blocked" if p.listener_up else "service down"), "ok": ok, "predicted": "none"})
+        log(f"  {'✓' if ok else '✗'} TCP {req.port}: {probes[-1]['observed']} (the requirement says {probes[-1]['expected']})")
+    settings.state("steps").mkdir(exist_ok=True)
+    settings.state("steps/probes.json").write_text(json.dumps({"evidence": "", "probes": probes}, indent=2) + "\n")
+    return probes
+
+
+def compare_unpredicted(settings: Settings, snapshot_id: str, fp: str, probes: list[dict], log) -> dict:
+    """``workshop verify compare`` after a deploy without a prediction: the requirements on the real network, after the fact.
+    PASS only if every requirement and every probe holds; there is no MATCH without a prediction."""
+    reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
+    show.note(log, f"judging {len(reqs.requirements)} requirements on post-change snapshot {snapshot_id}: the first time anyone asks")
+    with Forward(settings) as fwd:
+        report = evaluate(reqs, fwd.observer(snapshot_id), snapshot_id, root=settings.repo_root)
+    rows = [{"id": r.id, "title": r.title, "expected": r.expected, "predicted": "none", "collected": r.status.value,
+             "observed": r.observed, "evidence": r.evidence} for r in report.results]
+    ok = all(row["collected"] == "PASS" for row in rows) and all(p["ok"] for p in probes)
+    result = {"outcome": "PASS" if ok else "FAIL", "predicted": False, "post_snapshot_id": snapshot_id, "fingerprint": fp,
+              "rows": rows, "probes": probes}
+    settings.state("verify.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result

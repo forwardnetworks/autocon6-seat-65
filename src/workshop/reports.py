@@ -349,6 +349,47 @@ def pre_change(m, gates_passed: list[str], plan: dict[str, Any] | None, *, cavea
 # ---- 3. post-change -------------------------------------------------------------------------
 
 
+def unpredicted_post_change(settings, record: dict[str, Any], result: dict[str, Any]) -> str:
+    """The post-change report for a change deployed without a prediction: what Forward found once it was live."""
+    from workshop import data as fdata
+    from workshop import intent
+    from workshop.forward import Forward
+
+    outcome = result.get("outcome", "?")
+    b, a = str(record.get("baseline_snapshot_id", "")), str(result.get("post_snapshot_id", ""))
+    failed = [r for r in result.get("rows", []) if r.get("collected") != "PASS"]
+    out = [f"# Post-change report: {MARK.get(outcome, outcome)} (deployed without a prediction)", "",
+           (f"Deployed {record.get('finished_at', '')} · candidate sha256 `{str(record.get('candidate_sha256', ''))[:12]}` · "
+            f"**Predict overridden** · {_now()}"), ""]
+    out += ["> Nobody asked Forward before this change. These answers came after it was live: "
+            + (f"**{len(failed)} requirement(s) fail on the real network.**" if failed else "every requirement holds.") , ""]
+    out += ["## What was sent", "", "```", *[line for line in record.get("lines", [])], "```", ""]
+    out += ["## Requirements on the real network", "", "| Requirement | Verdict | What Forward saw |", "|---|---|---|"]
+    out += [f"| **{_cell(r['id'])}** {_cell(r.get('title', ''))} | {MARK.get(r['collected'], r['collected'])} | {_cell(r.get('observed', ''))} |"
+            for r in result.get("rows", [])]
+    out += ["", "| Live probe | Requirement | Observed |", "|---|---|---|"]
+    out += [f"| TCP {p['port']} | {p['expected']} | {'✅' if p['ok'] else '❌'} {p['observed']} |" for p in result.get("probes", [])]
+    out.append("")
+    try:
+        with Forward(settings, quick=True) as fwd:
+            out += intent.section(fwd.c, b, a, before_label=f"Baseline `{b}`", after_label=f"After the change `{a}`",
+                                  title="Forward's intent checks, before and after")
+            table, _ = _try(None, "reachability", lambda: fdata.reach(fwd.c, b, a))
+            if table is not None:
+                out += ["", "## Reachability, site to site (Forward's connectivity diff)", "", table.summary, ""]
+                if table.rows:
+                    out += ["| " + " | ".join(table.columns) + " |", "|" + "---|" * len(table.columns)]
+                    out += ["| " + " | ".join(_cell(r.get(c, "")) for c in table.columns) + " |" for r in table.rows[:20]]
+                    out.append("")
+    except Exception as exc:  # noqa: BLE001 - display only
+        out += [f"(Forward's intent checks and reachability could not be read just now: {type(exc).__name__})", ""]
+    out += ["## Backout", "", ("`workshop revert plan`, then `workshop revert apply --confirm <hash>`, then the baseline steps and "
+            "`workshop revert compare`."), "",
+            ("**The lesson:** every one of these answers was available before the change. `workshop predict` asks them of "
+             "Forward's model of the network with the change applied, before any router is touched."), ""]
+    return "\n".join(out)
+
+
 def post_change(record: dict[str, Any], result: dict[str, Any], *, routing=None, pr: int | None = None, backout: dict[str, Any] | None = None) -> str:
     outcome = result.get("outcome", "?")
     lines = [line for line in record.get("lines", []) if "network" in line]
@@ -428,18 +469,21 @@ def save(settings, name: str, text: str) -> Path:
     return path
 
 
-def attach(pr: int | None, title: str, text: str, log) -> bool:
-    """Post the report on the pull request (the ticket). False, with a line saying why, if it cannot: the report is still on disk."""
-    if not pr:
+def attach(pr: int | None, title: str, text: str, log, *, ticket: int | None = None) -> bool:
+    """Post the report on the pull request (the ticket), or on the change ticket (a GitHub issue) for a change deployed without
+    one. False, with a line saying why, if it cannot: the report is still on disk."""
+    if not pr and not ticket:
         return False
+    where = f"pull request #{pr}" if pr else f"change ticket #{ticket}"
     try:
         from workshop import github
 
-        github.comment(pr, f"<details open><summary><b>{title}</b></summary>\n\n{text}\n</details>")
-        log(f"  → attached to pull request #{pr} as a comment ({title})")
+        body = f"<details open><summary><b>{title}</b></summary>\n\n{text}\n</details>"
+        github.comment(pr, body) if pr else github.comment_ticket(int(ticket), body)
+        log(f"  → attached to {where} as a comment ({title})")
         return True
     except Exception as exc:  # noqa: BLE001 - display only
-        log(f"  (could not attach {title} to pull request #{pr}: {type(exc).__name__}: {str(exc)[:120]}; it is saved locally)")
+        log(f"  (could not attach {title} to {where}: {type(exc).__name__}: {str(exc)[:120]}; it is saved locally)")
         return False
 
 

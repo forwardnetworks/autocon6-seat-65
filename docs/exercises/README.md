@@ -6,8 +6,8 @@ Monday, November 16, 2026 · 9:00 AM–1:00 PM · hands-on
 
 | Time | Section | Exercise | Checkpoint |
 |---|---|---|---|
-| 9:00–9:20 | The Missing Test Stage | [0 · Launch and check your lab](00-launch.md) | `workshop doctor` says READY; `workshop up` running |
-| 9:20–10:05 | Establish the Baseline | [1 · Meet Forward, and write down what must remain true](01-baseline.md) | `workshop baseline check` all PASS |
+| 9:00–9:30 | Into the Lab | [0 · Launch your lab, then take a baseline](00-launch.md) | `workshop doctor` says READY; `workshop baseline check` all PASS |
+| 9:30–10:05 | The Missing Test Stage | [1 · Meet Forward, and write down what must remain true](01-baseline.md) | a path and a query you ran; any change undone, baseline PASS |
 | 10:05–10:45 | Build and Run the Change Pipeline | [2 · Your first change through the pipeline](02-pipeline.md) | a PR with a forward/predict result you can explain |
 | 10:45–11:15 | *Break* | | |
 | 11:15–12:00 | Break It Before You Deploy It | [3 · A change that looks safe](03-break-it.md) | a red check, and the line that caused it |
@@ -46,7 +46,7 @@ from users. Here each stage hands the next one a piece of evidence, and the last
 promise: Verify collects the network again and runs your tests on it. **MATCH** means your tests give the same
 verdicts on the real network as they gave on the prediction. **MISMATCH** means reality disagrees: the change is still
 live (nothing rolls back by itself), so you put r4 back with `workshop restore`, take a fresh baseline and work out
-why. No change deploys without a prediction (`workshop restore` is the break-glass exception), and nothing is done
+why. No change deploys without a prediction, except on purpose: exercise 2 starts by overriding Predict to show why (and `workshop restore` is the break-glass path), and nothing is done
 until reality has been checked against it.
 
 **What that's worth.** Every change leaves evidence you can show someone: what the network would do (your tests, on

@@ -348,7 +348,7 @@ let state = null, tipIndex = Math.floor(Math.random() * TIPS.length);
 
 const currentKey = () => selected || (state && (state.stages.find((x) => x.state !== "done") || {}).key) || "done";
 let prMsg = "Retire r4's stale advertisements", prNote = "";
-let depPr = "", depSha = "", depAt = "";  // what was typed in the deploy form: kept when the page redraws after each step
+let depPr = "", depSha = "", depAt = "", revSha = "";  // what was typed in the deploy form: kept when the page redraws after each step
 let lastLineAt = Date.now();
 const WAITING = ["Good time to refill your coffee.", "Somewhere a very patient computer is doing real work. Hang tight.", "Slow here is the point: a minute of checking beats an outage.", "Routers, models and CI all take a moment. That is the job.", "Predict never guesses. It computes, and computing takes a moment."];
 const QUIET_AFTER = (Number(new URLSearchParams(location.search).get("quiet")) || 30) * 1000;  // ?quiet=3 shortens it for a preview
@@ -617,6 +617,11 @@ function renderGuide(s, key) {
       <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric" value="${esc(depPr)}"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(depSha)}"> </div>
       <div class="runrow">${[["deploy gates", "1. Gates"], ["deploy render", "2. Render"], ["deploy apply", "3. Apply"], ["deploy readback", "4. Read back"]].map(([st, lb]) => `<button class="dep-step" data-step="${st}" ${s.job && !s.job.done ? "disabled" : ""}>${lb}</button>`).join(" ")}</div>
       <div class="runrow"><span class="muted">Or in a change window:</span> <input type="time" id="dep-at" value="${esc(depAt)}"> <button id="dep-at-go" ${s.job && !s.job.done ? "disabled" : ""}>Apply at the window</button></div>
+      <div class="gsec"><h3>Without Predict (the start of exercise 2: don't do this at work)</h3>
+      <div class="note muted">Sends <code>candidate/r4-bgp.eos</code> as it is, with nobody asking Forward first. It opens a change ticket (a GitHub issue); verify then tells you, after the fact, what broke, and puts it in the ticket.</div>
+      <div class="runrow"><button id="dep-blind" ${s.job && !s.job.done ? "disabled" : ""}>Deploy without Predict</button> <span class="muted">uses the hash typed above</span></div>
+      <div class="runrow"><span class="muted">Then the verify steps, then back it out:</span> <button class="rev-step" data-step="revert plan" ${s.job && !s.job.done ? "disabled" : ""}>Revert: plan</button> <input type="text" id="rev-sha" size="12" placeholder="revert's hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(revSha)}"> <button class="rev-step" data-step="revert apply" ${s.job && !s.job.done ? "disabled" : ""}>Revert: apply</button> <button class="rev-step" data-step="revert compare" ${s.job && !s.job.done ? "disabled" : ""}>Revert: compare</button></div>
+      <div class="note muted">After <b>Revert: apply</b>, take the baseline again (Baseline stage, four steps), then <b>Revert: compare</b>: Forward confirms the network is back.</div></div>
       <div class="note muted">A real change goes in at an agreed time. <b>Apply at the window</b> checks every gate now, waits, then checks them all again at that time against Forward's newest snapshot and the live routers: if anything changed in between, nothing is sent. (<code>workshop deploy apply --pr N --confirm abc1234 --at 11:30</code>)</div>
       <div class="muted">Gates checks everything and sends nothing. Render shows the change in Forward and on r4, side by side (a dry run). Apply sends it. Read back confirms it on r4.</div>
       <div class="note muted">Deploy refuses unless every check passes: your pull request is merged and green, the baseline is current, and no router has drifted.</div></div>`;
@@ -697,6 +702,11 @@ function renderGuide(s, key) {
   };
   if ($("dep-pr")) { $("dep-pr").oninput = (e) => { depPr = e.target.value; }; $("dep-sha").oninput = (e) => { depSha = e.target.value; }; }
   document.querySelectorAll(".dep-step").forEach((b) => { b.onclick = () => { depPr = $("dep-pr").value.trim(); depSha = $("dep-sha").value.trim(); runStep({ step: b.dataset.step, pr: depPr, confirm: depSha }); }; });
+  if ($("dep-blind")) {
+    $("dep-blind").onclick = () => { depSha = $("dep-sha").value.trim(); runStep({ step: "deploy unpredicted", confirm: depSha }); };
+    $("rev-sha").oninput = (e) => { revSha = e.target.value; };
+    document.querySelectorAll(".rev-step").forEach((b) => { b.onclick = () => { revSha = $("rev-sha").value.trim(); runStep({ step: b.dataset.step, confirm: revSha }); }; });
+  }
   if ($("dep-at-go")) {
     $("dep-at").oninput = (e) => { depAt = e.target.value; };
     $("dep-at-go").onclick = () => {

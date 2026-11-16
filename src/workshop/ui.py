@@ -47,7 +47,7 @@ R4_PREFIXES = ("10.20.20.0/24", "10.20.30.0/24", "10.20.40.0/24")
 # What the page may start. Anything else (down, collector, ask...) stays a typed command.
 STEPS = ("doctor", "up", "baseline", "probe", "predict", "explain", "propose", "matrix", "agent", "deploy", "verify", "restore", "status",
          # one step at a time: what the exercises teach
-         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up", "changes routes", "changes checks", "changes reach",
+         "baseline collect", "baseline upload", "baseline wait", "baseline check", "link down", "link up", "changes routes", "changes checks", "changes reach", "deploy unpredicted", "revert plan", "revert apply", "revert compare",
          "predict changeset", "predict run", "predict check",
          "deploy gates", "deploy render", "deploy apply", "deploy readback",
          "verify probe", "verify collect", "verify upload", "verify wait", "verify compare")
@@ -196,7 +196,7 @@ def badges(base: dict[str, Any] | None, prediction: dict[str, Any] | None, prs: 
         "baseline": ((base or {}).get("report") or {}).get("status") == "PASS",
         "caught": bool(reds),
         "fixed": bool(reds and greens and greens[-1] > reds[0]),
-        "shipped": bool(deployed) and not (deployed or {}).get("readback_problems"),  # a refused readback is NOT DEPLOYED
+        "shipped": bool(deployed) and not (deployed or {}).get("readback_problems") and (deployed or {}).get("predicted") is not False,  # a refused readback is NOT DEPLOYED
         "match": (verified or {}).get("outcome") == "MATCH",
     }
     out = [{"key": k, "label": label, "why": why} for k, label, why in BADGES if earned[k]]
@@ -308,6 +308,18 @@ class Jobs:
         if step in ("changes routes", "changes checks", "changes reach"):  # exercise 1: the baseline before the newest one, against the newest
             topic = {"changes routes": "diff", "changes checks": "checks", "changes reach": "reach"}[step]
             return ["data", topic, "--snapshot", "previous", "--against", "baseline"]
+        if step == "deploy unpredicted":  # Predict overridden, on purpose (exercise 2's first part): only the hash of what is sent
+            confirm = str(params.get("confirm", "")).strip().lower()
+            if not SHA7.match(confirm):
+                raise ValueError("type the first 7 characters of the candidate's hash (the Change step shows it) to confirm")
+            return ["deploy", "apply", "--without-predict", "--confirm", confirm]
+        if step in ("revert plan", "revert compare"):
+            return step.split()
+        if step == "revert apply":
+            confirm = str(params.get("confirm", "")).strip().lower()
+            if not SHA7.match(confirm):
+                raise ValueError("type the first 7 characters of the revert's hash (Revert: plan prints it)")
+            return ["revert", "apply", "--confirm", confirm]
         out = step.split()
         stage, sub_step = out[0], (out[1] if len(out) > 1 else "")
         if stage == "deploy" and sub_step == "readback":
@@ -709,6 +721,9 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
     hint = "workshop deploy gates, render, apply, readback --pr N --confirm <sha7>"
     if not deployed:
         out.append(stage("deploy", "Deploy", "todo", "not deployed", hint))
+    elif deployed.get("predicted") is False:  # Predict overridden: the old way, shown on purpose; never "done"
+        out.append(stage("deploy", "Deploy", "failed", "deployed WITHOUT a prediction: verify it, then back it out",
+                         "workshop verify probe, collect, upload, wait, compare; then workshop revert plan, apply, compare"))
     elif deployed.get("readback_problems") is None and "readback_problems" in deployed:
         # applied, not read back yet: the deploy isn't finished until r4 has been checked (an older record has no such key)
         out.append(stage("deploy", "Deploy", "active", f"applied {len(deployed.get('lines', [])) - 2} change(s); next: read it back", "workshop deploy readback"))
