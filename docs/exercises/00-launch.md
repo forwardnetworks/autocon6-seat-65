@@ -18,7 +18,7 @@ with it?" Today that second question gets its own stage in the pipeline, and it 
    (workshop) @yourname ➜ /workspaces/autocon6-seat-NN (main) $
    ```
    If VS Code asks whether you trust the folder, choose **Trust Folder & Continue**.
-   The **Your lab** page (port 8765) shows where you are and the next step. If the pane beside your editor is blank, open the **Ports** tab at the bottom, find port **8765**, and click the globe icon to open it in a browser tab. Keep that tab open.
+   The **Your lab** page (port 8765) shows where you are and the next step. If the pane beside your editor is blank, open the **Ports** tab at the bottom, find port **8765**, and click the globe icon to open it in a browser tab. Keep that tab open. Lost it later? `workshop status` prints its address.
 2. In the terminal:
    ```
    workshop doctor

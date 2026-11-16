@@ -81,7 +81,8 @@ def collect_step(settings: Settings, kind: str, log) -> dict[str, Any]:
     if col.get("package"):
         log(f"  made by the Forward headless collector {col['package']} (the NAF Collector here), with the devices in data_sources.json")
     log(f"  fingerprint {fp[:16]}…: a hash of r1-r4's running configs, taken live and again from the ZIP (they matched)")
-    log(f"Next: workshop {STAGE[kind]} upload")
+    log(f"Next: workshop {STAGE[kind]} upload. The ZIP is only on this machine: Forward has nothing new until you upload it, wait, and "
+        + ("check." if kind == "baseline" else "compare."))
     return data
 
 

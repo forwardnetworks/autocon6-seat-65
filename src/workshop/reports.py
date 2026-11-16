@@ -338,7 +338,7 @@ def pre_change(m, gates_passed: list[str], plan: dict[str, Any] | None, *, cavea
             "## Backout plan", ""]
     if plan:
         inv = [line for line in plan["lines"] if "network" in line]
-        out += ["`workshop revert plan`, then `workshop revert apply --confirm <hash>`: the exact inverse, checked, then a fresh collection and `workshop revert compare`.", "",
+        out += ["`workshop revert plan`, then `workshop revert apply --confirm HASH`: the exact inverse, checked, then a fresh collection and `workshop revert compare`.", "",
                 "```", *inv, "```", "", f"Returns the network to fingerprint `{str(plan.get('target_fingerprint', ''))[:12]}`, the baseline above."]
     else:
         out += ["Before the deploy, the backout is the inverse of the change above, against the baseline above: `workshop revert` once deployed, or `workshop restore` (break-glass)."]
@@ -383,7 +383,7 @@ def unpredicted_post_change(settings, record: dict[str, Any], result: dict[str, 
                     out.append("")
     except Exception as exc:  # noqa: BLE001 - display only
         out += [f"(Forward's intent checks and reachability could not be read just now: {type(exc).__name__})", ""]
-    out += ["## Backout", "", ("`workshop revert plan`, then `workshop revert apply --confirm <hash>`, then the baseline steps and "
+    out += ["## Backout", "", ("`workshop revert plan`, then `workshop revert apply --confirm HASH`, then the baseline steps and "
             "`workshop revert compare`."), "",
             ("**The lesson:** every one of these answers was available before the change. `workshop predict` asks them of "
              "Forward's model of the network with the change applied, before any router is touched."), ""]

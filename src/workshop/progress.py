@@ -47,7 +47,7 @@ CHALLENGES: tuple[Challenge, ...] = (
     Challenge("deployed", "Deploy exactly what was predicted", "core", 0, (
         "Deploy sends the routers the same lines Predict evaluated, and only if nothing has drifted.",
         "The exact command is at the top of the green check's summary.",
-        "`workshop deploy gates|render|apply|readback --pr <number> --confirm <first 7 characters of the candidate hash>`")),
+        "`workshop deploy gates|render|apply|readback --pr N --confirm HASH` (HASH: the first 7 characters of the candidate hash)")),
     Challenge("verified", "Verify: reality matches the prediction", "core", 0, (
         "After the change, collect the network again and compare with what was predicted.",
         "Verify probes the real flows, collects, and re-judges every requirement.",

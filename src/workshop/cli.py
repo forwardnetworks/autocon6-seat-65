@@ -50,9 +50,13 @@ from workshop import config, trace
 from workshop import report as report_
 from workshop.evidence import EXIT
 
+_RECENT: list[str] = []  # the last lines this command printed: telemetry takes the refusal's reason from them
+
 
 def log(message: str) -> None:
     print(message, flush=True)
+    _RECENT.extend(str(message).splitlines()[:3])
+    del _RECENT[:-40]
 
 
 trace.set_sink(log)  # every Forward, router, Docker and GitHub call prints one line (workshop.trace)
@@ -81,7 +85,31 @@ def banner(settings: config.Settings, action: str) -> None:
         log(step_line(stage, step))
 
 
-def main(argv: list[str] | None = None) -> int:
+def _way_forward(status: str) -> str:
+    """What to do after a predict step stopped, by its result word."""
+    if status == "STALE":
+        return ("Your baseline isn't current or doesn't pass (the routers changed, or a newer snapshot exists): the four baseline steps, "
+                "`workshop baseline collect`, `upload`, `wait`, `check` (if that check fails, `workshop restore` first), then start "
+                "again with `workshop predict changeset`.")
+    if status == "FAIL":
+        return "Your baseline itself fails its requirements: `workshop restore`, then the four baseline steps, then `workshop predict changeset`."
+    return "Read the reason above; then start again with `workshop predict changeset` (a Forward timeout usually passes on a second try)."
+
+
+# Commands (and steps) that talk to the routers or the client: they need the lab running. A Codespace that idles stops and loses it.
+_LAB_STEPS = {"probe": None, "link": None, "restore": None, "baseline": {None, "collect", "check", "prepare", "judge"},
+              "verify": {None, "probe", "collect", "compare"}, "deploy": {None, "gates", "render", "apply", "readback"},
+              "revert": {"plan", "apply", "compare"}}
+
+
+def _needs_lab(args) -> bool:
+    steps = _LAB_STEPS.get(getattr(args, "command", None), False)
+    if steps is False:
+        return False
+    return steps is None or getattr(args, "step", None) in steps
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="workshop", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
     sub.add_parser("doctor", help="check tools, Forward access and the lab")
@@ -188,6 +216,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("probe", help="test the real flows from the client (8080, 8443, 2222) right now")
     sub.add_parser("version", help="print versions")
     sub.add_parser("yolo")  # no help text, so it is not listed: a joke that teaches the gate, and it always refuses
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     if args.command == "version":
@@ -209,6 +242,10 @@ def main(argv: list[str] | None = None) -> int:
     started = time.time()
     code = EXIT["ERROR"]
     try:
+        if _needs_lab(args):
+            from workshop import lab
+
+            lab.require_running(settings)
         code = handler(settings, args)
         return code
     except KeyboardInterrupt:
@@ -218,11 +255,20 @@ def main(argv: list[str] | None = None) -> int:
         log(f"workshop {args.command}: {exc}")
         code = EXIT["ERROR"]
         return code
+    except Exception as exc:  # a lab container that vanished mid-command (Docker's NotFound): the way back, never a traceback
+        if type(exc).__name__ != "NotFound" or "docker" not in type(exc).__module__:
+            raise
+        from workshop import lab
+
+        log(f"workshop {args.command}: {lab.GONE}")
+        code = EXIT["ERROR"]
+        return code
     finally:
         # beta activity log, silent when not configured. The step is included ("workshop baseline check") so the helpers' desk can
         # match the seat's failure to its fix.
         step = getattr(args, "step", None)
-        telemetry.report_workshop(f"workshop {args.command}" + (f" {step}" if isinstance(step, str) and step else ""), code, started, EXIT)
+        telemetry.report_workshop(f"workshop {args.command}" + (f" {step}" if isinstance(step, str) and step else ""), code, started, EXIT,
+                                  reason=telemetry.reason_from(_RECENT) if code else "")
 
 
 def _version() -> int:
@@ -253,7 +299,11 @@ def _doctor(settings: config.Settings, args) -> int:
         row(True, "Forward reachable", f"release {release}")
         row(networks == [settings.network_id], "seat token sees exactly its own network", f"{networks}")
     except Exception as exc:  # noqa: BLE001 - doctor reports, it does not crash
-        row(False, "Forward reachable", f"{type(exc).__name__}: {str(exc)[:160]}")
+        detail = f"{type(exc).__name__}: {str(exc)[:160]}"
+        if "401" in str(exc) or "unauthorized" in str(exc).lower():  # after a helper's Repair, the old token is revoked
+            detail += (" -- this Codespace still has the old seat token (a helper's Repair replaces it): Codespaces menu (bottom left) > "
+                       "Stop current codespace, open it again from the claim page, then workshop up and workshop doctor")
+        row(False, "Forward reachable", detail)
     for tool, why in (("docker", ""), ("containerlab", ""), ("sshpass", "netlab checks the routers' SSH with it before configuring them")):
         row(shutil.which(tool) is not None, f"{tool} installed", "" if shutil.which(tool) else why)
     row(lab.netlab_has_netmiko(), "netlab can configure the routers (Netmiko installed beside it)",
@@ -263,10 +313,13 @@ def _doctor(settings: config.Settings, args) -> int:
     try:  # the Docker SDK reports a missing or stopped docker daemon itself
         states = lab.containers()
         running, expected = sum(1 for s in states.values() if s == "running"), lab.node_count(settings.repo_root / "lab" / "topology.yml")
-        detail = f"{running}/{expected} running" if states else "lab not started (workshop up)"
+        built_before = (settings.repo_root / "lab" / "hosts.yml").is_file()  # netlab wrote it: this Codespace had a lab
+        detail = f"{running}/{expected} running" if states else ("gone: " + lab.GONE if built_before else "lab not started yet (workshop up)")
         if states and len(states) != expected:  # a lab built from an older topology: a rebuild picks up the new one
             detail += f" (this lab has {len(states)} nodes, lab/topology.yml has {expected}: workshop reset --to 1)"
-        row(running == expected or not states, "lab containers", detail)
+        elif states and running < expected:
+            detail += ": " + lab.GONE
+        row(running == expected or not (states or built_before), "lab containers", detail)
     except Exception as exc:  # noqa: BLE001
         row(False, "docker", str(exc)[:160])
     if os.environ.get("CODESPACES"):
@@ -278,22 +331,27 @@ def _doctor(settings: config.Settings, args) -> int:
             permission = f"NONE ({exc})"
         row(permission in ("WRITE", "MAINTAIN", "ADMIN"), "you can push to this seat repository",
             permission if permission in ("WRITE", "MAINTAIN", "ADMIN") else f"{permission} -- accept your seat invitation, then reopen this Codespace from the seat repository")
+    if lab_page_url():
+        log(f"  Your lab page: {lab_page_url()}  (not loading? bash .devcontainer/start-ui.sh, wait a minute, reload)")
     log("READY" if ok else "NOT READY -- fix the FAIL lines above")
     return 0 if ok else EXIT["ERROR"]
 
 
 def _up(settings: config.Settings, args) -> int:
-    from workshop import lab
+    from workshop import deploy, lab
 
     banner(settings, "up")
     try:
-        lab.up(settings, log)
-    except lab.LabError as exc:
+        with deploy.lab_lock(settings):  # one bring-up at a time (the page's catch-up and the terminal): never one clearing the other's build
+            lab.up(settings, log)
+    except (lab.LabError, deploy.Refused) as exc:
         log(f"workshop up: {exc}")
         return EXIT["ERROR"]
     log("lab is up at baseline")
     for line in report_.up_close():
         log(line)
+    if lab_page_url():
+        log(f"Your lab page (every step as a button): {lab_page_url()}")
     return 0
 
 
@@ -410,8 +468,10 @@ def _predict(settings: config.Settings, args) -> int:
     inputs = predict.Inputs(root / args.candidate, root / args.requirements, root / args.baseline_requirements, git)
     step = getattr(args, "step", None)
     state = settings.state("steps/predict.json")
+    stopped = settings.state("steps/predict-stopped.json")  # why the last step stopped, so the next one can say it again
     if step == "changeset":
         settings.state("steps").mkdir(exist_ok=True)
+        stopped.unlink(missing_ok=True)
         m = predict.prepare(settings, inputs, log=log)
         m.write(state)
     if step == "changeset" and m.status == predict.PENDING:
@@ -421,6 +481,12 @@ def _predict(settings: config.Settings, args) -> int:
         return 0
     if step in ("run", "check"):
         if not state.is_file():
+            if stopped.is_file():
+                with contextlib.suppress(Exception):
+                    s = json.loads(stopped.read_text())
+                    log(f"The `workshop predict {s['step']}` step stopped ({s['status']}): {s['reason']}")
+                    log(f"  So there is nothing to {step} yet. {_way_forward(s['status'])}")
+                    return EXIT["ERROR"]
             log("nothing to work on yet: run `workshop predict changeset` first")
             return EXIT["ERROR"]
         m = evidence.Manifest.read(state)
@@ -442,10 +508,16 @@ def _predict(settings: config.Settings, args) -> int:
                 return EXIT["ERROR"]
             m = predict.judge(settings, m, inputs.requirements, log=log)
         state.unlink(missing_ok=True)  # finished (judged, or stopped): the evidence below is the result
+        if step == "run":  # a run that comes back here stopped (a finished one returned above): the check step says why
+            stopped.write_text(json.dumps({"step": "run", "status": m.status, "reason": m.reason}))
+        else:
+            stopped.unlink(missing_ok=True)
     elif step != "changeset":
+        stopped.unlink(missing_ok=True)  # the whole prediction in one go (CI, catch-up): an older step's note no longer applies
         m = predict.run(settings, inputs, log=log)
     else:
         state.unlink(missing_ok=True)  # the change set step stopped: write that as the evidence, so the PR says why
+        stopped.write_text(json.dumps({"step": "changeset", "status": m.status, "reason": m.reason}))
     out = Path(args.out)
     m.write(out / "evidence.json")
     with contextlib.suppress(Exception):  # the trail is display only: keeping it never changes the verdict or the exit code
@@ -464,6 +536,8 @@ def _predict(settings: config.Settings, args) -> int:
     (out / "summary.md").write_text(summary)
     _append_summary(summary)
     log(f"{m.status}: {m.reason}")
+    if step in ("changeset", "run"):  # a step that stopped (a finished one returned above): what to do, before anything else is tried
+        log(f"Stopped at `workshop predict {step}`. Don't run the next step yet. {_way_forward(m.status)}")
     with contextlib.suppress(Exception):  # display only: whatever happens below, the verdict above and the exit code stand
         if m.predicted_snapshot_id and m.results:
             log("")
@@ -560,10 +634,7 @@ def _deploy(settings: config.Settings, args) -> int:
         return 0
     if getattr(args, "without_predict", False):
         if step not in ("apply", None) or args.pr or args.evidence or args.with_caveats or getattr(args, "at", None):
-            log("--without-predict goes with `workshop deploy apply --confirm <sha7>` alone: there is no prediction, pull request or caveat to name")
-            return EXIT["ERROR"]
-        if not args.confirm:
-            log("say which candidate you mean to send: --confirm <the first 7 characters of its sha256> (`workshop status` shows it)")
+            log("--without-predict goes with `workshop deploy apply --confirm HASH` alone: there is no prediction, pull request or caveat to name")
             return EXIT["ERROR"]
         try:
             record = deploy.apply_unpredicted(settings, args.confirm, log)
@@ -579,8 +650,17 @@ def _deploy(settings: config.Settings, args) -> int:
     if not (args.pr or args.evidence):
         log("say which change: --pr N (a merged pull request) or --evidence evidence/evidence.json (a local prediction)")
         return EXIT["ERROR"]
-    if step != "render" and not args.confirm:
-        log("say which candidate you reviewed: --confirm <the first 7 characters of its sha256> (predict printed it)")
+    with_caveats = getattr(args, "with_caveats", None) or ""
+    again = f"workshop deploy {step or 'apply'} " + (f"--pr {args.pr}" if args.pr else f"--evidence {args.evidence}") + (
+        " --no-github" if args.no_github else "") + (f" --with-caveats {with_caveats}" if with_caveats else "") + (
+        f" --at {args.at}" if getattr(args, "at", None) else "")
+    if step != "render" and not args.confirm and not args.pr:
+        from workshop.evidence import Manifest
+
+        try:  # the hash to confirm comes from the evidence itself, so the refusal can show the exact command
+            log("NOT DEPLOYED (ERROR): " + deploy.confirm_refusal(None, Manifest.read(Path(args.evidence)).candidate_sha256, "candidate", again))
+        except Exception:  # noqa: BLE001 - no readable evidence: still never a write without --confirm
+            log(f"say which candidate you reviewed: {again} --confirm HASH (HASH: the 7-character hash predict printed)")
         return EXIT["ERROR"]
     try:
         if args.pr:
@@ -589,12 +669,12 @@ def _deploy(settings: config.Settings, args) -> int:
             log(f"  {evidence}")
         else:
             evidence = Path(args.evidence)
-        caveats = [c.strip() for c in args.with_caveats.split(",") if c.strip()]
+        caveats = [c.strip() for c in with_caveats.split(",") if c.strip()]
         if caveats and args.pr:
             log("NOT DEPLOYED (ERROR): caveats are for a local prediction (--evidence): a red pull request cannot merge")
             return EXIT["ERROR"]
         if step == "gates":
-            m = deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            m = deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats, again=again)
             _pre_change_report(settings, m, deploy.GATES_PASSED(m, not args.no_github, caveats), caveats, args.pr)
             src = f"--pr {args.pr}" if args.pr else f"--evidence {args.evidence}"
             log(f"Every gate holds; nothing was sent. Next: workshop deploy render {src} (Forward's change next to r4's own dry run), then apply")
@@ -617,7 +697,7 @@ def _deploy(settings: config.Settings, args) -> int:
                 log(f"NOT SCHEDULED (ERROR): {exc}")
                 return EXIT["ERROR"]
             log(f"Change window {when:%H:%M %Z}. Checking every gate now, so you know it is ready:")
-            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            deploy.check(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats, again=again)
             log(f"Every gate holds now. Nothing is sent before {when:%H:%M}. Then every gate runs again, against Forward's newest")
             log("snapshot and the live routers: if someone changes a router or takes a newer baseline in the meantime, nothing is sent")
             log("(STALE), and you predict again. The approval is for this network, not for whatever it becomes.")
@@ -628,10 +708,10 @@ def _deploy(settings: config.Settings, args) -> int:
                 return EXIT["ERROR"]
             log(f"{datetime.now(deploy.event_tz()):%H:%M:%S}: the window is open. Checking every gate again, then applying:")
         if step == "apply":
-            deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+            deploy.apply(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats, again=again)
             log("Sent and committed on r4" + (" WITH CAVEATS (Predict said FAIL)" if caveats else "") + ". Next: workshop deploy readback")
             return 0
-        deploy.run(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats)
+        deploy.run(settings, evidence, args.confirm, log, check_github=not args.no_github, caveats=caveats, again=again)
     except github.GitHubError as exc:
         log(f"NOT DEPLOYED (ERROR): {exc}")
         return EXIT["ERROR"]
@@ -777,7 +857,7 @@ def _verify_unpredicted(settings: config.Settings, args) -> int:
     if result["outcome"] == "FAIL":
         failed = ", ".join(r["id"] for r in result["rows"] if r["collected"] != "PASS")
         log(f"What this means: Forward found it, but only after the change was live: {failed}. Back it out: `workshop revert plan`,")
-        log("then `workshop revert apply --confirm <hash>`. Predict asks the same questions before any router changes.")
+        log("then `workshop revert apply --confirm HASH`. Predict asks the same questions before any router changes.")
     return 0 if result["outcome"] == "PASS" else EXIT["FAIL"]
 
 
@@ -796,7 +876,7 @@ def _verify(settings: config.Settings, args) -> int:
     if not evidence:
         deployed = settings.state_dir / "deploy.json"
         if not deployed.is_file():
-            log("nothing deployed yet: run the deploy steps first, `workshop deploy gates --pr N --confirm <sha7>` (or pass --evidence)")
+            log("nothing deployed yet: run the deploy steps first, `workshop deploy gates --pr N --confirm HASH` (or pass --evidence)")
             return EXIT["ERROR"]
         evidence = json.loads(deployed.read_text())["evidence"]
     from workshop import show, steps
@@ -1070,7 +1150,7 @@ def _agent(settings: config.Settings, args) -> int:
         log(f"{args.candidate} now holds a change Predict passed. The agent stops here -- a person decides:")
         log(f"  git diff {args.candidate}      # read it")
         log("  commit it on a branch and open a pull request; the forward/predict check judges it again")
-        log("  after review and merge: workshop deploy gates --pr <N> --confirm <sha7>, then render, apply, readback")
+        log("  after review and merge: workshop deploy gates --pr N --confirm HASH, then render, apply, readback")
     else:
         log("no passing change within the budget. Read evidence/agent/agent.json, then take it from here yourself.")
     return EXIT.get(outcome.status, EXIT["ERROR"])
@@ -1130,9 +1210,6 @@ def _revert(settings: config.Settings, args) -> int:
             log(f"revert: MISMATCH (snapshot {result['snapshot']}): " + "; ".join(result["reasons"]) + ".")
             log("The configs may be back, but Forward does not see the same network. Look at the differences above before you change anything else.")
             return EXIT["FAIL"]
-        if not args.confirm:
-            log("say which revert you reviewed: --confirm <the first 7 characters of its hash> (`workshop revert plan` prints it)")
-            return EXIT["ERROR"]
         revert.apply(settings, args.confirm, log)
     except deploy.Refused as exc:
         log(f"NOT REVERTED ({exc.status}): {exc}")
@@ -1412,7 +1489,17 @@ def _status(settings: config.Settings, args) -> int:
         log(line)
     if changes and sha7:
         log(f"  Candidate hash {sha7}   (what --confirm takes)")
+    url = lab_page_url()
+    if url:
+        log(f"  Your lab page  {url}")
     return 0
+
+
+def lab_page_url(port: int = 8765) -> str:
+    """The Your lab page's address in this Codespace (the port forward GitHub makes for it), or "" outside one. Its only other
+    pointer was a pop-up that vanished, and might not come back after a sleep (event morning: "no link to the easy mode")."""
+    name, domain = os.environ.get("CODESPACE_NAME"), os.environ.get("GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN")
+    return f"https://{name}-{port}.{domain}/" if name and domain else ""
 
 
 if __name__ == "__main__":

@@ -83,6 +83,23 @@ def containers() -> dict[str, str]:
     return {c.name: c.status for c in found}
 
 
+GONE = ("Your lab isn't running. A Codespace that slept or restarted loses its routers (your files and Forward are fine). "
+        "Run `workshop up` (3-10 minutes), then the four baseline steps: workshop baseline collect, upload, wait, check.")
+
+
+def require_running(settings: Settings) -> None:
+    """Refuse, with the way back, when the lab's containers are missing or stopped: the event morning showed a Codespace that
+    idled during a talk came back without them, and the next command died on a Docker error."""
+    try:
+        states = containers()
+    except Exception as exc:  # noqa: BLE001 - no docker at all is a different problem, said plainly
+        raise LabError(f"Docker isn't answering ({type(exc).__name__}): wait a minute after the Codespace starts, then try again") from None
+    expected = node_count(settings.repo_root / "lab" / "topology.yml")
+    running = sum(1 for s in states.values() if s == "running")
+    if running < expected:
+        raise LabError(GONE + (f" ({running} of {expected} lab containers running.)" if states else ""))
+
+
 def netlab(settings: Settings, log, *args: str) -> None:
     """Run a netlab command in this process through netlab's own Python entry point (``netsim.cli.<command>.run``), the code
     behind ``netlab <command>`` in a terminal. netlab prints its own progress; a failure ends in SystemExit, turned into LabError."""
@@ -133,6 +150,14 @@ def up(settings: Settings, log) -> None:
     """Start the lab if needed: netlab builds it and configures every router itself. Safe to re-run (a running lab is left as it is)."""
     states = containers()
     if not states:
+        if (lab_dir(settings) / "netlab.lock").exists():
+            # The containers are gone but netlab's files from the last lab are not (a Codespace rebuild, or containers removed):
+            # `netlab up` would refuse ("another lab running in this directory"). netlab clears its own leftovers first.
+            log("the lab's containers are gone but netlab's files from the last one are still here: netlab clears them first ...")
+            try:
+                netlab(settings, log, "down", "--cleanup")
+            except LabError:
+                (lab_dir(settings) / "netlab.lock").unlink(missing_ok=True)  # nothing left to take down: only the lock stood in the way
         log("starting the lab: netlab creates the containers, then configures each router (Netmiko, over SSH) ...")
         netlab(settings, log, "up", "-p", "clab")
     elif any(state != "running" for state in states.values()):

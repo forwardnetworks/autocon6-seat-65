@@ -19,7 +19,7 @@ The [Network Automation Forum reference framework](https://reference.networkauto
 | Step | Block doing the work | The hand-off to the next block |
 |---|---|---|
 | Baseline | Collector → Observability | A tagged snapshot: "what is true now" |
-| Change | Intent | A candidate file in Git |
+| Propose | Intent | A candidate file in Git |
 | Predict | Observability | `evidence.json`: the verdict, the candidate hash, the baseline id |
 | Approve | Orchestrator (with a human) | A merged PR bound to that hash |
 | Deploy | Executor | The same bytes, written to r4 |

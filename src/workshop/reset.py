@@ -101,5 +101,5 @@ def run(settings: Settings, to: int, log) -> None:
     log("")
     if to == 5:
         log("  A fresh baseline makes any earlier prediction stale. To deploy this change now: the predict steps, then")
-        log("  `workshop deploy gates|render|apply|readback --evidence evidence/evidence.json --confirm <sha7> --no-github` (check prints the sha7).")
+        log("  `workshop deploy gates|render|apply|readback --evidence evidence/evidence.json --confirm HASH --no-github` (check prints the sha7).")
     log(f"Ready: you are at the start of exercise {to}. Open docs/exercises/ for it, or the Your lab page.")

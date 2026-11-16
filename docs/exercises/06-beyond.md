@@ -69,14 +69,14 @@ writes the fixed candidate and collects a new baseline).
 2. **Try to deploy it.** Make the scratch run pass: change your requirement's `next_hop` to r2's address
    (`10.255.0.2`) and its id to `ROUTE-VIA-R2`, so the file still differs from `requirements/candidate.yml`. Run the
    three predict steps again (same flags), then
-   `workshop deploy gates --evidence evidence/scratch/evidence.json --no-github --confirm <sha7>`.
+   `workshop deploy gates --evidence evidence/scratch/evidence.json --no-github --confirm HASH`.
    *Expected: `NOT DEPLOYED (STALE): the evidence was judged against different requirements than
    requirements/candidate.yml on this branch`, exit 4. Deploy compares the evidence with `requirements/candidate.yml`'s
    hash, so evidence judged against any other file can't deploy, even a stricter one that passed. (Delete the
    requirement instead and the two files are byte for byte the same: then there is nothing to refuse.)*
 3. **Drift.** Predict the fixed candidate (`workshop predict changeset`, `run`, `check`). Then change r4 by hand:
    `docker exec -it clab-autocon6-r4 Cli`, then `enable`, `configure`, `router bgp 65004`, `address-family ipv4`,
-   `no network 10.20.40.0/24`, `end`. Now `workshop deploy gates --evidence evidence/evidence.json --no-github --confirm <sha7>`.
+   `no network 10.20.40.0/24`, `end`. Now `workshop deploy gates --evidence evidence/evidence.json --no-github --confirm HASH`.
    *Expected: `NOT DEPLOYED (STALE): the routers' configs are not what was collected for the prediction; run the baseline
    steps (`workshop baseline collect` first) and re-run the check`, exit 4.* Put it back with `workshop restore`, then
    the four baseline steps.

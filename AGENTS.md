@@ -6,7 +6,7 @@ are the rules it has to work within, and the tools it can use.
 
 ## The loop
 
-Baseline → Change → Predict → Approve → Deploy → Verify. The intent is in `intent.md`. The machine-checked version
+Baseline → Propose → Predict → Approve → Deploy → Verify. The intent is in `intent.md`. The machine-checked version
 of it is `requirements/candidate.yml`.
 
 ## What an agent may change

@@ -141,7 +141,7 @@ The raw SDK calls are in `examples/predict_by_hand.py`.
 `--pr N` gets the evidence of a merged pull request from GitHub (**GitHub API**: the PR, its check runs, the check's
 artifact). `--evidence evidence/evidence.json --no-github` deploys a local prediction instead: a rehearsal.
 
-### `workshop deploy gates --pr N --confirm <sha7>`
+### `workshop deploy gates --pr N --confirm HASH`
 Every gate, read-only; any one failing stops here:
 - `--confirm` is the first 7 characters of the candidate's hash: you say which change you reviewed;
 - the evidence is a live PASS for this lab and network;
@@ -159,7 +159,7 @@ The candidate is one model of the change, applied twice. This shows both, side b
 
 Then it checks the two diffs change the same lines. If they don't, stop: what Predict judged is not what the router would do.
 
-### `workshop deploy apply --pr N --confirm <sha7>`
+### `workshop deploy apply --pr N --confirm HASH`
 An exclusive lock on the lab, the gates once more, then **NAPALM** on r4: the evidence's lines (the exact bytes Predict
 judged), `load_merge_candidate` → `compare_config` → `commit_config`. Prints the diff the router computed. Writes `deploy.json`.
 
@@ -248,7 +248,7 @@ It serves the **Your lab** tab on port 8765. Its buttons run the same `workshop`
 - `workshop explain`: Predict Assist's summaries of the change and its impact
   (**SDK** `predict_assist.assist_config_diff_summary`, `assist_impact_diff_summary`, `assist_change_set_overview`). If the prediction failed, it
   also asks Forward AI why. The **forward/advice** check runs this.
-- `workshop propose`: **SDK** `predict_assist.assist_change_set_commands`: Forward drafts r4's lines from `intent.md`.
+- `workshop propose`: **SDK** `predict_assist.assist_change_set_commands`: Forward drafts r4's lines from `intent.md`. One way to do the loop's **Propose** step (writing the candidate); ticking prefixes on the Your lab page, or editing the file, are the others.
   Nothing is judged until Predict evaluates it.
 - `workshop agent`: propose → predict → explain, in a loop until the gate passes, stopping before approval.
 - `workshop matrix`: `workshop predict` on every way of retiring r4's advertisements, side by side.
@@ -263,14 +263,14 @@ Read-only. Every prediction you finished on this seat, oldest first: its hash, t
 did not pass, and what moved since the attempt before ("APP-EXISTING FAIL -> PASS"). Kept in the seat's state folder, outside the
 repository. Deploy never reads it: only `evidence/evidence.json`, the newest, can deploy.
 
-### `workshop deploy gates|apply --evidence evidence/evidence.json --no-github --confirm <sha7> --with-caveats ID,ID,...`
+### `workshop deploy gates|apply --evidence evidence/evidence.json --no-github --confirm HASH --with-caveats ID,ID,...`
 A deploy **with caveats**: the one way past a FAIL, for showing that Predict was right. Only a live FAIL (never ERROR, INCONCLUSIVE or
 STALE: nobody knows what those would do), only a local prediction (a red pull request cannot merge), and only when you name every
 failing requirement, exactly; a wrong or partial list is refused and the message names the right one. The gates print the caveats
 loudly, and the deploy record keeps them. `workshop verify` then judges the real network against the *prediction*, probes included:
 if the requirements Predict said would fail did fail, that is a MATCH, and it says "Predict was right".
 
-### `workshop revert plan` / `workshop revert apply --confirm <sha7>` / `workshop revert compare`
+### `workshop revert plan` / `workshop revert apply --confirm HASH` / `workshop revert compare`
 Back out exactly what was deployed. `plan` (read-only) shows the inverse lines and the state they return to: the baseline the change was
 predicted against, which `baseline check` already judged PASS. `apply` needs the revert's hash confirmed, refuses if r4 no longer holds
 what was deployed (then it is a job for `restore`), sends the inverse over NAPALM, and proves the whole network is back to the
@@ -295,9 +295,9 @@ A path starting with `/` runs one of the queries that ship with Forward (reposit
 Lab 2's first step: each lab 1 path search, the Forward intent check it becomes (from `requirements/candidate.yml`),
 and Forward's verdict on the newest baseline. **SDK** `checks.add_check` (once), `checks.get_checks`.
 
-### `workshop deploy apply --without-predict --confirm <sha7>`
+### `workshop deploy apply --without-predict --confirm HASH`
 
 Exercise 2's blind change, on purpose (owner decision): sends `candidate/r4-bgp.eos` with no prediction. The hash,
 scope (r4's BGP only), the lab lock and the drift check still hold; it says PREDICT OVERRIDDEN, opens a change ticket
 (a GitHub issue), and `workshop verify` then judges it after the fact (PASS/FAIL) into that ticket. Back it out with
-`workshop revert plan`, `revert apply --confirm <hash>`, the baseline steps, `revert compare`.
+`workshop revert plan`, `revert apply --confirm HASH`, the baseline steps, `revert compare`.

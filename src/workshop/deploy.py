@@ -72,6 +72,41 @@ class Refused(RuntimeError):
         self.status = status  # STALE | ERROR
 
 
+def confirmed(given: str | None, sha256: str) -> bool:
+    """Does ``--confirm`` name this hash? The first 7 characters or more (readback prints 12), any case, with stray quotes or
+    angle brackets from a copied placeholder ignored. Never fewer than 7: the point is that a person read the hash."""
+    g = (given or "").strip().strip("'\"<>").lower()
+    return len(g) >= 7 and sha256.lower().startswith(g)
+
+
+def predict_again(m: Manifest, *, baseline: bool) -> str:
+    """How to get a prediction made against today's network: the baseline steps first when the routers changed, then the
+    pull request's check again (a merged PR keeps its run: re-running it predicts against the newest baseline), or the local
+    predict steps."""
+    first = "First the four baseline steps: `workshop baseline collect`, `upload`, `wait`, `check`. Then " if baseline else "Then "
+    pr = (m.git or {}).get("pr")
+    if pr:
+        return (first + f"re-run PR #{pr}'s check: on GitHub, PR #{pr} > Checks > forward/predict > Re-run all jobs. When it is green, "
+                f"`workshop deploy gates --pr {pr} --confirm {m.candidate_sha256[:7]}` again.")
+    return first + "predict again: `workshop predict changeset`, `run`, `check`, and deploy the new evidence."
+
+
+def confirm_refusal(given: str | None, sha256: str, what: str, command: str) -> str:
+    """The refusal for a missing or wrong ``--confirm``: why, and the exact command to run (checked by the person, then copied)."""
+    sha7 = sha256[:7]
+    g = (given or "").strip()
+    if not g:
+        why = f"say which {what} you reviewed with --confirm and its hash: {sha7}."
+    elif g.strip("'\"<>").lower() in ("sha7", "hash", "n"):
+        why = f"--confirm takes the hash itself ({sha7}), not the word in the instructions."
+    elif g.isdigit() and len(g) >= 5:
+        why = f"--confirm {g} looks like your Forward network's or a snapshot's number; --confirm takes the {what}'s hash: {sha7}."
+    else:
+        why = (f"--confirm {g} is not this {what}'s hash ({sha7}). If you changed it after reading the hash, read it again "
+               f"(`workshop status` or the step that printed it) before you confirm.")
+    return f"{why}\n  Check it is the one you reviewed, then: {command} --confirm {sha7}"
+
+
 @contextmanager
 def lab_lock(settings: Settings):
     path = settings.state("lab.lock")
@@ -135,19 +170,21 @@ def gates(settings: Settings, m: Manifest, fwd: Forward, *, check_github: bool =
     reqs = requirements.load(settings.repo_root / "requirements" / "candidate.yml", root=settings.repo_root)
     if reqs.sha256 != m.requirements_sha256:
         raise Refused("STALE", "the evidence was judged against different requirements than requirements/candidate.yml on this branch "
-                               "(it changed since the prediction, or the prediction used another file): re-run the check")
+                               "(it changed since the prediction, or the prediction used another file). " + predict_again(m, baseline=False))
     if check_github and m.git.get("pr"):
         pr = github.merged_pr(int(m.git["pr"]))
         if pr.head_sha != m.git.get("head_sha"):
             raise Refused("STALE", f"PR #{pr.number} was merged at {pr.head_sha[:7]}, but the evidence is for {str(m.git.get('head_sha'))[:7]}")
         if not github.check_passed(pr.head_sha):
             raise Refused("ERROR", f"the forward/predict check did not pass on PR #{pr.number}'s final commit")
-    latest = fwd.latest_baseline()
-    if latest is None or str(latest.id) != m.baseline_snapshot_id:
-        raise Refused("STALE", f"a newer snapshot ({getattr(latest, 'id', None)}) exists than the one predicted against ({m.baseline_snapshot_id}); re-run the check")
     live = fingerprint.of(lab.live_configs(settings))
     if live != m.baseline_fingerprint:
-        raise Refused("STALE", "the routers' configs are not what was collected for the prediction; run the baseline steps (`workshop baseline collect` first) and re-run the check")
+        raise Refused("STALE", "the routers' configs are not the ones this prediction was made from (rebuilt with `workshop up`, or "
+                               "changed since). " + predict_again(m, baseline=True))
+    latest = fwd.latest_baseline()
+    if latest is None or str(latest.id) != m.baseline_snapshot_id:
+        raise Refused("STALE", f"a newer snapshot ({getattr(latest, 'id', None)}) exists than the one predicted against "
+                               f"({m.baseline_snapshot_id}). " + predict_again(m, baseline=False))
 
 
 def GATES_PASSED(m: Manifest, check_github: bool, caveats: list[str] | None = None) -> list[str]:
@@ -164,12 +201,12 @@ def GATES_PASSED(m: Manifest, check_github: bool, caveats: list[str] | None = No
     return out
 
 
-def check(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True,
-          caveats: list[str] | None = None) -> Manifest:
+def check(settings: Settings, evidence: Path, confirm: str | None, log: Callable[[str], None], *, check_github: bool = True,
+          caveats: list[str] | None = None, again: str | None = None) -> Manifest:
     """``workshop deploy gates``: every gate, read-only. Nothing is sent to a router."""
     m = Manifest.read(evidence)
-    if confirm != m.candidate_sha256[:7]:
-        raise Refused("ERROR", f"to deploy, confirm the candidate you reviewed: --confirm {m.candidate_sha256[:7]}")
+    if not confirmed(confirm, m.candidate_sha256):
+        raise Refused("ERROR", confirm_refusal(confirm, m.candidate_sha256, "candidate", again or "workshop deploy apply --evidence " + str(evidence)))
     with Forward(settings) as fwd:
         log("checking the gates (any one failing stops the deploy before anything is written) ...")
         gates(settings, m, fwd, check_github=check_github, caveats=caveats)
@@ -181,12 +218,12 @@ def check(settings: Settings, evidence: Path, confirm: str, log: Callable[[str],
     return m
 
 
-def apply(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True,
-          caveats: list[str] | None = None) -> dict:
+def apply(settings: Settings, evidence: Path, confirm: str | None, log: Callable[[str], None], *, check_github: bool = True,
+          caveats: list[str] | None = None, again: str | None = None) -> dict:
     """``workshop deploy apply``: the gates once more (they must hold at the moment of the write, not a minute ago), then the
     evidence's lines to r4 over NAPALM. Writes deploy.json. ``workshop deploy readback`` confirms it on the router."""
     with lab_lock(settings):
-        m = check(settings, evidence, confirm, log, check_github=check_github, caveats=caveats)
+        m = check(settings, evidence, confirm, log, check_github=check_github, caveats=caveats, again=again)
         lines = candidate.normalize(m.candidate_text)
         show.napalm(log, candidate.DEVICE, f"{len(lines)} lines, the exact bytes Predict judged: {show.NAPALM_APPLY}")
         started = datetime.now(UTC)
@@ -225,8 +262,8 @@ def apply_unpredicted(settings: Settings, confirm: str, log: Callable[[str], Non
             cand = candidate.load(settings.repo_root / "candidate" / "r4-bgp.eos")
         except candidate.CandidateError as exc:
             raise Refused("ERROR", f"the candidate is out of scope (only r4's BGP advertisements): {exc}") from None
-        if confirm != cand.sha256[:7]:
-            raise Refused("ERROR", f"to deploy, confirm the candidate you mean to send: --confirm {cand.sha256[:7]}")
+        if not confirmed(confirm, cand.sha256):
+            raise Refused("ERROR", confirm_refusal(confirm, cand.sha256, "candidate", "workshop deploy apply --without-predict"))
         if len(cand.lines) <= len(candidate.HEADER):
             raise Refused("ERROR", "candidate/r4-bgp.eos holds no change to send")
         try:
@@ -299,10 +336,10 @@ def readback(settings: Settings, log: Callable[[str], None]) -> dict:
     return record
 
 
-def run(settings: Settings, evidence: Path, confirm: str, log: Callable[[str], None], *, check_github: bool = True,
-        caveats: list[str] | None = None) -> dict:
+def run(settings: Settings, evidence: Path, confirm: str | None, log: Callable[[str], None], *, check_github: bool = True,
+        caveats: list[str] | None = None, again: str | None = None) -> dict:
     """apply, then readback (the lab page's catch-up runs this; the exercises run the steps)."""
-    apply(settings, evidence, confirm, log, check_github=check_github, caveats=caveats)
+    apply(settings, evidence, confirm, log, check_github=check_github, caveats=caveats, again=again)
     record = readback(settings, log)
     log("")
     approved = "the pull request merged and its check green" if check_github and Manifest.read(evidence).git.get("pr") else "no pull request was involved (a local rehearsal)"

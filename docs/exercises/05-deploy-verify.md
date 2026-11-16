@@ -15,23 +15,23 @@ Make sure you are on `main` (bottom-left; deleting the local branch in the last 
 The green **forward/predict** check's summary (PR → **Details** → **Summary**) has all four commands written out with
 your values, ready to copy. They look like this:
 ```
-workshop deploy gates --pr <N> --confirm <sha7>
-workshop deploy render --pr <N>
-workshop deploy apply --pr <N> --confirm <sha7>
+workshop deploy gates --pr N --confirm HASH
+workshop deploy render --pr N
+workshop deploy apply --pr N --confirm HASH
 workshop deploy readback
 ```
 
 | Placeholder | What it is | Example | Where it comes from |
 |---|---|---|---|
-| `<N>` | your merged pull request's number | `4` | the PR's title on GitHub (`#4`) |
-| `<sha7>` | the first 7 characters of the candidate's sha256: the hash of the exact bytes Predict judged. Not a git commit | `3f9a1c2` | the check summary, or `workshop predict check` |
+| `N` | your merged pull request's number | `4` | the PR's title on GitHub (`#4`) |
+| `HASH` | the first 7 characters of the candidate's sha256: the hash of the exact bytes Predict judged. Not a git commit, and not your Forward network's number | `3f9a1c2` | the check summary, `workshop status`, or `workshop predict check`. Type the characters themselves, no `<` `>`. Get it wrong and the refusal prints the exact command to run |
 
 `gates` and `apply` need both flags. `render` needs only `--pr`. `readback` takes none: it reads what the last apply sent.
 Four steps:
 
 **1. Gates.** Every check, and nothing sent:
 ```
-workshop deploy gates --pr <N> --confirm <sha7>
+workshop deploy gates --pr N --confirm HASH
 ```
 It fetches the check's evidence from GitHub, then confirms, one line each: the evidence is a PASS for this lab; the
 candidate and requirements are the ones predicted; the PR is merged with its check green on that commit; your baseline is
@@ -41,7 +41,7 @@ it refuses and prints the value it expects.
 **2. Render: one change, two applications.** This is the dry run that shows Forward's model and the real router read
 your lines the same way, before anything is written.
 ```
-workshop deploy render --pr <N>
+workshop deploy render --pr N
 ```
 The same lines, applied two ways, side by side:
 - **inside Forward**: the commands the change set holds for r4, and r4's configuration in Forward's model before and after;
@@ -53,7 +53,7 @@ didn't, that's the moment to stop: what Predict judged would not be what the rou
 
 **3. Apply.**
 ```
-workshop deploy apply --pr <N> --confirm <sha7>
+workshop deploy apply --pr N --confirm HASH
 ```
 The gates once more (they must hold at the moment of the write), then the same session for real: load, compare, and
 `commit_config`. A line the router refuses aborts the whole session, so a change never half applies. Nobody approves it
@@ -88,7 +88,7 @@ docker exec clab-autocon6-r4 Cli -p 15 -c "configure session preview abort"
 
 **In a change window.** A real change goes in at an agreed time, not the moment it's approved. Try it on a later
 loop (or read it now): **Apply at the window** on the Your lab page, or
-`workshop deploy apply --pr <N> --confirm <sha7> --at HH:MM` (the room's time; the page allows up to 15 minutes ahead). It checks every gate now, waits, and checks them all
+`workshop deploy apply --pr N --confirm HASH --at HH:MM` (the room's time; the page allows up to 15 minutes ahead). It checks every gate now, waits, and checks them all
 again when the window opens, against Forward's newest snapshot and the live routers. Change a router in between
 (`workshop link down` in a second terminal) and nothing is sent: the approval was for the network Forward predicted, not
 whatever it has become.
@@ -106,7 +106,7 @@ workshop verify compare     # every requirement on that model, verdict by verdic
 network, and "predicted PASS, collected PASS: as predicted"), then **what really changed in the routing tables** between
 the baseline and now, then **What this means**. A `DIFFERENT from the prediction` line is the thing to look for.
 
-The last line should start `verify: MATCH`. That closes the loop: Baseline → Change → Predict → Approve → Deploy → Verify.
+The last line should start `verify: MATCH`. That closes the loop: Baseline → Propose → Predict → Approve → Deploy → Verify.
 
 Don't expect the network to look different. Retiring stale advertisements removes no live route, so every path and
 route is the same as before. That's the good result.

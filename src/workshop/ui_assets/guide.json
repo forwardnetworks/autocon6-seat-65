@@ -604,7 +604,7 @@
     }
    ],
    "run": [],
-   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. Use this if Deploy keeps saying STALE or the routers drifted. This restarts the loop from the Change step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. Use this if Deploy keeps saying STALE or the routers drifted. This restarts the loop from the Propose step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
    "data": [
     {
      "topic": "diff",
@@ -621,13 +621,13 @@
      "label": "Gates",
      "levels": [
       "Every safety check, and nothing is sent.",
-      "You say which change you reviewed with `--confirm <first 7 characters of the candidate hash>`. The evidence must be a live PASS for this lab, the candidate and requirements must be the ones predicted, the pull request must be merged with a green check at that commit, your baseline must still be the newest, and the routers must still match it (nobody changed one by hand).",
+      "You say which change you reviewed with `--confirm HASH` (HASH: the first 7 characters of the candidate hash). The evidence must be a live PASS for this lab, the candidate and requirements must be the ones predicted, the pull request must be merged with a green check at that commit, your baseline must still be the newest, and the routers must still match it (nobody changed one by hand).",
       "Try `--confirm 0000000`: it refuses and prints the value it expects."
      ],
      "hints": [
       "You need the pull request's number and the 7 characters.",
       "Both are at the top of the green check's summary.",
-      "`workshop deploy gates --pr <N> --confirm <sha7>`."
+      "`workshop deploy gates --pr N --confirm HASH`."
      ],
      "step": "deploy gates"
     },
@@ -642,7 +642,7 @@
      "hints": [
       "It only needs the pull request's number.",
       "It is a dry run: nothing on r4 changes.",
-      "`workshop deploy render --pr <N>`."
+      "`workshop deploy render --pr N`."
      ],
      "step": "deploy render"
     },
@@ -657,7 +657,7 @@
      "hints": [
       "This is the one step that writes. You type the hash.",
       "A refusal means a gate failed: read which one.",
-      "`workshop deploy apply --pr <N> --confirm <sha7>`."
+      "`workshop deploy apply --pr N --confirm HASH`."
      ],
      "step": "deploy apply"
     },
@@ -741,7 +741,7 @@
      "cmd": "workshop verify compare"
     }
    ],
-   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. This restarts the loop from the Change step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
+   "catchup": "Makes sure the lab is up, puts r4's advertisements back to the baseline and takes a fresh baseline. This restarts the loop from the Propose step: your merged change stays on main, and the new baseline makes the old approval stale. Make your next change on a new branch. Your candidate file is cleared.",
    "data": [
     {
      "topic": "diff",

@@ -2,24 +2,24 @@
 
 Your own lab: four routers, a client and a service (plus four more hosts behind r2 and r3), and a Forward network that models them.
 
-**The loop:** Baseline → Change → Predict → Approve → Deploy → Verify.
+**The loop:** Baseline → Propose → Predict → Approve → Deploy → Verify.
 
 | Step | Where | Command / action |
 |---|---|---|
 | 0. Check your setup | Codespace terminal | `workshop doctor` |
 | 1. Start the lab | Codespace terminal | `workshop up` (netlab builds and configures it) |
 | 2. Baseline | Codespace terminal | `workshop baseline collect`, `upload`, `wait`, `check` |
-| 3. Change | Editor → `candidate/r4-bgp.eos` | edit, commit on a branch, open a pull request |
+| 3. Propose | Editor → `candidate/r4-bgp.eos` | edit, commit on a branch, open a pull request |
 | 4. Predict | GitHub → your pull request (or the terminal) | read the **forward/predict** check (or `workshop predict changeset`, `run`, `check`) |
 | 5. Approve | GitHub | merge only a green check |
-| 6. Deploy | Codespace terminal | `git pull`, then `workshop deploy gates`, `render`, `apply`, `readback` (with `--pr <number> --confirm <sha7>`) |
+| 6. Deploy | Codespace terminal | `git pull`, then `workshop deploy gates`, `render`, `apply`, `readback` (with `--pr N --confirm HASH`) |
 | 7. Verify | Codespace terminal | `workshop verify probe`, `collect`, `upload`, `wait`, `compare` |
 
 Each step does one thing and prints the real call it makes. [What each command really does](docs/exercises/commands.md).
 
 
 The goal is written down in `intent.md`. The tests that prove it are in `requirements/`. The step-by-step exercises are in
-[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next. Something not working? See [`docs/exercises/stuck.md`](docs/exercises/stuck.md). Want the story behind each exercise? The slides are on your seat page. Wondering where each step fits in the [NAF Framework](https://reference.networkautomation.forum/Framework/Framework/)? See [`docs/exercises/framework.md`](docs/exercises/framework.md).
+[`docs/exercises/`](docs/exercises/README.md). The **Your lab** tab (port 8765) shows where you are and what to do next. Lost it? `workshop status` prints its address (or **Ports** tab, port 8765, the globe icon). Something not working? See [`docs/exercises/stuck.md`](docs/exercises/stuck.md). Want the story behind each exercise? The slides are on your seat page. Wondering where each step fits in the [NAF Framework](https://reference.networkautomation.forum/Framework/Framework/)? See [`docs/exercises/framework.md`](docs/exercises/framework.md).
 
 ## Forward AI (optional)
 

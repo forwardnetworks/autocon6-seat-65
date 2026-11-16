@@ -61,14 +61,14 @@ real life you'd also require a second reviewer. The repository only allows the m
 
 *On github.com instead:* the PR's **Conversation** tab, the green **Squash and merge** button at the bottom, then
 **Confirm squash and merge**. Then in your Codespace: `git switch main` and `git pull`.
-*Hold My Beer (terminal):* `gh pr merge <N> --squash`, then `git switch main && git pull`. (`--squash` matters: this
+*Hold My Beer (terminal):* `gh pr merge N --squash` (N: your PR number), then `git switch main && git pull`. (`--squash` matters: this
 repository refuses plain merge commits.)
 
 ### What you just proved
 
 The only way to merge is a green check, so approval is a person looking at evidence and not a hunch. That holds no matter who wrote the change or when.
 
-**Behind?** No red PR of your own? From `main`, make the fix on a new branch: tick only the two stale prefixes on the Your lab page's Change stage and press **Open pull request** (it makes the branch for you), or `git switch -c fix-it`, edit, commit, push, `gh pr create --fill`. Merge it when it is green.
+**Behind?** No red PR of your own? From `main`, make the fix on a new branch: tick only the two stale prefixes on the Your lab page's Propose stage and press **Open pull request** (it makes the branch for you), or `git switch -c fix-it`, edit, commit, push, `gh pr create --fill`. Merge it when it is green.
 
 ## Finished early?
 

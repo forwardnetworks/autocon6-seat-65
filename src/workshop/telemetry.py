@@ -76,9 +76,23 @@ def event(kind: str, cmd: str, **fields) -> dict:
     return out
 
 
-def report_workshop(command: str, exit_code: int, started: float, statuses: dict[str, int]) -> None:
+MAX_REASON = 200
+# The line that says why a step stopped: the CLI's refusal and result lines (the helpers' desk shows it beside the result word).
+_REASON = re.compile(r"^(NOT [A-Z]+ \(|READBACK FAILED|(PASS|FAIL|ERROR|STALE|INCONCLUSIVE|MISMATCH)[: ]|workshop [a-z]+( [a-z]+)?: |"
+                     r"The `workshop |Stopped at |(baseline|verify|revert|predict): )")
+
+
+def reason_from(lines: list[str]) -> str:
+    """The last line that says why, from what the command printed; else its last line. Masked and clipped."""
+    lines = [line.strip() for line in lines if line and line.strip()]
+    pick = next((line for line in reversed(lines) if _REASON.match(line)), lines[-1] if lines else "")
+    return redact(pick)[:MAX_REASON]
+
+
+def report_workshop(command: str, exit_code: int, started: float, statuses: dict[str, int], reason: str = "") -> None:
     status = next((name for name, code in statuses.items() if code == exit_code), "OK" if exit_code == 0 else str(exit_code))
-    send([event("workshop", command, exit=exit_code, ms=int((time.time() - started) * 1000), status=status)])
+    send([event("workshop", command, exit=exit_code, ms=int((time.time() - started) * 1000), status=status,
+                reason=redact(reason)[:MAX_REASON] if exit_code != 0 else "")])
 
 
 def _main(argv: list[str]) -> int:

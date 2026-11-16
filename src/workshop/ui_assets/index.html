@@ -613,7 +613,7 @@ function renderGuide(s, key) {
       <div class="note muted">This only edits the file. Nothing reaches a router. To predict it as the pipeline does, open a pull request from the next step (or commit it yourself, as the exercise shows).</div></div>`;
   }
   if (key === "deploy") {
-    extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Change</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
+    extra = `<div class="gsec"><h3>Deploy</h3><div class="muted">Candidate hash to type: look at the <b>Propose</b> step or the green check. It starts with <code>${esc((s.candidate?.sha256 || "").slice(0, 2))}…</code></div>
       <div class="runrow"><input type="text" id="dep-pr" size="8" placeholder="PR number" inputmode="numeric" value="${esc(depPr)}"> <input type="text" id="dep-sha" size="12" placeholder="first 7 of the hash" maxlength="7" autocomplete="off" spellcheck="false" value="${esc(depSha)}"> </div>
       <div class="runrow">${[["deploy gates", "1. Gates"], ["deploy render", "2. Render"], ["deploy apply", "3. Apply"], ["deploy readback", "4. Read back"]].map(([st, lb]) => `<button class="dep-step" data-step="${st}" ${s.job && !s.job.done ? "disabled" : ""}>${lb}</button>`).join(" ")}</div>
       <div class="runrow"><span class="muted">Or in a change window:</span> <input type="time" id="dep-at" value="${esc(depAt)}"> <button id="dep-at-go" ${s.job && !s.job.done ? "disabled" : ""}>Apply at the window</button></div>

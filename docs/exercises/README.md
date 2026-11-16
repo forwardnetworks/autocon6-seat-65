@@ -2,7 +2,7 @@
 
 Monday, November 16, 2026 · 9:00 AM–1:00 PM · hands-on
 
-**Baseline → Change → Predict → Approve → Deploy → Verify**
+**Baseline → Propose → Predict → Approve → Deploy → Verify**
 
 | Time | Section | Exercise | Checkpoint |
 |---|---|---|---|
@@ -22,7 +22,7 @@ The [Network Automation Forum framework](https://reference.networkautomation.for
 | Step | Framework block | What does the work here |
 |---|---|---|
 | Baseline | Collector → Observability | Forward's headless collector, then Forward's model and the requirements |
-| Change | Intent | `candidate/r4-bgp.eos` and the requirements, in Git |
+| Propose | Intent | `candidate/r4-bgp.eos` and the requirements, in Git |
 | Predict | Observability | Forward Predict, judged against the requirements |
 | Approve | Orchestrator (with a person) | The pull request and its forward/predict check |
 | Deploy | Executor | NAPALM, sending the exact bytes Predict judged |
@@ -39,7 +39,7 @@ line on r4 takes a route away from r2, r3 and r1 (two hops away) until the chang
 
 Today you put a test stage in front of the deploy. It asks what the **network** will do after the change, using a model
 Forward builds from the real configs, before any router is touched. The lab is small, but the loop is the one you would run
-on a real change: **Baseline → Change → Predict → Approve → Deploy → Verify**.
+on a real change: **Baseline → Propose → Predict → Approve → Deploy → Verify**.
 
 **Why it's a closed loop.** Most change automation is open-loop: push the change, then find out from monitoring or
 from users. Here each stage hands the next one a piece of evidence, and the last stage checks the first stage's

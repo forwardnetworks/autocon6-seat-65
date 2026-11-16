@@ -251,11 +251,11 @@ def status_lines(baseline: dict[str, Any] | None, deploy: dict[str, Any] | None,
         out.append(f"  Baseline  done      snapshot {baseline.get('snapshot')}, requirements {report}   [Collector + Observability]")
     else:
         out.append("  Baseline  not yet   run `workshop baseline collect`   [Collector + Observability]")
-    out.append(f"  Change    {'written' if candidate_changes else 'empty':<9} candidate/r4-bgp.eos has {candidate_changes} change line(s)   [Intent]")
+    out.append(f"  Propose   {'written' if candidate_changes else 'empty':<9} candidate/r4-bgp.eos has {candidate_changes} change line(s)   [Intent]")
     if deploy:
         out.append(f"  Deploy    done      {max(len(deploy.get('lines', [])) - 2, 0)} change(s) applied to r4 at {str(deploy.get('finished_at', ''))[11:19]} UTC   [Executor]")
     else:
-        out.append("  Deploy    not yet   needs a merged pull request and `--confirm <sha7>`   [Executor]")
+        out.append("  Deploy    not yet   needs a merged pull request and `--confirm HASH`   [Executor]")
     if verify:
         out.append(f"  Verify    {verify.get('outcome', '?'):<9} post-change snapshot {verify.get('post_snapshot_id', '-')}   [Collector + Observability]")
     else:
@@ -287,4 +287,5 @@ def by_hand_lines(env: dict[str, str]) -> list[str]:
 def up_close() -> list[str]:
     return ["", "What this means: netlab built the nodes (four cEOS routers, the client, the service, and four more hosts behind r2 and r3) and configured each router",
             "(Netmiko, from lab/topology.yml and lab/*.j2). Look at it: `netlab status` (in lab/), `containerlab inspect --all`, or `docker exec -it clab-autocon6-r1 Cli` (then `enable`,",
-            "`show ip bgp summary`). Next: `workshop baseline collect` starts giving Forward a model of this network."]
+            "`show ip bgp summary`). Next: the four baseline steps, `workshop baseline collect`, `upload`, `wait`, `check`. Always, after any",
+            "`workshop up`: these are new routers, and a prediction or deploy made against the old baseline is refused (STALE) until you do."]

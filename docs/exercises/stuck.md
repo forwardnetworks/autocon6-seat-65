@@ -16,15 +16,19 @@ Which N? Pick the exercise you want to start again:
 | 5 | A fresh baseline, and the fixed change (retire the two stale ones), ready for the predict steps and a local deploy |
 
 The candidate is written but not committed. A fresh baseline makes any earlier prediction stale, so after `--to 5`
-run the predict steps, then deploy with `--evidence evidence/evidence.json --confirm <sha7> --no-github` in place of `--pr`
+run the predict steps, then deploy with `--evidence evidence/evidence.json --confirm HASH --no-github` in place of `--pr`
 (the end of the reset output prints the full commands).
 
 Find the line that looks like yours. Most fixes are one command. Run `workshop status` any time to see where you are in the loop and the next command.
 
 | You see | What it means | What to do |
 |---|---|---|
-| `verify` says **FAIL** right after **Deploy without Predict** | That is the lesson: the blind change broke the service, and Forward found it afterwards | Back it out: `workshop revert plan`, `workshop revert apply --confirm <the hash it printed>`, the four baseline steps, then `workshop revert compare` (MATCH). Then empty the candidate (Change stage, nothing ticked, Write candidate) |
+| `verify` says **FAIL** right after **Deploy without Predict** | That is the lesson: the blind change broke the service, and Forward found it afterwards | Back it out: `workshop revert plan`, `workshop revert apply --confirm HASH` (the hash `revert plan` printed), the four baseline steps, then `workshop revert compare` (MATCH). Then empty the candidate (Propose stage, nothing ticked, Write candidate) |
 | GitHub shows **"Oh no, something unexpected went wrong"** for your Codespace | GitHub's side; its status page failed while the Codespace was starting | Click **Restart and reconnect to codespace** on that page. It takes a minute or two. Your files are kept; run `workshop up` again if your lab was running |
+| Any step says **"Your lab isn't running"**, or `workshop probe` fails after a break | Your Codespace slept (about 30 minutes idle) and came back without its routers. Your files and Forward are fine | `workshop up` (3-10 minutes), then the four baseline steps: `workshop baseline collect`, `upload`, `wait`, `check`. Then carry on |
+| `deploy gates` says **STALE** after you merged, and you had run `workshop up` | The prediction was made on the routers before the rebuild | The four baseline steps; then on GitHub, your PR > **Checks** > forward/predict > **Re-run all jobs**; when it is green, `deploy gates` again (the refusal prints the command) |
+| `command not found` after typing a button's label (`Retire …`, `Write candidate`) | The labels are buttons on the **Your lab** page, not commands | Click it on the page, or run the command shown under the button |
+| Where is the **Your lab** page? (the pop-up went away) | It is a page in your Codespace, on port 8765 | `workshop status` prints its address: open it in a browser tab and keep it. Or: **Ports** tab at the bottom, port **8765**, the globe icon |
 | The **Your lab** pane is blank, or there is no Your lab page | The page is running, but VS Code's built-in browser pane often can't show it | Open the **Ports** tab at the bottom, click the globe icon beside port **8765**, and keep that browser tab open. If there is no port 8765, run `bash .devcontainer/start-ui.sh` |
 | You pressed **Delete codespace** (or it was deleted) | The Codespace and the lab in it are gone. Anything you merged is safe on GitHub; uncommitted or unpushed work is lost | Reopen from your seat page (it makes a new Codespace), then `workshop up` and the baseline steps (`workshop baseline collect`, `upload`, `wait`, `check`) |
 | `git push` (or **Sync Changes**) to `main` is rejected: "push declined due to repository rule violations" | `main` only takes changes through a pull request | Your commit is fine. Put it on a branch: use the lab page's **Open pull request**, or `git switch -c change-1 && git push -u origin HEAD`, then open the PR |

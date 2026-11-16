@@ -311,7 +311,7 @@ class Jobs:
         if step == "deploy unpredicted":  # Predict overridden, on purpose (exercise 2's first part): only the hash of what is sent
             confirm = str(params.get("confirm", "")).strip().lower()
             if not SHA7.match(confirm):
-                raise ValueError("type the first 7 characters of the candidate's hash (the Change step shows it) to confirm")
+                raise ValueError("type the first 7 characters of the candidate's hash (the Propose step shows it) to confirm")
             return ["deploy", "apply", "--without-predict", "--confirm", confirm]
         if step in ("revert plan", "revert compare"):
             return step.split()
@@ -698,9 +698,9 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
     else:
         out.append(stage("baseline", "Baseline", "todo", "no baseline yet", "workshop baseline collect, upload, wait, check"))
     if cand.get("ok"):
-        out.append(stage("change", "Change", "done", f"{len(cand['changes'])} line(s) in candidate/r4-bgp.eos", "edit, commit, open a PR"))
+        out.append(stage("change", "Propose", "done", f"{len(cand['changes'])} line(s) in candidate/r4-bgp.eos", "edit, commit, open a PR"))
     else:
-        out.append(stage("change", "Change", "active", (cand.get("problems") or ["edit the candidate"])[0], "edit candidate/r4-bgp.eos"))
+        out.append(stage("change", "Propose", "active", (cand.get("problems") or ["edit the candidate"])[0], "edit candidate/r4-bgp.eos"))
     if m and base and m.baseline_snapshot_id and str(base.get("snapshot")) != str(m.baseline_snapshot_id):
         out.append(stage("predict", "Predict", "todo", "that prediction was against an earlier baseline", "workshop predict changeset, run, check, or the PR check"))
     elif m and cand.get("sha256") != m.candidate_sha256:
@@ -718,7 +718,7 @@ def _stages(lab, base, cand, m, prs, deployed, verified) -> list[dict[str, str]]
         out.append(stage("approve", "Approve", "active" if check != "FAILURE" else "failed", f"PR #{pr['number']} open: {check_words(check)}", "merge only a green check"))
     else:
         out.append(stage("approve", "Approve", "todo", "no pull request yet", "open a pull request"))
-    hint = "workshop deploy gates, render, apply, readback --pr N --confirm <sha7>"
+    hint = "workshop deploy gates, render, apply, readback --pr N --confirm HASH"
     if not deployed:
         out.append(stage("deploy", "Deploy", "todo", "not deployed", hint))
     elif deployed.get("predicted") is False:  # Predict overridden: the old way, shown on purpose; never "done"

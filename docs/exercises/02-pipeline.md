@@ -25,7 +25,7 @@ let Forward tell you what happened. You'll undo it at the end.
    itself. *Page:* the **Deploy** stage, **Turn my path searches into intent checks**. *Terminal:* `workshop intent`.
    You'll see each path search, the check it becomes (*Existential*: 8080 gets through, through r2; *Isolation*: 2222
    stays blocked) and Forward's verdict on your baseline: PASS. These are what will judge your next change.
-1. **The change.** *I'm Too Young to Die:* the **Change** stage, tick **all three** prefixes, **Write
+1. **The change.** *I'm Too Young to Die:* the **Propose** stage, tick **all three** prefixes, **Write
    candidate/r4-bgp.eos**. *Hold My Beer:* add the three lines yourself:
    ```
          no network 10.20.20.0/24
@@ -33,8 +33,8 @@ let Forward tell you what happened. You'll undo it at the end.
          no network 10.20.40.0/24
    ```
    Don't commit it. It looks finished: all three statements, valid EOS.
-2. **Deploy it, no questions asked.** *Page:* the **Deploy** stage, type the candidate's hash (the Change stage shows
-   it), **Deploy without Predict**. *Terminal:* `workshop deploy apply --without-predict --confirm <sha7>`. It says
+2. **Deploy it, no questions asked.** *Page:* the **Deploy** stage, type the candidate's hash (the Propose stage shows
+   it), **Deploy without Predict**. *Terminal:* `workshop deploy apply --without-predict --confirm HASH`. It says
    **PREDICT OVERRIDDEN** and opens a **change ticket**: a GitHub issue in your repository (**Issues** tab).
    Then **4. Read back** (or `workshop deploy readback`).
 3. **Find out.** The five verify steps (Verify stage, or `workshop verify probe`, `collect`, `upload`, `wait`,
@@ -42,9 +42,9 @@ let Forward tell you what happened. You'll undo it at the end.
    PATH-SERVICE. Open the change ticket: Forward's verdict is there, with its intent checks before and after and the
    sites that lost the Service. All true. All after the customers noticed.
 4. **Back it out.** **Revert: plan** (or `workshop revert plan`), type the hash it prints, **Revert: apply**
-   (`workshop revert apply --confirm <sha7>`), the four baseline steps, then **Revert: compare**: **MATCH**, and the
+   (`workshop revert apply --confirm HASH`), the four baseline steps, then **Revert: compare**: **MATCH**, and the
    backout lands in the same ticket.
-5. **Empty the candidate** for what comes next: the Change stage with nothing ticked, **Write candidate/r4-bgp.eos**
+5. **Empty the candidate** for what comes next: the Propose stage with nothing ticked, **Write candidate/r4-bgp.eos**
    (or `git restore candidate/r4-bgp.eos`).
 
 **What you just learned:** every answer Forward gave was true and useful, and every one came too late. The rest of

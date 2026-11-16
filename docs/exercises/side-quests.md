@@ -179,12 +179,12 @@ proved right on the real network. Then you back it out the safe way.
 
 ```
 workshop predict                                                  # the candidate retires all three: FAIL, and it names what breaks
-workshop deploy gates --evidence evidence/evidence.json --no-github --confirm <sha7>
+workshop deploy gates --evidence evidence/evidence.json --no-github --confirm HASH
 ```
 The gate refuses, and tells you the one way past it: `--with-caveats` with every failing requirement named. Name only one and it refuses
 again: you have to accept all of them, by name.
 ```
-workshop deploy apply --evidence evidence/evidence.json --no-github --confirm <sha7> --with-caveats APP-EXISTING,ROUTE-SERVICE,PATH-SERVICE
+workshop deploy apply --evidence evidence/evidence.json --no-github --confirm HASH --with-caveats APP-EXISTING,ROUTE-SERVICE,PATH-SERVICE
 workshop deploy readback
 workshop verify --evidence evidence/evidence.json
 ```
@@ -194,7 +194,7 @@ out "as predicted", and verify ends with "Predict was right". The service is dow
 Now back it out:
 ```
 workshop revert plan                       # the inverse lines, and the baseline they return to
-workshop revert apply --confirm <sha7>     # the hash plan printed: configs back, checked over NAPALM
+workshop revert apply --confirm HASH     # the hash plan printed: configs back, checked over NAPALM
 workshop baseline collect                  # the headless collector again, then:
 workshop baseline upload
 workshop baseline wait

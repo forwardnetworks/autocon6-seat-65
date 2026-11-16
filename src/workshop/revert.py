@@ -88,12 +88,12 @@ def plan(settings: Settings, log: Callable[[str], None] | None = None) -> dict:
     return out
 
 
-def apply(settings: Settings, confirm: str, log: Callable[[str], None]) -> dict:
+def apply(settings: Settings, confirm: str | None, log: Callable[[str], None]) -> dict:
     """``workshop revert apply``: the checks, the inverse lines over NAPALM, then proof the network is back to the baseline."""
     with deploy.lab_lock(settings):
         p = plan(settings)
-        if confirm != p["sha256"][:7]:
-            raise Refused("ERROR", f"to revert, confirm the lines you reviewed: --confirm {p['sha256'][:7]} (see `workshop revert plan`)")
+        if not deploy.confirmed(confirm, p["sha256"]):
+            raise Refused("ERROR", deploy.confirm_refusal(confirm, p["sha256"], "revert", "workshop revert apply"))
         host = lab.mgmt_ips(settings)[candidate.DEVICE]
         show.napalm(log, candidate.DEVICE, "cli('show running-config section router bgp')   does r4 still hold what was deployed?")
         now = executor.show(settings, host, "show running-config section router bgp")
