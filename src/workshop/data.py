@@ -397,6 +397,12 @@ def _names(stats: Any) -> list[str]:
     return sorted({str(i.get("device_name") or i.get("name")) for i in infos if i})
 
 
+def _mgmt(text: Any) -> bool:
+    """A management port (ma0, Management0): the lab's out-of-band network, not the network under test. LLDP over it comes
+    and goes between collections in a Codespace, which would bury the one real change in noise."""
+    return any(str(w).lower().startswith(("ma0", "ma1", "management")) for w in str(text).replace(",", " ").split())
+
+
 def _entry(e: dict[str, Any]) -> str:
     row = e.get("after") or e.get("before") or {}
     keys = [k for k in row if k != "violation"][:4]
@@ -421,7 +427,8 @@ def changes(client, before: str, after: str) -> Table:
 
     def topology():
         t = _dump(d.get_topology_diffs(**kw)) or {}
-        links = [f"{'+' if k == 'added' else '-'} {x.get('source_port')} <-> {x.get('target_port')}" for k in ("added", "deleted") for x in t.get(k) or []]
+        links = [f"{'+' if k == 'added' else '-'} {x.get('source_port')} <-> {x.get('target_port')}" for k in ("added", "deleted")
+                 for x in t.get(k) or [] if not (_mgmt(x.get("source_port")) or _mgmt(x.get("target_port")))]
         return (f"{len(links)} link(s)" if links else "no"), "; ".join(links)
 
     def files():
@@ -453,11 +460,13 @@ def changes(client, before: str, after: str) -> Table:
     for path in LIBRARY_DIFFS:
         def lib(path=path):
             entries = [_dump(e) for e in client.nqe.diff(QueryRef.by_path(path, repository="fwd"), before=before, after=after)]
+            entries = [e for e in entries if not _mgmt(" ".join(str(v) for v in ((e.get("after") or e.get("before") or {}).values())))]
             return (f"{len(entries)} row(s)" if entries else "no"), "; ".join(_entry(e) for e in entries[:3]) + (" …" if len(entries) > 3 else "")
         row(f"Forward library: {path.rsplit('/', 1)[-1]}", lib)
     moved = sum(1 for r in rows if r["changed"] not in ("no", "not available"))
     summary = f"Snapshot {before} (before) against {after} (after): {moved} of {len(rows)} views of the network changed."
-    note = ("Forward compared the two models; no router was asked. The first rows are its diff APIs; the 'Forward library' rows are "
+    note = ("Forward compared the two models; no router was asked. Management ports (ma0) are left out: they are the lab's "
+            "out-of-band network, not the network under test. The first rows are its diff APIs; the 'Forward library' rows are "
             "NQE queries that ship with Forward (2,000+ of them), run on both snapshots and compared. Dig into any row: "
             "`workshop data diff` (routes), `data reach` (sites), `workshop nqe \"/L3/BGP/BGP Peerings Not Established\" --snapshot previous`.")
     return Table("changes", TOPICS["changes"], summary, ["what", "changed", "detail"], rows, note=note, raw=rows)
