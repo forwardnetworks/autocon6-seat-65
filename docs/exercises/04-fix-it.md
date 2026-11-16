@@ -10,7 +10,7 @@
 
 ### Correct the change (10 min)
 
-On your `retire-all` branch (check the bottom-left), correct `candidate/r4-bgp.eos` so it retires only the stale
+On your `retire-all` branch (check the bottom-left; if you opened exercise 3's PR from the Your lab page, it's the `change-…` branch the page made), correct `candidate/r4-bgp.eos` so it retires only the stale
 advertisements: delete the `no network 10.20.20.0/24` line and keep these two under `address-family ipv4`:
 ```
       no network 10.20.30.0/24
@@ -53,8 +53,10 @@ real life you'd also require a second reviewer. The repository only allows the m
 3. It opens a form with the commit message. Scroll down and press **Squash and Merge**. Squash means your branch's
    commits become one commit on `main`.
 4. VS Code then asks what to delete: choose **Delete Local Branch** (not *Suspend Codespace*, which stops your lab).
-   That also switches you back to `main`.
-5. Optional: if you have a `retire-one` PR from exercise 2, try merging it to see the refusal, then close it.
+   That also switches you back to `main`. Then pull the merge: the circular-arrows icon next to the branch name in the
+   status bar (or `git pull`).
+5. Optional: if you still have a `retire-one` PR from exercise 2, look at it: GitHub won't merge it, because its
+   forward/predict check is red (it may also say the branch has conflicts now; that's the merge you just made). Close it.
 
 *On github.com instead:* the PR's **Conversation** tab, the green **Squash and merge** button at the bottom, then
 **Confirm squash and merge**. Then in your Codespace: `git switch main` and `git pull`.
@@ -65,7 +67,7 @@ repository refuses plain merge commits.)
 
 The only way to merge is a green check, so approval is a person looking at evidence and not a hunch. That holds no matter who wrote the change or when.
 
-**Behind?** No red PR of your own? Make the fix directly: retire only the two stale advertisements, open the PR, and merge it when it is green.
+**Behind?** No red PR of your own? From `main`, make the fix on a new branch: tick only the two stale prefixes on the Your lab page's Change stage and press **Open pull request** (it makes the branch for you), or `git switch -c fix-it`, edit, commit, push, `gh pr create --fill`. Merge it when it is green.
 
 ## Finished early?
 
